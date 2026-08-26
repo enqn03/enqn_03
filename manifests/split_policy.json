@@ -1,0 +1,44 @@
+{
+  "purpose": "Causal layer-sequence index only; no image pixels or labels are stored.",
+  "raw_data_policy": "This script never opens or modifies raw TIFF files.",
+  "total_manufacturing_layers": 250,
+  "sequence_length_k": 4,
+  "endpoint_ranges": {
+    "train": {
+      "start": 4,
+      "end": 157
+    },
+    "validation": {
+      "start": 161,
+      "end": 199
+    },
+    "test": {
+      "start": 203,
+      "end": 250
+    }
+  },
+  "guard_ranges": {
+    "after_train": {
+      "start": 158,
+      "end": 160
+    },
+    "after_validation": {
+      "start": 200,
+      "end": 202
+    }
+  },
+  "history_rule": "Each sample history is [endpoint_z-K+1, ..., endpoint_z]. Train may use only its endpoint range plus its initial pre-endpoint warm-up context. Validation/test may use only their own endpoint layers plus the directly preceding guard layers; endpoint layers of another split are never used as history.",
+  "approved_target_endpoint_ratio": {
+    "train": 0.64,
+    "validation": 0.16,
+    "test": 0.2
+  },
+  "sample_count_by_split": {
+    "train": 154,
+    "validation": 39,
+    "test": 48
+  },
+  "total_sample_count": 241,
+  "label_policy": "No defect labels, B-A targets, XCT projections or normalization values are assigned here.",
+  "next_dependency": "Use the train rows only when estimating stage/LED normalization statistics."
+}
