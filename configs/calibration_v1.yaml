@@ -1,0 +1,43 @@
+version: 1
+status: provisional
+purpose: >
+  Machine XY to raw layer-camera pixel projection for support-aware sparse XCT
+  target audits. This is not a final metrology calibration or a defect-label map.
+control_points:
+  schema: screen_corners_v2_orientation_agnostic
+  path: processed/calibration/screen_corner_controls_v2.json
+reference_frame:
+  stage: B
+  layer_z: 125
+  led: 3
+  raw_dimensions_px: [2000, 2000]
+geometry_candidate:
+  rank: 2
+  orientation: mirror_rotate_270
+  screen_A_to_D_machine_parts: [part04, part03, part02, part01]
+  fit_rmse_px: 5.2120586660
+  loo_rmse_px: 7.0282783224
+local_photometric_refinement:
+  raw_pixel_global_offset_xy: [0, -6]
+  patch_size_px: 5
+  score: median_absolute_spearman
+  candidate_peak_score: 0.5428241232
+  alternative_candidate_peak_score: 0.2069248985
+  decision: provisional_candidate_2
+projection_policy:
+  transform_derivation: >
+    Recompute the candidate homography from the screen-corner control JSON with
+    src/audit_machine_camera_calibration.py logic, then add raw_pixel_global_offset_xy.
+  outside_camera_fov: unknown
+  unsupported_xct_location: unknown
+  target_zero_is_not_normal_label: true
+xct_response:
+  source_column_1_based: 40
+  source_name: xct_5x5x5
+  response_direction: unresolved
+  binary_defect_threshold: null
+  dense_heatmap_generation: prohibited_until_projected_support_audit_passes
+provenance:
+  geometry_audit: processed/calibration/orientation_audit_v1
+  photometric_global_audit: processed/calibration/photometric_audit_v1
+  photometric_local_audit: processed/calibration/local_refinement_v1
