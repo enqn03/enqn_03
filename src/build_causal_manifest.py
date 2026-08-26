@@ -15,15 +15,18 @@ Default policy
 --------------
 * Total manufacturing layers: 250
 * Causal history K: 4 (endpoint z included)
-* Train endpoints: z=4..150
-* Guard layers: z=151..153
-* Validation endpoints: z=154..200
-* Guard layers: z=201..203
-* Test endpoints: z=204..250
+* Train endpoints: z=4..157 (154 samples)
+* Guard layers: z=158..160
+* Validation endpoints: z=161..199 (39 samples)
+* Guard layers: z=200..202
+* Test endpoints: z=203..250 (48 samples)
 
-The first validation endpoint (154) can use layers 151..154, and the first
-test endpoint (204) can use layers 201..204.  This uses only the preceding
-guard context and never uses an endpoint of another split.
+The 241 usable causal endpoints are allocated as 154/39/48 samples, which is
+the closest integer allocation to the approved 64%/16%/20% ratio after
+reserving two three-layer guard bands. The first validation endpoint (161) can
+use layers 158..161, and the first test endpoint (203) can use layers
+200..203. This uses only the preceding guard context and never uses an endpoint
+of another split.
 
 Example
 -------
@@ -75,10 +78,20 @@ class SplitSpec:
     endpoints: InclusiveRange
     preceding_guard: InclusiveRange | None
 
-    def permitted_history_layers(self) -> set[int]:
+    def permitted_history_layers(self, sequence_length: int) -> set[int]:
+        """Return the historical layers this split may use without leakage.
+
+        Train has no preceding guard. Its earliest legal endpoint therefore
+        needs the initial warm-up layers before the first endpoint (e.g. z=1..3
+        for K=4 and first endpoint z=4). Validation/test may use only their
+        own endpoint range and the immediately preceding guard range.
+        """
         allowed = set(self.endpoints.values())
         if self.preceding_guard is not None:
             allowed.update(self.preceding_guard.values())
+        else:
+            warmup_start = self.endpoints.start - sequence_length + 1
+            allowed.update(range(warmup_start, self.endpoints.start))
         return allowed
 
 
@@ -167,7 +180,7 @@ def build_rows(policy: SplitPolicy) -> list[dict[str, object]]:
     """Create one manifest row per allowed endpoint and validate split isolation."""
     rows: list[dict[str, object]] = []
     for spec in (policy.train, policy.validation, policy.test):
-        allowed_history = spec.permitted_history_layers()
+        allowed_history = spec.permitted_history_layers(policy.sequence_length)
         guard_label = "" if spec.preceding_guard is None else spec.preceding_guard.as_label()
         for endpoint_z in spec.endpoints.values():
             history = causal_history(endpoint_z, policy.sequence_length)
@@ -242,10 +255,12 @@ def write_policy_json(path: Path, policy: SplitPolicy, rows: list[dict[str, obje
             "after_validation": range_dict(policy.guard_after_validation),
         },
         "history_rule": (
-            "Each sample history is [endpoint_z-K+1, ..., endpoint_z]. Validation and test may use only "
-            "their own endpoint layers plus the directly preceding guard layers; endpoint layers of another "
-            "split are never used as history."
+            "Each sample history is [endpoint_z-K+1, ..., endpoint_z]. Train may use only its endpoint "
+            "range plus its initial pre-endpoint warm-up context. Validation/test may use only their own "
+            "endpoint layers plus the directly preceding guard layers; endpoint layers of another split "
+            "are never used as history."
         ),
+        "approved_target_endpoint_ratio": {"train": 0.64, "validation": 0.16, "test": 0.20},
         "sample_count_by_split": rows_by_split(rows),
         "total_sample_count": len(rows),
         "label_policy": "No defect labels, B-A targets, XCT projections or normalization values are assigned here.",
@@ -263,11 +278,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-json", type=Path, required=True, help="JSON path for the split policy and validation record")
     parser.add_argument("--total-layers", type=int, default=250)
     parser.add_argument("--sequence-length", "-k", type=int, default=4)
-    parser.add_argument("--train-endpoints", nargs=2, type=int, default=[4, 150], metavar=("START", "END"))
-    parser.add_argument("--guard-after-train", nargs=2, type=int, default=[151, 153], metavar=("START", "END"))
-    parser.add_argument("--validation-endpoints", nargs=2, type=int, default=[154, 200], metavar=("START", "END"))
-    parser.add_argument("--guard-after-validation", nargs=2, type=int, default=[201, 203], metavar=("START", "END"))
-    parser.add_argument("--test-endpoints", nargs=2, type=int, default=[204, 250], metavar=("START", "END"))
+    parser.add_argument("--train-endpoints", nargs=2, type=int, default=[4, 157], metavar=("START", "END"))
+    parser.add_argument("--guard-after-train", nargs=2, type=int, default=[158, 160], metavar=("START", "END"))
+    parser.add_argument("--validation-endpoints", nargs=2, type=int, default=[161, 199], metavar=("START", "END"))
+    parser.add_argument("--guard-after-validation", nargs=2, type=int, default=[200, 202], metavar=("START", "END"))
+    parser.add_argument("--test-endpoints", nargs=2, type=int, default=[203, 250], metavar=("START", "END"))
     parser.add_argument("--overwrite", action="store_true", help="Allow replacing existing manifest outputs after review")
     return parser.parse_args()
 
