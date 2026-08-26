@@ -17,7 +17,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Train-only normalization·validity mask | 완료 | `configs/normalization_v1.yaml` |
 | Causal Dataset 연결 | 완료·train/validation/test sample 검증 | 3 intensity + 3 validity-mask channel |
 | Registered XCT sparse target audit | 완료·1,000 CSV schema·coverage 검증 | train-only finite response 2,329,476개/target column |
-| Machine XY→camera pixel calibration | geometry audit 완료·mirror orientation 분리 대기 | 상위 대칭 후보의 registered feature photometric consistency 비교가 weak heatmap의 전제 조건 |
+| Machine XY→camera pixel calibration | geometry audit 완료·photometric tie-break 실행 대기 | registered LWI/raw intensity consistency가 mirror orientation 분리와 weak heatmap의 전제 조건 |
 | A-only heatmap baseline | 이후 단계 | `(x,y,z,score)` 출력 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
@@ -40,6 +40,8 @@ B head and A/B fusion heatmap
         ↓
 registered XCT sparse support → screen-corner controls → 192 part/orientation hypothesis residual+overlay audit → weak heatmap → manual review for spatial validation
 ```
+
+`프로젝트과정.md`의 **“데이터 전처리에 적용한 수학적·기술적 기법”** 절에는 실제 적용된 TIFF 축 변환, causal split, percentile normalization, saturation mask, sparse supervision, DLT homography, residual, orientation hypothesis, photometric correlation의 수식·입력·출력·오류 방지 목적이 정리되어 있다.
 
 ## 데이터와 코드
 
