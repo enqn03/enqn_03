@@ -2,10 +2,16 @@ version: 1
 status: provisional_continuous_response
 source:
   calibration_config: configs/calibration_v1.yaml
+  registered_xct_coordinate_columns_1_based: [3, 4]
+  registered_xct_coordinate_name: command_xy_mm
   registered_xct_column_1_based: 40
   registered_xct_name: xct_5x5x5
 response:
-  robust_scaling: train_p01_p99
+  robust_scaling:
+    method: train_p01_p99
+    train_p01: 0.40070
+    train_p99: 0.58533
+    clip_to_unit_interval: true
   direction: unresolved
   invert: false
   binary_defect_threshold: null

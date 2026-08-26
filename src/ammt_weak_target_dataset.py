@@ -32,6 +32,11 @@ class AMMTWeakTargetDataset(Dataset):
         points=json.loads(controls.read_text(encoding="utf-8"))["control_points"]
         rank=int(self.cal["geometry_candidate"]["rank"])-1; self.H=build_candidates(points)[rank]["H"]
         self.dx,self.dy=self.cal["local_photometric_refinement"]["raw_pixel_global_offset_xy"]; self.sigma=float(self.weak["rasterization"]["gaussian_sigma_model_px"]); self.kernel=gaussian_kernel(self.sigma)
+        scaling=self.weak["response"]["robust_scaling"]
+        if scaling["method"] != "train_p01_p99": raise ValueError("Only train_p01_p99 robust scaling is supported.")
+        self.response_p01=float(scaling["train_p01"]); self.response_p99=float(scaling["train_p99"])
+        if not self.response_p99 > self.response_p01: raise ValueError("weak response train_p99 must exceed train_p01.")
+        self.clip_response=bool(scaling["clip_to_unit_interval"])
     def __len__(self): return len(self.base)
     def _target(self, z:int, h:int, w:int, roi:dict[str,int]):
         response=torch.zeros((1,h,w)); support=torch.zeros((1,h,w)); weight=torch.zeros((1,h,w)); valid=False
@@ -41,7 +46,8 @@ class AMMTWeakTargetDataset(Dataset):
             if not p.is_file(): continue
             a=np.genfromtxt(p,delimiter=","); a=np.atleast_2d(a); good=np.isfinite(a[:,39])
             if not good.any(): continue
-            xy=np.c_[a[good,6],a[good,7]]; uv=project(self.H,xy); vals=a[good,39]
+            xy=a[good,2:4]; uv=project(self.H,xy); vals=(a[good,39]-self.response_p01)/(self.response_p99-self.response_p01)
+            if self.clip_response: vals=np.clip(vals,0.0,1.0)
             for (u,v),value in zip(uv,vals):
                 ix=int(round((u+self.dx-roi["x0"])*sx)); iy=int(round((v+self.dy-roi["y0"])*sy))
                 if not (0<=ix<w and 0<=iy<h): continue
@@ -51,13 +57,14 @@ class AMMTWeakTargetDataset(Dataset):
         return response,support,valid
     def __getitem__(self,index:int):
         sample=self.base[index]; h,w=sample["intensity_history"].shape[-2:]; z=int(sample["endpoint_layer_z"]); roi=sample["metadata"]["working_roi_raw_camera_pixels"]
-        response,support,available=self._target(z,h,w,roi); sample.update({"weak_response":response,"weak_support_mask":support,"weak_target_available":torch.tensor(available,dtype=torch.bool)})
+        response,support,available=self._target(z,h,w,roi); sample.update({"weak_response":response,"weak_support_mask":support,"weak_target_available":torch.tensor(available,dtype=torch.bool),"weak_supervised_pixel_count":torch.tensor(int(support.sum().item()),dtype=torch.int64)})
         return sample
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--stage",required=True,choices=["A","B"]); p.add_argument("--tiff",required=True); p.add_argument("--manifest",required=True); p.add_argument("--normalization-config",required=True); p.add_argument("--registered-root",required=True); p.add_argument("--calibration-config",required=True); p.add_argument("--weak-target-config",required=True); p.add_argument("--split",required=True,choices=["train","validation","test"]); p.add_argument("--index",type=int,default=0); args=p.parse_args()
     ds=AMMTWeakTargetDataset(stage=args.stage,tiff_path=args.tiff,manifest_path=args.manifest,normalization_config_path=args.normalization_config,split=args.split,registered_root=args.registered_root,calibration_config=args.calibration_config,weak_target_config=args.weak_target_config)
-    s=ds[args.index]; print(json.dumps({"input_shape":list(s["model_input_history"].shape),"weak_response_shape":list(s["weak_response"].shape),"support_fraction":float(s["weak_support_mask"].mean()),"weak_target_available":bool(s["weak_target_available"]),"endpoint_layer_z":int(s["endpoint_layer_z"])},indent=2)); print("Weak target Dataset inspection complete. No raw file or dense target file was written.")
+    s=ds[args.index]; support=s["weak_support_mask"].bool(); supervised=s["weak_response"][support]
+    print(json.dumps({"input_shape":list(s["model_input_history"].shape),"weak_response_shape":list(s["weak_response"].shape),"support_fraction":float(s["weak_support_mask"].mean()),"weak_supervised_pixel_count":int(s["weak_supervised_pixel_count"]),"weak_response_supported_min":None if supervised.numel()==0 else float(supervised.min()),"weak_response_supported_max":None if supervised.numel()==0 else float(supervised.max()),"weak_target_available":bool(s["weak_target_available"]),"endpoint_layer_z":int(s["endpoint_layer_z"])},indent=2)); print("Weak target Dataset inspection complete. No raw file or dense target file was written.")
 if __name__=="__main__":
     try: main()
     except Exception as e: print(f"ERROR: {e}",file=sys.stderr); raise
