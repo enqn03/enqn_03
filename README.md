@@ -6,7 +6,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 ## 현재 위치
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization은 완료됐다. LED 1·2에는 넓은 full-scale saturation이 남아 있으므로, baseline input은 정규화된 3개 LED intensity channel과 3개 validity-mask channel을 함께 사용한다. 다음 단계는 이 정책을 지키는 causal Dataset 연결이다.
+데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization은 완료됐다. LED 1·2에는 넓은 full-scale saturation이 남아 있으므로, baseline input은 정규화된 3개 LED intensity channel과 3개 validity-mask channel을 함께 사용한다. 이 정책을 적용하는 causal Dataset이 구현됐으며, 다음 단계는 train·validation·test sample의 history·shape·mask를 검증하는 것이다.
 
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
@@ -15,7 +15,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | ROI·saturation 분석 | 완료 | 후보 ROI별 포화 비교와 QC |
 | 인과적 train/validation/test split | 완료 | `manifests/causal_sequence_manifest.csv` |
 | Train-only normalization·validity mask | 완료 | `configs/normalization_v1.yaml` |
-| Causal Dataset 연결 | 다음 단계 | 3 intensity + 3 validity-mask channel |
+| Causal Dataset 연결 | 구현 완료·sample 검증 대기 | 3 intensity + 3 validity-mask channel |
 | A-only heatmap baseline | 이후 단계 | `(x,y,z,score)` 출력 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
