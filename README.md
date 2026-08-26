@@ -64,3 +64,57 @@ A는 분말 도포 후·레이저 전 영상이고 B는 레이저 스캔 후 영
 ## Reference
 
 [1] [NIST, *Process Monitoring Dataset from the Additive Manufacturing Metrology Testbed (AMMT): Overhang Part X4*](https://data.nist.gov/od/id/mds2-2233)
+
+
+## 구현 파이프라인 아키텍처와 데이터 흐름
+
+```mermaid
+flowchart TD
+    A[원본 A/B TIFF\nTZYX: LED×Layer×Y×X] --> B[구조·A/B·ROI·saturation audit]
+    B --> C[causal manifest\nK=4 + guard split]
+    C --> D[train-only stage·LED normalization\np01/p99]
+    D --> E[read-only memmap Dataset]
+    E --> F[입력 X\nK×6×H×W\n3 intensity + 3 validity masks]
+    X1[Registered XCT sparse CSV\nmachine XY + xct_5x5x5] --> G[geometry + photometric calibration]
+    G --> H[sparse point projection\nraw camera → model 256×256]
+    H --> I[on-the-fly continuous weak response\n+ unknown support mask]
+    F --> J[향후 A-only heatmap baseline]
+    I --> J
+    J --> K[이상 후보\n(x, y, layer_z, score)]
+    K --> L[향후 B head·A/B fusion\n및 수동/XCT 검증]
+```
+
+데이터 흐름의 핵심은 **원본 TIFF를 재저장하지 않고** memmap으로 읽어 model input을 구성하며, XCT의 sparse supervision도 dense label file로 저장하지 않고 calibration과 rasterization 규칙으로 필요한 sample 시점에만 생성하는 것이다. 이 방식은 저장 공간을 제한하면서도 raw data provenance와 temporal causality를 보존한다.
+
+## 데이터 전처리에 적용한 수학적·기술적 기법
+
+| 단계 | 적용 기법·수식 | 해결하는 문제 | 현재 결과 |
+|---|---|---|---|
+| Hyperstack 해석 | ImageJ logical axes `T,Z,Y,X`; `tifffile.memmap` | 물리 TIFF page가 1개인 hyperstack을 일반 multi-page TIFF로 잘못 읽는 오류 | LED=channel, layer=시간축을 정확히 유지 |
+| Causal sequence | `H_z=[z-K+1,...,z]`, K=4 | 미래 layer를 보는 시간 누수 | train/val/test causal manifest 생성 |
+| Guard split | train `4–157`, guard `158–160`, val `161–199`, guard `200–202`, test `203–250` | validation/test endpoint가 train history에 섞이는 문제 | endpoint와 history의 split 경계 보존 |
+| Saturation mask | `m(x)=1[x<65535]` | sensor full-scale을 정상·이상 신호로 오인하는 문제 | LED별 validity mask를 intensity와 함께 제공 |
+| Robust normalization | `clip((x-p01)/(p99-p01),0,1)`; p01/p99는 train만 사용 | LED·stage별 밝기 차이와 평가 데이터 누수 | A/B×LED별 p01/p99 config 확정 |
+| ROI·resize | working ROI crop 후 intensity=bilinear, mask=nearest resize | 외곽 artifact와 mask interpolation 오류 | model space 256×256 contract 확정 |
+| Sparse XCT support | finite `xct_5x5x5` point만 supervision; support 밖은 unknown | 미관측 영역을 normal/negative label로 오인하는 문제 | 2,329,476 train finite point, FOV 100% |
+| Homography | `s[u,v,1]^T=H[X,Y,1]^T`, normalized DLT/SVD | machine XY와 raw pixel 좌표를 임의 동일시하는 문제 | geometry RMSE와 orientation 후보를 분리 검증 |
+| Calibration validation | leave-one-out RMSE, 192 part/orientation hypothesis, local 5×5 photometric correlation | mirror ambiguity와 control-point overfit | candidate 2 + `(0,-6)` px provisional correction |
+| Weak-target rasterization | model-space Gaussian kernel, sigma=2 px; support mask | sparse target이 끊기거나 과도하게 퍼지는 문제 | continuous response+unknown mask policy 확정 |
+
+## 현재 전처리 진행률
+
+현재 전처리는 **약 75% 완료**로 판단한다. 이 수치는 raw input 준비와 spatial supervision 기반을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, calibration, sparse-support projection, rasterization kernel audit까지 완료됐다.
+
+| 구간 | 상태 | 전처리 비중 |
+|---|---|---:|
+| 원본 구조·품질 audit | 완료 | 15% |
+| 시계열 split·normalization·input Dataset | 완료 | 25% |
+| XCT sparse supervision·calibration·support audit | 완료 | 35% |
+| weak target을 Dataset output으로 연결 | 진행 예정 | 10% |
+| XCT response 방향 검증·target loss/manifest 검증 | 진행 예정 | 15% |
+
+남은 25%는 모델 입력 자체가 아니라 **학습 target의 의미와 loss 연결**에 해당한다. 특히 `xct_5x5x5` response는 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. 다음 구현은 `weak_response`, `weak_support_mask`, `weak_target_available`을 Dataset sample에 on-the-fly로 연결하는 단계다.
+
+## 실행 순서
+
+프로젝트 전체의 코드 실행 순서, 코드별 역할, 필요 입력, 생성 출력, 실행 전후 상태는 [실행가이드.md](실행가이드.md)에 지속적으로 관리한다. 새 코드가 추가될 때마다 이 guide와 `프로젝트과정.md`를 함께 갱신한다.
