@@ -6,7 +6,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 ## 현재 위치
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset sample 검증은 완료됐다. LED 1·2에는 넓은 full-scale saturation이 남아 있으므로, baseline input은 정규화된 3개 LED intensity channel과 3개 validity-mask channel을 함께 사용한다. 다음 단계는 registered XCT의 sparse machine-coordinate response를 audit하고, machine XY→camera pixel calibration을 검증한 뒤 support-aware weak heatmap으로 확장하는 것이다. B−A는 직접 label로 사용하지 않는다.
+데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset sample 검증은 완료됐다. LED 1·2에는 넓은 full-scale saturation이 남아 있으므로, baseline input은 정규화된 3개 LED intensity channel과 3개 validity-mask channel을 함께 사용한다. registered XCT의 sparse machine-coordinate response audit은 완료됐다. 초기 layer에는 XCT supervision이 없는 구간이 있으므로 이를 negative label이 아니라 unknown으로 처리한다. 다음 단계는 machine XY→camera pixel calibration을 검증한 뒤 support-aware weak heatmap으로 확장하는 것이다. B−A는 직접 label로 사용하지 않는다.
 
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
@@ -16,8 +16,8 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | 인과적 train/validation/test split | 완료 | `manifests/causal_sequence_manifest.csv` |
 | Train-only normalization·validity mask | 완료 | `configs/normalization_v1.yaml` |
 | Causal Dataset 연결 | 완료·train/validation/test sample 검증 | 3 intensity + 3 validity-mask channel |
-| Registered XCT sparse target audit | 구현 완료·실행 결과 검증 대기 | schema·coverage·train-only XCT distribution |
-| Machine XY→camera pixel calibration | 이후 단계 | support-aware weak heatmap의 전제 조건 |
+| Registered XCT sparse target audit | 완료·1,000 CSV schema·coverage 검증 | train-only finite response 2,329,476개/target column |
+| Machine XY→camera pixel calibration | 다음 단계 | support-aware weak heatmap의 전제 조건 |
 | A-only heatmap baseline | 이후 단계 | `(x,y,z,score)` 출력 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
