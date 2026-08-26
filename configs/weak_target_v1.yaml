@@ -1,0 +1,23 @@
+version: 1
+status: provisional_continuous_response
+source:
+  calibration_config: configs/calibration_v1.yaml
+  registered_xct_column_1_based: 40
+  registered_xct_name: xct_5x5x5
+response:
+  robust_scaling: train_p01_p99
+  direction: unresolved
+  invert: false
+  binary_defect_threshold: null
+rasterization:
+  model_resolution: [256, 256]
+  gaussian_sigma_model_px: 2
+  blend: gaussian_weighted_average
+support:
+  mask_threshold: 0.0
+  outside_support: unknown
+  supervised_loss_weight_outside_support: 0.0
+  early_xct_missing_layer_policy: unavailable
+storage:
+  mode: on_the_fly
+  persist_dense_heatmaps: false
