@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--layer-z", type=int, default=125)
     parser.add_argument("--led", type=int, default=3)
     parser.add_argument("--percentiles", nargs=2, type=float, default=[1.0, 99.5], metavar=("LOW", "HIGH"))
+    parser.add_argument(
+        "--display-max-px",
+        type=int,
+        default=1000,
+        help="Maximum displayed image dimension in screen coordinates; clicks are converted back to raw pixels.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -119,17 +125,34 @@ def main() -> None:
         raise FileNotFoundError(f"Missing TIFF: {tiff_path}")
     if not 0 <= args.percentiles[0] < args.percentiles[1] <= 100:
         raise ValueError("--percentiles must satisfy 0 <= low < high <= 100")
+    if args.display_max_px <= 0:
+        raise ValueError("--display-max-px must be positive")
     ensure_output_path(output_path, args.overwrite)
 
     axes, shape = inspect_stack(tiff_path)
     frame = read_frame(tiff_path, axes, shape, args.layer_z, args.led)
+    raw_height, raw_width = frame.shape
+    display_scale = min(1.0, float(args.display_max_px) / float(max(raw_height, raw_width)))
+    display_width = raw_width * display_scale
+    display_height = raw_height * display_scale
     low, high = np.percentile(frame, args.percentiles)
     requested = requested_machine_corners()
 
-    fig, axis = plt.subplots(figsize=(12, 12))
-    axis.imshow(frame, cmap="gray", vmin=low, vmax=high, origin="upper")
-    axis.set_xlabel("Raw camera pixel x")
-    axis.set_ylabel("Raw camera pixel y")
+    fig, axis = plt.subplots(figsize=(8.2, 8.2))
+    axis.imshow(
+        frame,
+        cmap="gray",
+        vmin=low,
+        vmax=high,
+        origin="upper",
+        extent=(0.0, display_width, display_height, 0.0),
+        interpolation="nearest",
+    )
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(0.0, display_width)
+    axis.set_ylim(display_height, 0.0)
+    axis.set_xlabel(f"Display x (scale={display_scale:.4f} × raw pixel)")
+    axis.set_ylabel(f"Display y (scale={display_scale:.4f} × raw pixel)")
     selected: list[dict[str, float | str]] = []
 
     print("Control-point selection started. Click one visible OUTER PART CORNER per prompt.")
@@ -141,18 +164,23 @@ def main() -> None:
         y_mm = float(request["machine_y_mm"])
         axis.set_title(
             f"Click {number}/16: {part} | {corner} | machine XY=({x_mm:.3f}, {y_mm:.3f}) mm\n"
-            "Left-click one outer part corner; do not zoom/pan after selection begins."
+            "Left-click one outer part corner. Display is scaled; saved values remain raw camera pixels."
         )
         fig.canvas.draw_idle()
-        print(f"[{number}/16] Click {part} {corner}, machine XY=({x_mm:.3f}, {y_mm:.3f}) mm")
+        print(
+            f"[{number}/16] Click {part} {corner}, machine XY=({x_mm:.3f}, {y_mm:.3f}) mm "
+            f"on a {display_width:.0f}×{display_height:.0f} displayed image (scale={display_scale:.4f})."
+        )
         points = plt.ginput(1, timeout=-1, show_clicks=True, mouse_add=1, mouse_stop=3, mouse_pop=2)
         if len(points) != 1:
             plt.close(fig)
             raise RuntimeError("Selection cancelled before all 16 control points were recorded")
-        pixel_x, pixel_y = (float(points[0][0]), float(points[0][1]))
+        display_x, display_y = (float(points[0][0]), float(points[0][1]))
+        pixel_x = min(max(display_x / display_scale, 0.0), float(raw_width - 1))
+        pixel_y = min(max(display_y / display_scale, 0.0), float(raw_height - 1))
         selected.append({**request, "raw_camera_x_px": pixel_x, "raw_camera_y_px": pixel_y})
-        axis.plot(pixel_x, pixel_y, marker="x", color="cyan", markersize=8, markeredgewidth=2)
-        axis.text(pixel_x + 8, pixel_y + 8, f"{part[-2:]}-{corner}", color="cyan", fontsize=7)
+        axis.plot(display_x, display_y, marker="x", color="cyan", markersize=8, markeredgewidth=2)
+        axis.text(display_x + 4, display_y + 4, f"{part[-2:]}-{corner}", color="cyan", fontsize=7)
 
     axis.set_title("All 16 control points selected. Close this window to write JSON.")
     fig.canvas.draw_idle()
@@ -170,6 +198,9 @@ def main() -> None:
             "layer_z": args.layer_z,
             "led": args.led,
             "display_percentiles": [float(args.percentiles[0]), float(args.percentiles[1])],
+            "raw_dimensions_px": [raw_width, raw_height],
+            "display_dimensions_px": [display_width, display_height],
+            "display_scale_to_raw_pixel": display_scale,
         },
         "machine_rectangle_source": "Registered XCT command XY ranges observed per part; values in millimetres.",
         "corner_order": list(CORNER_ORDER),
