@@ -6,7 +6,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 ## 현재 위치
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset sample 검증은 완료됐다. LED 1·2에는 넓은 full-scale saturation이 남아 있으므로, baseline input은 정규화된 3개 LED intensity channel과 3개 validity-mask channel을 함께 사용한다. registered XCT의 sparse machine-coordinate response audit은 완료됐다. 초기 layer에는 XCT supervision이 없는 구간이 있으므로 이를 negative label이 아니라 unknown으로 처리한다. 다음 단계는 machine XY→camera pixel calibration을 검증한 뒤 support-aware weak heatmap으로 확장하는 것이다. B−A는 직접 label로 사용하지 않는다.
+데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support 및 weak-target rasterization audit이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. response direction은 여전히 unresolved이므로 B−A나 XCT response를 direct defect label로 사용하지 않는다.
 
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
@@ -17,8 +17,10 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Train-only normalization·validity mask | 완료 | `configs/normalization_v1.yaml` |
 | Causal Dataset 연결 | 완료·train/validation/test sample 검증 | 3 intensity + 3 validity-mask channel |
 | Registered XCT sparse target audit | 완료·1,000 CSV schema·coverage 검증 | train-only finite response 2,329,476개/target column |
-| Machine XY→camera pixel calibration | geometry·global photometric audit 완료·orientation 미판정 | local offset/patch photometric refinement가 weak heatmap의 전제 조건 |
-| A-only heatmap baseline | 이후 단계 | `(x,y,z,score)` 출력 |
+| Machine XY→camera pixel calibration | 완료·provisional | rank2 `mirror_rotate_270`, raw correction `(0,-6)` px; 독립 calibration 전까지 provisional |
+| Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
+| Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
+| A-only support-mask weighted baseline | 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
 ## 연구 흐름
@@ -52,6 +54,7 @@ registered XCT sparse support → screen-corner controls → 192 part/orientatio
 | `manifests/` | 인과적 sample index와 split policy |
 | `src/` | 재현 가능한 분석·전처리 코드 |
 | `프로젝트과정.md` | 기술적 의사결정, 현재 상태, 다음 검증 흐름 |
+| `docs/quality-control-images.md` | Git으로 보존한 11개 QC PNG의 panel별 의미·판정 한계·모델 영향 |
 
 ## 핵심 기술 원칙
 
@@ -103,17 +106,17 @@ flowchart TD
 
 ## 현재 전처리 진행률
 
-현재 전처리는 **약 75% 완료**로 판단한다. 이 수치는 raw input 준비와 spatial supervision 기반을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, calibration, sparse-support projection, rasterization kernel audit까지 완료됐다.
+현재 전처리는 **약 85% 완료**로 판단한다. 이 수치는 raw input 준비와 sparse spatial supervision의 runtime 연결을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset과 available/unknown sample 검증까지 완료됐다.
 
 | 구간 | 상태 | 전처리 비중 |
 |---|---|---:|
 | 원본 구조·품질 audit | 완료 | 15% |
 | 시계열 split·normalization·input Dataset | 완료 | 25% |
 | XCT sparse supervision·calibration·support audit | 완료 | 35% |
-| weak target을 Dataset output으로 연결 | 진행 예정 | 10% |
-| XCT response 방향 검증·target loss/manifest 검증 | 진행 예정 | 15% |
+| weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
+| XCT response 방향 검증·support-mask weighted loss | 진행 예정 | 15% |
 
-남은 25%는 모델 입력 자체가 아니라 **학습 target의 의미와 loss 연결**에 해당한다. 특히 `xct_5x5x5` response는 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. 다음 구현은 `weak_response`, `weak_support_mask`, `weak_target_available`을 Dataset sample에 on-the-fly로 연결하는 단계다.
+남은 15%는 모델 입력 자체가 아니라 **학습 target의 의미와 loss 연결**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. 다음 구현은 `weak_support_mask==1`에서만 regression을 계산하는 loss와 A-only baseline이다.
 
 ## 실행 순서
 
