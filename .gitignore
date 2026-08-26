@@ -1,0 +1,25 @@
+# macOS Finder metadata
+.DS_Store
+
+# Large, immutable source data: preserve locally but never commit
+raw_original/
+
+# Reproducible derived data and model artifacts: do not commit by default
+processed/
+output/
+outputs/
+
+# Temporary or interrupted transfers
+*.partial
+*.tmp
+
+# Python virtual environments and bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local secrets and notebook caches
+.env
+.ipynb_checkpoints/
+
