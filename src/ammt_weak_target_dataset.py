@@ -28,10 +28,10 @@ def gaussian_kernel(sigma: float) -> torch.Tensor:
 class AMMTWeakTargetDataset(Dataset):
     def __init__(self, *, registered_root: str|Path, calibration_config: str|Path, weak_target_config: str|Path, **base_kwargs: Any):
         self.base=AMMTCausalStageDataset(**base_kwargs); self.root=Path(registered_root); self.cal=load_yaml(Path(calibration_config)); self.weak=load_yaml(Path(weak_target_config))
-        controls=Path(self.cal["controls_json"]); controls = controls if controls.is_absolute() else Path.cwd()/controls
+        controls=Path(self.cal["control_points"]["path"]); controls = controls if controls.is_absolute() else Path.cwd()/controls
         points=json.loads(controls.read_text(encoding="utf-8"))["control_points"]
-        rank=int(self.cal["orientation"]["candidate_rank"])-1; self.H=build_candidates(points)[rank]["H"]
-        self.dx,self.dy=self.cal["global_correction_raw_px"]; self.sigma=float(self.weak["rasterization"]["gaussian_sigma_model_px"]); self.kernel=gaussian_kernel(self.sigma)
+        rank=int(self.cal["geometry_candidate"]["rank"])-1; self.H=build_candidates(points)[rank]["H"]
+        self.dx,self.dy=self.cal["local_photometric_refinement"]["raw_pixel_global_offset_xy"]; self.sigma=float(self.weak["rasterization"]["gaussian_sigma_model_px"]); self.kernel=gaussian_kernel(self.sigma)
     def __len__(self): return len(self.base)
     def _target(self, z:int, h:int, w:int, roi:dict[str,int]):
         response=torch.zeros((1,h,w)); support=torch.zeros((1,h,w)); weight=torch.zeros((1,h,w)); valid=False
