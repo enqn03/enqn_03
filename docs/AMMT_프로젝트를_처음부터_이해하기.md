@@ -440,3 +440,10 @@ training 후 model이 test layer마다 top-5 후보를 만들었다. 총 48개 t
 | candidate decoder status | `emitted` 또는 `withheld_spatial_plateau` | 허위 좌표가 막혔는지 확인한다. |
 
 이 결과를 보면 다음에 무엇을 바꿀지 근거가 생긴다. 예를 들어 target은 다양하지만 prediction만 평평하면 model capacity나 learning rule을 살펴보고, target도 거의 평평하면 rasterization 또는 target scaling을 다시 검토한다. 이처럼 한 번에 여러 가지를 바꾸지 않는 것이 실험 결과를 이해하는 방법이다.
+
+
+### 15.2 코드를 추가할 때도 작은 연결 검사가 필요한 이유
+
+plateau 안전장치를 추가하는 중, model에 input을 넣는 한 줄이 손상되어 Python이 시작 단계에서 멈춘 일이 있었다. 다행히 이 오류는 checkpoint, TIFF, XCT CSV를 읽기 **전**에 발견됐다. 따라서 원본 데이터나 첫 학습 결과는 바뀌지 않았고, 원래 input 연결식을 복구했다.
+
+이것은 왜 diagnostic을 training과 분리하는지 보여 준다. 새 기능을 더할 때 먼저 read-only로 import와 data flow가 연결되는지 확인하면, 실험 결과를 덮어쓰거나 raw data를 건드리지 않고도 문제를 작게 잡을 수 있다. 다음 실행은 복구된 code가 실제 checkpoint를 정상적으로 읽고, flat map에서 좌표를 보류하는지 확인하는 단계다.
