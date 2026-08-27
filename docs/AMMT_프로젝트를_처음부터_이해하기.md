@@ -962,3 +962,26 @@ NIST 논문은 dot-grid target와 secondary-camera red laser dot을 이용해 ma
 그래서 다음 후보 작업은 **layer-125 B-stage visual orientation overlay audit**이다. single B frame에 existing rank 1과 rank 2의 projected part geometry를 side-by-side로 그려 논문의 left-cavity/right-overhang 기준과 비교한다. 이 작업은 calibration rank를 자동으로 바꾸지 않으며, 결과가 설득력 있어도 config update는 별도 승인 후에만 할 수 있다.
 
 [1] [Lane & Yeung (2020), *Process Monitoring Dataset from the AMMT: Overhang Part X4*, J. Res. NIST 125:125027](https://doi.org/10.6028/jres.125.027)
+
+
+---
+
+## 39. 논문의 Part layout을 실제 camera image와 비교하는 orientation overlay audit
+
+NIST 논문은 Part 1–4의 위치와 layer-125 part shape의 비대칭 기준을 설명하지만, 현재 TIFF의 어느 pixel이 어느 part인지를 바로 알려 주지는 않는다. 그래서 새 audit은 **B-stage layer 125, LED 3의 이미지 한 장** 위에 rank 1 또는 rank 2가 예측하는 laser-on command path를 그대로 그려 비교한다.
+
+이 그림은 AI가 만든 illustration이 아니라 raw camera pixel, XYPT machine coordinate, existing homography를 수치적으로 정확히 유지하는 deterministic QC overlay다. 따라서 rank selection처럼 좌표 정확도가 중요한 작업에는 image generation이 아니라 deterministic plotting을 사용한다.
+
+| 처리 단계 | 하는 일 | 하지 않는 일 |
+|---|---|---|
+| 1 | B TIFF에서 LED 3, z=125 frame 한 장을 read-only memmap으로 읽음 | TIFF를 수정하거나 crop TIFF를 저장하지 않음 |
+| 2 | `XYPT_L0125.csv`에서 `power>0` laser-on command만 읽음 | new command 또는 label 생성 안 함 |
+| 3 | existing 16 control point로 만들어진 rank 1·rank 2 H를 각각 적용 | calibration fit/rank를 새로 계산하지 않음 |
+| 4 | projected laser paths를 part 색상별로 B frame 위에 그림 | model heatmap, target map, checkpoint를 만들지 않음 |
+| 5 | compact PNG 2개·CSV·JSON만 저장 | config를 자동으로 바꾸지 않음 |
+
+그림을 볼 때는 논문의 rule을 쓴다. layer 125에서 cylindrical cavity가 machine `-X` 방향(왼쪽), overhang이 `+X` 방향(오른쪽)으로 보이는지, 그리고 Part 1에서 Part 4로 가는 diagonal placement가 B-stage raw shape와 어느 rank overlay에서 더 자연스럽게 일치하는지 확인한다.[1]
+
+하지만 overlay 한 번의 visual agreement는 `visual_preference_hypothesis`일 뿐이다. 확실하지 않으면 rank 2 provisional 상태와 camera-primary reporting을 유지한다. 한 overlay가 더 설득력 있어도 `calibration_v1.yaml`을 바꾸는 일은 별도 approval 이후의 작업이다.
+
+[1] [Lane & Yeung (2020), *Process Monitoring Dataset from the AMMT: Overhang Part X4*, J. Res. NIST 125:125027, Fig. 2](https://doi.org/10.6028/jres.125.027)
