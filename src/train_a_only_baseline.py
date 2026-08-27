@@ -250,24 +250,57 @@ def local_maximum_candidates(
     sample: dict[str, Any],
     top_k: int,
     kernel_size: int,
-) -> list[dict[str, Any]]:
-    """Return compact raw-camera candidates without persisting a dense heatmap."""
+    plateau_range_atol: float,
+) -> dict[str, Any]:
+    """Decode local maxima, withholding arbitrary coordinates on a flat map."""
     if prediction.shape != (1, 1, prediction.shape[-2], prediction.shape[-1]):
         raise ValueError(f"Expected one prediction [1,1,H,W], got {tuple(prediction.shape)}")
     if kernel_size < 1 or kernel_size % 2 == 0:
         raise ValueError("local maximum kernel_size must be a positive odd integer.")
+    if plateau_range_atol < 0:
+        raise ValueError("plateau_range_atol must be non-negative.")
 
     candidate_map = prediction[0, 0]
+    prediction_min = float(candidate_map.min().item())
+    prediction_max = float(candidate_map.max().item())
+    spatial_range = prediction_max - prediction_min
+    metadata = sample["metadata"]
+    status: dict[str, Any] = {
+        "sample_id": str(metadata["sample_id"]),
+        "layer_z": int(sample["endpoint_layer_z"]),
+        "prediction_min": prediction_min,
+        "prediction_max": prediction_max,
+        "spatial_range": spatial_range,
+        "plateau_range_atol": float(plateau_range_atol),
+    }
+    if spatial_range <= plateau_range_atol:
+        status.update(
+            {
+                "candidate_status": "withheld_spatial_plateau",
+                "reason": "prediction spatial range is at or below plateau tolerance; no meaningful location can be ranked",
+                "candidate_count": 0,
+                "candidates": [],
+            }
+        )
+        return status
+
     pooled = F.max_pool2d(candidate_map[None, None], kernel_size=kernel_size, stride=1, padding=kernel_size // 2)[0, 0]
     maxima = candidate_map == pooled
     scores = candidate_map.masked_fill(~maxima, -torch.inf).flatten()
     count = min(top_k, int(torch.isfinite(scores).sum().item()))
     if count == 0:
-        return []
+        status.update(
+            {
+                "candidate_status": "withheld_no_local_maximum",
+                "reason": "no finite local maximum was found",
+                "candidate_count": 0,
+                "candidates": [],
+            }
+        )
+        return status
     values, flat_indices = torch.topk(scores, k=count)
     width = candidate_map.shape[1]
     candidates: list[dict[str, Any]] = []
-    metadata = sample["metadata"]
     for rank, (score, flat_index) in enumerate(zip(values.tolist(), flat_indices.tolist()), start=1):
         y_model, x_model = divmod(int(flat_index), int(width))
         x_raw, y_raw = raw_coordinate_from_model_index(x_model, y_model, metadata)
@@ -285,7 +318,8 @@ def local_maximum_candidates(
                 "sample_id": str(metadata["sample_id"]),
             }
         )
-    return candidates
+    status.update({"candidate_status": "emitted", "reason": None, "candidate_count": len(candidates), "candidates": candidates})
+    return status
 
 
 def evaluate_test_candidates(
@@ -294,18 +328,27 @@ def evaluate_test_candidates(
     device: torch.device,
     top_k: int,
     kernel_size: int,
+    plateau_range_atol: float,
     max_samples: int | None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     model.eval()
     candidates: list[dict[str, Any]] = []
+    endpoint_statuses: list[dict[str, Any]] = []
     with torch.no_grad():
         sample_count = len(dataset) if max_samples is None else min(len(dataset), max_samples)
         for index in range(sample_count):
-            sample = dataset[index]
-            history = sample["model_input_history"].unsqueeze(0).to(device=device, dtype=torch.float32)
+                                                        = sample["model_input_history"].unsqueeze(0).to(device=device, dtype=torch.float32)
             prediction = model(history).cpu()
-            candidates.extend(local_maximum_candidates(prediction, sample, top_k=top_k, kernel_size=kernel_size))
-    return candidates
+            result = local_maximum_candidates(
+                prediction,
+                sample,
+                top_k=top_k,
+                kernel_size=kernel_size,
+                plateau_range_atol=plateau_range_atol,
+            )
+            candidates.extend(result.pop("candidates"))
+            endpoint_statuses.append(result)
+    return candidates, endpoint_statuses
 
 
 def prepare_output_directory(path: Path) -> None:
@@ -470,14 +513,19 @@ def main() -> None:
         model, test_loader, loss_fn, device, best_epoch, "test", None,
         gradient_clip_norm=0.0, max_batches=args.max_eval_batches,
     )
-    candidates = evaluate_test_candidates(
+    candidates, candidate_endpoint_statuses = evaluate_test_candidates(
         model,
         test_dataset,
         device=device,
         top_k=int(evaluation_config["top_k_candidates_per_endpoint"]),
         kernel_size=int(evaluation_config["local_maximum_kernel_size"]),
+        plateau_range_atol=float(evaluation_config["spatial_plateau_range_atol"]),
         max_samples=args.max_test_samples,
     )
+    candidate_status_counts: dict[str, int] = {}
+    for status in candidate_endpoint_statuses:
+        name = str(status["candidate_status"])
+        candidate_status_counts[name] = candidate_status_counts.get(name, 0) + 1
 
     write_json(
         output_dir / str(storage_config["history_name"]),
@@ -506,6 +554,9 @@ def main() -> None:
             "response_direction": "unresolved",
             "candidate_count": len(candidates),
             "top_k_per_endpoint": int(evaluation_config["top_k_candidates_per_endpoint"]),
+            "spatial_plateau_range_atol": float(evaluation_config["spatial_plateau_range_atol"]),
+            "endpoint_status_counts": candidate_status_counts,
+            "endpoint_statuses": candidate_endpoint_statuses,
             "candidates": candidates,
         },
     )
@@ -520,6 +571,7 @@ def main() -> None:
                 "output_directory": str(output_dir),
                 "checkpoint": str(checkpoint_path),
                 "candidate_count": len(candidates),
+                "candidate_endpoint_status_counts": candidate_status_counts,
                 "response_direction": "unresolved",
             },
             ensure_ascii=False,

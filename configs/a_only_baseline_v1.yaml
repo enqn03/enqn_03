@@ -36,6 +36,11 @@ training:
 evaluation:
   top_k_candidates_per_endpoint: 5
   local_maximum_kernel_size: 7
+  spatial_plateau_range_atol: 0.000001
+  spatial_plateau_policy: >
+    Return no coordinate candidate for an endpoint when its prediction map
+    max-minus-min range is less than or equal to the numerical plateau
+    tolerance. This is a decoder safety gate, not a defect threshold.
   score_semantics: >
     Sigmoid-scaled prediction of the XCT-derived continuous quality response.
     It is not an anomaly probability or confirmed defect score while response

@@ -411,3 +411,32 @@ training 후 model이 test layer마다 top-5 후보를 만들었다. 총 48개 t
 ### 14.3 이제 무엇을 확인하는가
 
 다음에는 checkpoint가 만든 response map의 최소값·최대값·표준편차를, 입력 영상과 XCT support target의 공간 분포와 비교한다. 이 검사는 model이 정말 화면의 위치 차이를 보고 있는지, 아니면 전체 평균값만 내놓는지를 알려 준다. 결과가 나오기 전까지 현재 top-5 좌표는 사용하지 않는다.
+
+
+---
+
+## 15. 이제 같은 좌표를 억지로 내지 않도록 안전장치를 넣었다
+
+첫 학습에서 model이 거의 평평한 response map을 만들었는데도 top-5 기능이 화면의 몇 위치를 후보라고 내놓았다. 이것은 top-5가 “가장 높은 값”을 무조건 골라야 하기 때문이다. 화면의 모든 값이 같으면 실제로 높은 곳이 없는데도, 컴퓨터는 앞쪽에 놓인 pixel을 골라야 한다.
+
+그래서 후보를 만드는 규칙을 보완했다. 앞으로 response map의 가장 큰 값과 가장 작은 값의 차이가 `1e-6` 이하이면, model이 위치 차이를 만들지 못했다고 판단하고 좌표를 반환하지 않는다.
+
+```text
+기존: flat map → 동점 pixel 중 임의 top-5 좌표 출력
+변경: flat map → candidates=[] + withheld_spatial_plateau
+```
+
+이 규칙은 defect threshold가 아니다. “score가 이보다 크면 결함” 같은 뜻이 아니라, **map 안에서 위치를 비교할 수 있는 최소한의 차이조차 없는가**를 보는 안전장치다.
+
+### 15.1 다음 diagnostic은 무엇을 볼까
+
+다음에는 첫 training checkpoint를 그대로 읽어서, 실제로 세 test layer에서 map이 얼마나 평평한지 숫자로 확인한다. training도 다시 하지 않고 파일도 새로 저장하지 않는다.
+
+| 볼 값 | 쉬운 의미 | 필요한 이유 |
+|---|---|---|
+| prediction min/max/std | model이 화면의 장소마다 다른 점수를 냈는지 | 0이면 완전히 평평하고 위치 후보를 낼 수 없다. |
+| supported target min/max/std | XCT가 있는 점 주변의 reference가 실제로 얼마나 달랐는지 | target도 거의 같다면 model만의 문제가 아닐 수 있다. |
+| support 안 Pearson correlation | model의 위치별 점수 변화가 target 변화와 같이 움직이는지 | loss 하나만으로는 spatial relationship을 알기 어렵다. |
+| candidate decoder status | `emitted` 또는 `withheld_spatial_plateau` | 허위 좌표가 막혔는지 확인한다. |
+
+이 결과를 보면 다음에 무엇을 바꿀지 근거가 생긴다. 예를 들어 target은 다양하지만 prediction만 평평하면 model capacity나 learning rule을 살펴보고, target도 거의 평평하면 rasterization 또는 target scaling을 다시 검토한다. 이처럼 한 번에 여러 가지를 바꾸지 않는 것이 실험 결과를 이해하는 방법이다.
