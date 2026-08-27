@@ -912,3 +912,31 @@ Geometry gate의 결과가 rank 2 transform에만 의존할 수 있으므로, �
 여기서 높은 agreement는 “현재 candidate reporting이 alternative existing transform에서도 비교적 안정적”이라는 증거일 뿐이고, rank 2를 더 정당화하거나 absolute coordinate가 맞다고 증명하지 않는다. 반대로 agreement가 낮으면 가장 안전한 보고 방식은 raw camera pixel `(x_pixel, y_pixel)`을 primary location으로 두고 machine/part coordinate는 selected rank-2 **provisional metadata**로 분리하는 것이다.
 
 이 audit은 compact JSON/CSV만 만들며 raw TIFF, XCT CSV, target, checkpoint, score map을 전혀 읽지 않는다. 따라서 calibration uncertainty를 model quality 변화나 label 변경과 섞지 않고 독립적으로 검증할 수 있다.
+
+
+---
+
+## 37. Calibration rank comparison 결과: camera 좌표는 유지하고 part ID는 provisional로 둔다
+
+Rank 1과 rank 2 sensitivity audit의 핵심 결과는 다음과 같다.
+
+| 결과 | 값 | 해석 |
+|---|---:|---|
+| Rank 1에서 어떤 part 안에 있음 | 240/240 | candidate가 part-shaped geometry 안에서는 해석됨 |
+| Rank 2에서 어떤 part 안에 있음 | 240/240 | selected geometry에서도 containment 통과 |
+| 같은 part identity | **0/240** | mirror/orientation이 바뀌면 모든 part label이 달라짐 |
+| Rank 1→2 machine coordinate shift | median 14.463, p95 33.857 | machine XY 자체가 rank selection에 민감함 |
+| Endpoint별 same-part fraction | 모든 layer에서 0% | 일부 boundary candidate만의 문제가 아님 |
+
+두 rank는 displayed fit/LOO residual이 같지만, screen A–D와 physical part01–04를 연결하는 orientation이 반대다. 따라서 residual 숫자만으로 “camera의 이 위치는 확실히 part02”라고 말할 수 없다.
+
+그래서 현재 프로젝트의 candidate table은 다음처럼 보고한다.
+
+```text
+Primary:     x_pixel, y_pixel, layer_z, score
+Provenance:  x_model_pixel, y_model_pixel, stage=A
+Optional:    provisional_machine_xy_rank2, provisional_part_rank2
+Caution:     rank1-vs-rank2 same-part agreement=0%; coordinate shift summary attached
+```
+
+이 정책은 model의 score map이 불안정해서가 아니라 **calibration의 mirror/part-ID ambiguity**를 score semantics와 섞지 않기 위해서다. 다음 단계에서 authoritative build metadata, visible identifier 또는 수동 verified fiducial로 part identity anchor를 찾기 전까지, machine/part 값은 action input이나 physical location claim이 아니라 provisional metadata로만 유지한다.
