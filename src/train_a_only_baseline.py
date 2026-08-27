@@ -37,6 +37,7 @@ import yaml
 
 from ammt_masked_regression_loss import SupportMaskedSmoothL1Loss
 from ammt_weak_target_dataset import AMMTWeakTargetDataset
+from audit_machine_camera_calibration import PARTS, RECT, build_candidates
 
 
 @dataclass
@@ -256,6 +257,81 @@ def raw_coordinate_from_model_index(x_model: int, y_model: int, metadata: dict[s
     return x_raw, y_raw
 
 
+@dataclass(frozen=True)
+class ProvisionalPartGeometryGate:
+    """Optional candidate-only geometry filter; it never changes score-map inference."""
+
+    inverse_homography: np.ndarray
+    raw_offset_xy: tuple[float, float]
+    calibration_status: str
+    geometry_rank: int
+    orientation: str
+
+    def containing_part(self, raw_x: float, raw_y: float) -> str | None:
+        offset_x, offset_y = self.raw_offset_xy
+        homogeneous = self.inverse_homography @ np.array([raw_x - offset_x, raw_y - offset_y, 1.0], dtype=np.float64)
+        denominator = float(homogeneous[2])
+        if not math.isfinite(denominator) or abs(denominator) <= 1.0e-12:
+            return None
+        machine_xy = homogeneous[:2] / denominator
+        if not np.isfinite(machine_xy).all():
+            return None
+        x_value, y_value = float(machine_xy[0]), float(machine_xy[1])
+        tolerance = 1.0e-9
+        for part in PARTS:
+            x_min, x_max, y_min, y_max = RECT[part]
+            if x_min - tolerance <= x_value <= x_max + tolerance and y_min - tolerance <= y_value <= y_max + tolerance:
+                return str(part)
+        return None
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "name": "provisional_known_part_rectangle_filter",
+            "calibration_status": self.calibration_status,
+            "geometry_rank": self.geometry_rank,
+            "orientation": self.orientation,
+            "raw_pixel_global_offset_xy": list(self.raw_offset_xy),
+            "policy": "Filter local maxima to configured known part rectangles; withhold if no in-geometry maximum remains.",
+            "limit": "This uses provisional calibration only and does not confirm physical defect location or calibration accuracy.",
+        }
+
+
+def build_provisional_part_geometry_gate(evaluation_config: dict[str, Any], calibration_config_path: Path) -> ProvisionalPartGeometryGate | None:
+    """Return None by default so historical decoder behavior remains unchanged."""
+    gate_config = evaluation_config.get("provisional_part_geometry_gate", {})
+    if gate_config is None:
+        gate_config = {}
+    if not isinstance(gate_config, dict):
+        raise ValueError("evaluation.provisional_part_geometry_gate must be a mapping when provided.")
+    if not bool(gate_config.get("enabled", False)):
+        return None
+    if gate_config.get("policy") != "filter_local_maxima_to_known_part_rectangles":
+        raise ValueError("Enabled provisional part geometry gate requires the supported local-maxima filter policy.")
+    calibration_config = load_yaml(calibration_config_path)
+    controls_value = calibration_config["control_points"]["path"]
+    controls_path = Path(controls_value)
+    if not controls_path.is_absolute():
+        controls_path = Path.cwd() / controls_path
+    with controls_path.open("r", encoding="utf-8") as handle:
+        controls_payload = json.load(handle)
+    control_points = controls_payload.get("control_points")
+    if not isinstance(control_points, list):
+        raise ValueError("Calibration control JSON is missing control_points.")
+    rank = int(calibration_config["geometry_candidate"]["rank"])
+    candidates = build_candidates(control_points)
+    if not 1 <= rank <= len(candidates):
+        raise ValueError(f"Calibration rank {rank} is outside available candidate range.")
+    homography = np.asarray(candidates[rank - 1]["H"], dtype=np.float64)
+    return ProvisionalPartGeometryGate(
+        inverse_homography=np.linalg.inv(homography),
+        raw_offset_xy=tuple(float(value) for value in calibration_config["local_photometric_refinement"]["raw_pixel_global_offset_xy"]),
+        calibration_status=str(calibration_config["status"]),
+        geometry_rank=rank,
+        orientation=str(calibration_config["geometry_candidate"]["orientation"]),
+    )
+
+
 def local_maximum_candidates(
     prediction: Tensor,
     sample: dict[str, Any],
@@ -267,6 +343,7 @@ def local_maximum_candidates(
     previous_prediction: Tensor | None,
     temporal_map_mae_atol: float,
     temporal_map_max_abs_atol: float,
+    geometry_gate: ProvisionalPartGeometryGate | None = None,
 ) -> dict[str, Any]:
     """Decode local maxima, withholding arbitrary coordinates on a flat map."""
     if prediction.shape != (1, 1, prediction.shape[-2], prediction.shape[-1]):
@@ -344,38 +421,65 @@ def local_maximum_candidates(
 
     pooled = F.max_pool2d(candidate_map[None, None], kernel_size=kernel_size, stride=1, padding=kernel_size // 2)[0, 0]
     maxima = candidate_map == pooled
-    scores = candidate_map.masked_fill(~maxima, -torch.inf).flatten()
+    finite_maxima = maxima & torch.isfinite(candidate_map)
+    width = candidate_map.shape[1]
+    geometry_rejected_local_maximum_count = 0
+    geometry_allowed_local_maximum_count: int | None = None
+    geometry_part_by_flat_index: dict[int, str] = {}
+    if geometry_gate is not None:
+        for flat_index in torch.nonzero(finite_maxima.flatten(), as_tuple=False).flatten().tolist():
+            y_model, x_model = divmod(int(flat_index), int(width))
+            x_raw, y_raw = raw_coordinate_from_model_index(x_model, y_model, metadata)
+            part_name = geometry_gate.containing_part(x_raw, y_raw)
+            if part_name is None:
+                finite_maxima.flatten()[flat_index] = False
+                geometry_rejected_local_maximum_count += 1
+            else:
+                geometry_part_by_flat_index[int(flat_index)] = part_name
+        geometry_allowed_local_maximum_count = int(finite_maxima.sum().item())
+        status.update(
+            {
+                "provisional_part_geometry_gate": geometry_gate.metadata(),
+                "geometry_rejected_local_maximum_count": geometry_rejected_local_maximum_count,
+                "geometry_allowed_local_maximum_count": geometry_allowed_local_maximum_count,
+            }
+        )
+    scores = candidate_map.masked_fill(~finite_maxima, -torch.inf).flatten()
     count = min(top_k, int(torch.isfinite(scores).sum().item()))
     if count == 0:
         status.update(
             {
-                "candidate_status": "withheld_no_local_maximum",
-                "reason": "no finite local maximum was found",
+                "candidate_status": "withheld_outside_provisional_part_geometry" if geometry_gate is not None else "withheld_no_local_maximum",
+                "reason": (
+                    "no finite local maximum remained inside the configured provisional part rectangles"
+                    if geometry_gate is not None
+                    else "no finite local maximum was found"
+                ),
                 "candidate_count": 0,
                 "candidates": [],
             }
         )
         return status
     values, flat_indices = torch.topk(scores, k=count)
-    width = candidate_map.shape[1]
     candidates: list[dict[str, Any]] = []
     for rank, (score, flat_index) in enumerate(zip(values.tolist(), flat_indices.tolist()), start=1):
         y_model, x_model = divmod(int(flat_index), int(width))
         x_raw, y_raw = raw_coordinate_from_model_index(x_model, y_model, metadata)
-        candidates.append(
-            {
-                "rank": rank,
-                "x_pixel": x_raw,
-                "y_pixel": y_raw,
-                "x_model_pixel": x_model,
-                "y_model_pixel": y_model,
-                "layer_z": int(sample["endpoint_layer_z"]),
-                "score": float(score),
-                "score_semantics": "sigmoid-scaled XCT-derived continuous quality candidate; direction unresolved",
-                "stage": "A",
-                "sample_id": str(metadata["sample_id"]),
-            }
-        )
+        candidate_record: dict[str, Any] = {
+            "rank": rank,
+            "x_pixel": x_raw,
+            "y_pixel": y_raw,
+            "x_model_pixel": x_model,
+            "y_model_pixel": y_model,
+            "layer_z": int(sample["endpoint_layer_z"]),
+            "score": float(score),
+            "score_semantics": "sigmoid-scaled XCT-derived continuous quality candidate; direction unresolved",
+            "stage": "A",
+            "sample_id": str(metadata["sample_id"]),
+        }
+        if geometry_gate is not None:
+            candidate_record["provisional_geometry_containing_part"] = geometry_part_by_flat_index.get(int(flat_index))
+        candidates.append(candidate_record)
     status.update({"candidate_status": "emitted", "reason": None, "candidate_count": len(candidates), "candidates": candidates})
     return status
 
@@ -392,6 +496,7 @@ def evaluate_test_candidates(
     temporal_map_mae_atol: float,
     temporal_map_max_abs_atol: float,
     max_samples: int | None,
+    geometry_gate: ProvisionalPartGeometryGate | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     model.eval()
     candidates: list[dict[str, Any]] = []
@@ -414,6 +519,7 @@ def evaluate_test_candidates(
                 previous_prediction=previous_prediction,
                 temporal_map_mae_atol=temporal_map_mae_atol,
                 temporal_map_max_abs_atol=temporal_map_max_abs_atol,
+                geometry_gate=geometry_gate,
             )
             candidates.extend(result.pop("candidates"))
             endpoint_statuses.append(result)
@@ -584,6 +690,7 @@ def main() -> None:
         model, test_loader, loss_fn, device, best_epoch, "test", None,
         gradient_clip_norm=0.0, max_batches=args.max_eval_batches,
     )
+    geometry_gate = build_provisional_part_geometry_gate(evaluation_config, args.calibration_config)
     candidates, candidate_endpoint_statuses = evaluate_test_candidates(
         model,
         test_dataset,
@@ -596,6 +703,7 @@ def main() -> None:
         temporal_map_mae_atol=float(evaluation_config["temporal_map_mae_atol"]),
         temporal_map_max_abs_atol=float(evaluation_config["temporal_map_max_abs_atol"]),
         max_samples=args.max_test_samples,
+        geometry_gate=geometry_gate,
     )
     candidate_status_counts: dict[str, int] = {}
     for status in candidate_endpoint_statuses:
@@ -634,6 +742,7 @@ def main() -> None:
             "top_score_tie_fraction_max": float(evaluation_config["top_score_tie_fraction_max"]),
             "temporal_map_mae_atol": float(evaluation_config["temporal_map_mae_atol"]),
             "temporal_map_max_abs_atol": float(evaluation_config["temporal_map_max_abs_atol"]),
+            "provisional_part_geometry_gate": {"enabled": False} if geometry_gate is None else geometry_gate.metadata(),
             "endpoint_status_counts": candidate_status_counts,
             "endpoint_statuses": candidate_endpoint_statuses,
             "candidates": candidates,

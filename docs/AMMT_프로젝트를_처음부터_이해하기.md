@@ -846,3 +846,29 @@ Candidate coordinate audit의 결과는 두 가지를 분리해서 읽어야 한
 가능한 설명은 아직 셋 중 하나 이상으로 열어 둔다. model이 part 밖의 visual pattern에 높은 score를 주었을 수 있고, provisional calibration의 절대 위치가 충분히 정확하지 않을 수 있으며, screen-derived part rectangle과 working ROI의 convention에 차이가 있을 수도 있다. 지금 데이터만으로 하나를 원인으로 단정하지 않는다.
 
 > 따라서 현 240개는 machine coordinate로 operational하게 사용하거나 confirmed defect라고 보고하지 않는다. 안전한 다음 단계는 XCT support가 아니라 existing provisional part geometry만 사용해 part 밖 후보를 explicit hold하는 decoder safety gate다. 이 gate는 score map을 바꾸지 않고, “이 candidate는 current geometry convention에서 안전하게 해석할 수 없다”는 사실을 알려 준다.
+
+
+---
+
+## 34. Geometry-aware safety gate는 model을 다시 학습시키지 않는 후단 안전장치다
+
+All 240 original top-5 candidates가 current provisional part rectangles 밖으로 역투영됐기 때문에, score map을 다시 학습시키거나 XCT support를 deployment에 넣지 않고 candidate decoding 뒤에 geometry safety gate를 추가했다.
+
+```text
+score map
+  → flat / top-tie / temporal-invariance 기존 safety checks
+  → 7×7 local maxima 전체 탐색
+  → provisional part rectangle 안의 maxima만 남김
+  → 남은 maxima를 top-5로 정렬
+  → 하나도 없으면 explicit hold
+```
+
+이 gate는 `enabled: false`가 기본이다. 그러므로 이전 C8, E24, C32, residual config에는 영향을 주지 않는다. 오직 새 geometry-gated evaluation config에서만 켜진다.
+
+| gate 결과 | 의미 | 의미하지 않는 것 |
+|---|---|---|
+| `emitted` | current provisional geometry 안에 local maximum이 있어 compact candidate가 남음 | physical defect confirmation, absolute coordinate accuracy |
+| `withheld_outside_provisional_part_geometry` | current configured part geometry 안에 local maximum이 없어 coordinate를 안전하게 보류 | score map이 flat임, model이 실패했음, calibration이 확실히 틀림 |
+| 기존 `withheld_top_score_plateau` 등 | geometry 검사보다 먼저 기존 map quality safety가 동작 | XCT support를 deployment decoder가 사용함 |
+
+여기서 중요한 점은 gate가 score map, training loss, target, checkpoint를 바꾸지 않는다는 것이다. 저장된 residual epoch-6 checkpoint를 다시 읽어 test evaluation만 하고, original residual output은 건드리지 않는 별도 output directory에 compact metric와 candidate JSON만 쓴다. 따라서 geometry filter의 효과를 model quality 변화와 혼동하지 않고 비교할 수 있다.

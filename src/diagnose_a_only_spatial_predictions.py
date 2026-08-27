@@ -18,7 +18,13 @@ import torch
 from torch import Tensor
 
 from ammt_weak_target_dataset import AMMTWeakTargetDataset
-from train_a_only_baseline import AOnlyCausalCandidateNet, choose_device, load_yaml, local_maximum_candidates
+from train_a_only_baseline import (
+    AOnlyCausalCandidateNet,
+    build_provisional_part_geometry_gate,
+    choose_device,
+    load_yaml,
+    local_maximum_candidates,
+)
 
 
 def tensor_stats(values: Tensor) -> dict[str, float] | None:
@@ -100,6 +106,7 @@ def main() -> None:
     model.eval()
     dataset = make_dataset(args)
     plateau_atol = float(evaluation_config["spatial_plateau_range_atol"])
+    geometry_gate = build_provisional_part_geometry_gate(evaluation_config, args.calibration_config)
 
     summaries: list[dict[str, Any]] = []
     previous_prediction: Tensor | None = None
@@ -128,6 +135,7 @@ def main() -> None:
                 previous_prediction=previous_prediction,
                 temporal_map_mae_atol=float(evaluation_config["temporal_map_mae_atol"]),
                 temporal_map_max_abs_atol=float(evaluation_config["temporal_map_max_abs_atol"]),
+                geometry_gate=geometry_gate,
             )
             decoded_candidates = decoder_result.pop("candidates")
             summaries.append(
@@ -153,6 +161,9 @@ def main() -> None:
                     "candidate_decoder_status": str(decoder_result["candidate_status"]),
                     "candidate_decoder_reason": decoder_result["reason"],
                     "candidate_decoder_count": len(decoded_candidates),
+                    "provisional_part_geometry_gate": decoder_result.get("provisional_part_geometry_gate", {"enabled": False}),
+                    "geometry_rejected_local_maximum_count": decoder_result.get("geometry_rejected_local_maximum_count"),
+                    "geometry_allowed_local_maximum_count": decoder_result.get("geometry_allowed_local_maximum_count"),
                 }
             )
             previous_prediction = prediction_4d.clone()
@@ -170,6 +181,7 @@ def main() -> None:
                 "top_score_tie_fraction_max": float(evaluation_config["top_score_tie_fraction_max"]),
                 "temporal_map_mae_atol": float(evaluation_config["temporal_map_mae_atol"]),
                 "temporal_map_max_abs_atol": float(evaluation_config["temporal_map_max_abs_atol"]),
+                "provisional_part_geometry_gate": {"enabled": False} if geometry_gate is None else geometry_gate.metadata(),
                 "samples": summaries,
                 "interpretation": "Flat prediction maps must not produce physical coordinate candidates. Correlation is descriptive only while response direction remains unresolved.",
             },

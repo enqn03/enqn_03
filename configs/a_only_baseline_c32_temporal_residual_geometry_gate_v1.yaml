@@ -1,0 +1,93 @@
+version: 1
+status: read_only_geometry_gated_candidate_evaluation
+purpose: >
+  Read-only post-training evaluation of the saved C32 temporal-residual
+  checkpoint with a default-disabled, provisional known-part geometry safety gate
+  enabled only for compact candidate decoding. It does not retrain or alter the
+  score map, loss, weak target, checkpoint, or response direction.
+comparison:
+  reference_config: configs/a_only_baseline_c32_temporal_residual_v1.yaml
+  reference_checkpoint: outputs/a_only_baseline_c32_temporal_residual_v1/best_validation_supported_loss.pt
+  reference_candidate_output: outputs/a_only_baseline_c32_temporal_residual_v1/test_coordinate_candidates.json
+  only_changed_evaluation_variable: evaluation.provisional_part_geometry_gate.enabled
+  unchanged_variables: >
+    A-stage causal input, model architecture and residual bypass, checkpoint,
+    causal manifest, normalization, calibration source, registered XCT source,
+    weak target sigma=2, masked loss, and existing spatial/tie/temporal decoder
+    gates remain fixed. This config is used only by evaluate_a_only_checkpoint.py.
+data:
+  stage: A
+  sequence_length_k: 4
+  input_channels: 6
+  model_resolution: [256, 256]
+  batch_size: 2
+  num_workers: 0
+  pin_memory: false
+model:
+  name: a_only_causal_candidate_net
+  base_channels: 32
+  temporal_kernel_size: 3
+  use_endpoint_feature_residual: true
+  residual_equation: temporal_final = encoded_endpoint + temporal_update
+  causal_policy: >
+    encoded_endpoint is the current A frame and temporal_update uses only the
+    same causal K=4 history. No future layer, B-stage, or XCT value is input.
+  output_activation: sigmoid
+  output_name: candidate_response_prediction
+loss:
+  config: configs/masked_regression_loss_v1.yaml
+  target_name: xct_derived_continuous_quality_response
+  response_direction: unresolved
+optimizer:
+  name: AdamW
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+training:
+  epochs: 8
+  seed: 20260827
+  device: auto
+  select_best_by: validation_supported_pixel_mean_smooth_l1
+  skip_optimizer_step_when_batch_has_no_support: true
+evaluation:
+  top_k_candidates_per_endpoint: 5
+  local_maximum_kernel_size: 7
+  spatial_plateau_range_atol: 0.000001
+  top_score_tie_atol: 0.000001
+  top_score_tie_fraction_max: 0.001
+  temporal_map_mae_atol: 0.000001
+  temporal_map_max_abs_atol: 0.000001
+  provisional_part_geometry_gate:
+    enabled: true
+    policy: filter_local_maxima_to_known_part_rectangles
+    source: configs/calibration_v1.yaml geometry_candidate and audit_machine_camera_calibration.RECT
+    status: provisional_safety_gate
+    deployment_policy: >
+      Filter only local maxima used for compact candidate ranking. Do not alter
+      score maps, training loss, weak target support, or response semantics.
+      If no local maximum remains inside configured part rectangles, return
+      withheld_outside_provisional_part_geometry.
+    limitation: >
+      Passing this gate means only that a candidate lies inside the configured
+      provisional geometry; it is not a metrology confirmation or defect label.
+  spatial_plateau_policy: >
+    Retain all original support-independent safety gates before applying the
+    optional geometry filter. No XCT support mask is used by the decoder.
+  score_semantics: >
+    Sigmoid-scaled prediction of the XCT-derived continuous quality response.
+    It is not an anomaly probability or confirmed defect score while response
+    direction remains unresolved.
+storage:
+  output_directory: outputs/a_only_baseline_c32_temporal_residual_geometry_gate_v1
+  overwrite_output_directory: false
+  checkpoint_name: best_validation_supported_loss.pt
+  history_name: training_history.json
+  test_metrics_name: test_metrics.json
+  test_candidates_name: test_coordinate_candidates.json
+  persist_dense_heatmaps: false
+provenance:
+  causal_manifest: manifests/causal_sequence_manifest.csv
+  normalization_config: configs/normalization_v1.yaml
+  calibration_config: configs/calibration_v1.yaml
+  weak_target_config: configs/weak_target_v1.yaml
+  loss_config: configs/masked_regression_loss_v1.yaml

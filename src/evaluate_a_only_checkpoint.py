@@ -21,6 +21,7 @@ import torch
 from ammt_masked_regression_loss import SupportMaskedSmoothL1Loss
 from train_a_only_baseline import (
     AOnlyCausalCandidateNet,
+    build_provisional_part_geometry_gate,
     choose_device,
     evaluate_test_candidates,
     load_yaml,
@@ -109,6 +110,7 @@ def main() -> None:
         gradient_clip_norm=0.0,
         max_batches=None,
     )
+    geometry_gate = build_provisional_part_geometry_gate(evaluation_config, args.calibration_config)
     candidates, endpoint_statuses = evaluate_test_candidates(
         model=model,
         dataset=test_dataset,
@@ -121,6 +123,7 @@ def main() -> None:
         temporal_map_mae_atol=float(evaluation_config["temporal_map_mae_atol"]),
         temporal_map_max_abs_atol=float(evaluation_config["temporal_map_max_abs_atol"]),
         max_samples=args.max_test_samples,
+        geometry_gate=geometry_gate,
     )
     status_counts: dict[str, int] = {}
     for endpoint_status in endpoint_statuses:
@@ -154,6 +157,7 @@ def main() -> None:
             "top_score_tie_fraction_max": float(evaluation_config["top_score_tie_fraction_max"]),
             "temporal_map_mae_atol": float(evaluation_config["temporal_map_mae_atol"]),
             "temporal_map_max_abs_atol": float(evaluation_config["temporal_map_max_abs_atol"]),
+            "provisional_part_geometry_gate": {"enabled": False} if geometry_gate is None else geometry_gate.metadata(),
             "endpoint_status_counts": status_counts,
             "endpoint_statuses": endpoint_statuses,
             "candidates": candidates,
@@ -168,6 +172,7 @@ def main() -> None:
                 "device": str(device),
                 "test": asdict(test_metrics),
                 "candidate_count": len(candidates),
+                "provisional_part_geometry_gate": {"enabled": False} if geometry_gate is None else geometry_gate.metadata(),
                 "endpoint_status_counts": status_counts,
                 "test_metrics_path": str(test_metrics_path),
                 "test_candidates_path": str(test_candidates_path),
