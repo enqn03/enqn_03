@@ -20,7 +20,8 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Machine XY→camera pixel calibration | 완료·provisional | rank2 `mirror_rotate_270`, raw correction `(0,-6)` px; 독립 calibration 전까지 provisional |
 | Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
 | Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
-| A-only support-mask weighted baseline | 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
+| Support-mask weighted continuous regression loss | 구현 완료·runtime 검증 대기 | support pixel만 Smooth L1; support가 없는 batch는 loss=0 |
+| A-only support-mask weighted baseline | loss 검증 후 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
 ## 연구 흐름
@@ -116,7 +117,7 @@ flowchart TD
 | weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
 | XCT response 방향 검증·support-mask weighted loss | 진행 예정 | 15% |
 
-남은 15%는 모델 입력 자체가 아니라 **학습 target의 의미와 loss 연결**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. 다음 구현은 `weak_support_mask==1`에서만 regression을 계산하는 loss와 A-only baseline이다.
+남은 15%는 모델 입력 자체가 아니라 **학습 target의 의미와 baseline 연결**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss 모듈은 구현됐으며, z=4 unknown·z=128 supported sample을 이용한 runtime 검증 뒤 A-only baseline에 연결한다.
 
 ## 실행 순서
 
