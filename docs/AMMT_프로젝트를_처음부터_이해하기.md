@@ -823,3 +823,26 @@ raw layer-camera pixel
 이 audit은 TIFF, XCT CSV, target, model, checkpoint를 전혀 읽지 않는다. 새로운 dense heatmap도 만들지 않고, 작은 CSV/JSON 숫자만 남긴다.
 
 > 특히 “round trip이 통과했다”는 말은 같은 provisional calibration 식을 정방향·역방향으로 적용했을 때 숫자가 되돌아온다는 뜻이다. 현재 calibration에는 fit RMSE 약 5.2px, LOO RMSE 약 7.0px가 있으므로, 이 검사만으로 절대 machine coordinate 정확도가 확정되지는 않는다.
+
+
+---
+
+## 33. 좌표 계산은 맞았지만, 현재 part 영역에서는 후보를 보류해야 한다
+
+Candidate coordinate audit의 결과는 두 가지를 분리해서 읽어야 한다.
+
+| 결과 | 값 | 의미 |
+|---|---:|---|
+| Grid/ROI/sensor domain | 240/240 통과 | 후보 pixel이 camera와 model grid의 유효 범위 안에 있음 |
+| Score contract | 240/240 finite, 0–1 | continuous score 형식이 정상 |
+| Camera round trip | 최대 약 `4.69e-13` pixel | 현재 homography/offset 식을 정·역으로 적용하면 수치상 되돌아옴 |
+| Grid round trip | 최대 0 pixel | model grid center convention이 decoder와 일치 |
+| Edge margin | 모두 3 pixel 이상 | model boundary warning 없음 |
+| 같은 endpoint 좌표 중복 | 0 | endpoint별 top-5가 같은 cell을 반복하지 않음 |
+| Inverse machine coordinate가 known part rectangle 안에 있음 | **0/240** | physical machine/part coordinate로 해석하면 안 됨 |
+
+즉 “계산식은 서로 맞는다”와 “후보가 실제 part 위에 있다”는 완전히 다른 질문이다. 전자는 통과했지만 후자는 현재 provisional calibration과 configured part geometry 아래에서 전부 실패했다.
+
+가능한 설명은 아직 셋 중 하나 이상으로 열어 둔다. model이 part 밖의 visual pattern에 높은 score를 주었을 수 있고, provisional calibration의 절대 위치가 충분히 정확하지 않을 수 있으며, screen-derived part rectangle과 working ROI의 convention에 차이가 있을 수도 있다. 지금 데이터만으로 하나를 원인으로 단정하지 않는다.
+
+> 따라서 현 240개는 machine coordinate로 operational하게 사용하거나 confirmed defect라고 보고하지 않는다. 안전한 다음 단계는 XCT support가 아니라 existing provisional part geometry만 사용해 part 밖 후보를 explicit hold하는 decoder safety gate다. 이 gate는 score map을 바꾸지 않고, “이 candidate는 current geometry convention에서 안전하게 해석할 수 없다”는 사실을 알려 준다.
