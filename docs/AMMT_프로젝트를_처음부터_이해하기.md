@@ -1114,3 +1114,20 @@ Dot/Checkerboard에서는 후보들이 일정한 간격으로 배열되는지 ne
 여기서 ROI는 “기준판처럼 보이는 detector 영역”일 뿐이다. 실제 물리 board boundary, camera의 perspective correction, machine coordinate가 아니다. Red cluster도 “가까운 red evidence를 모은 candidate”일 뿐 machine origin이라는 이름을 붙이지 않는다.
 
 다음 실행 후에는 V2 overlay에서 cyan candidate가 실제 dot/checkerboard panel에 얼마나 깨끗하게 모이는지, 그리고 central red cluster가 expected visual spot을 따라가는지를 확인한다. 세 가지가 모두 좋아도 그 결과는 **calibration fit을 설계해도 되는가**를 판단하는 자료일 뿐이다. Homography를 계산하거나 candidate의 machine coordinate를 결정하려면 별도의 승인과 검증이 필요하다.
+
+
+### 44.1 V2 결과: DotGrid와 central red marker는 다음 설계 검토에 쓸 수 있다
+
+V2에서 가장 중요한 변화는 두 가지다. 첫째, DotGrid의 cyan 후보가 실제 점 panel에 잘 맞아 들어갔고 이웃 간격의 변동도 기준을 통과했다. 둘째, central red spot의 여러 조각이 하나의 cluster로 모여, 왼쪽 반사광과 분리됐다.
+
+| 증거 | 결과 | 이번에 말할 수 있는 것 |
+|---|---:|---|
+| DotGrid | 후보 1,616개, spacing CV=`0.3262` | layer camera 안에서 dot-grid pattern을 더 정밀하게 index하는 설계를 검토할 수 있다. |
+| Central red cluster | 34개 조각, 중심 `(2582.34,2029.18)`, spread=`40.27 px` | red marker가 있는 central region을 reflection과 분리해 candidate로 기록할 수 있다. |
+| Checkerboard | 후보 410개, CV=`0.5040` | corner가 일부 보이지만 board 전체 lattice로 쓰는 방법은 아직 보류한다. |
+
+NIST 원문은 이 상황에 맞는 두 번째 방법을 설명한다. secondary camera에서 red dot으로 dot-grid 위의 machine `(0,0)` 위치를 찾고, layer camera가 촬영한 DotGrid로 layer-camera pixel 좌표와 dot-grid 좌표를 연결하는 방법이다. 원문은 dot 간격, grid origin, machine origin의 dot-grid 위치, relative orientation도 보고한다.[1]
+
+하지만 다음 단계는 이 숫자를 곧바로 `calibration_v1.yaml`에 넣는 단계가 아니다. 먼저 layer-camera DotGrid에서 **각 dot이 50×50 grid의 몇 번째 dot인지** 안정적으로 index하고, 일부 dot을 일부러 제외한 뒤에도 mapping이 나머지 dot을 잘 예측하는지 held-out residual로 시험해야 한다. 이 검증을 별도로 통과한 후보 transform만 existing rank 1/2와 비교할 수 있다. 그 전까지 실제 model output의 primary location은 계속 raw camera pixel이다.
+
+[1] [Lane & Yeung (2020), *Process Monitoring Dataset from the AMMT: Overhang Part X4*, Sec. 5.2 and Figs. 14–15](https://doi.org/10.6028/jres.125.027)
