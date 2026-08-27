@@ -20,8 +20,8 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Machine XY→camera pixel calibration | 완료·provisional | rank2 `mirror_rotate_270`, raw correction `(0,-6)` px; 독립 calibration 전까지 provisional |
 | Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
 | Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
-| Support-mask weighted continuous regression loss | 구현 완료·runtime 검증 대기 | support pixel만 Smooth L1; support가 없는 batch는 loss=0 |
-| A-only support-mask weighted baseline | loss 검증 후 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
+| Support-mask weighted continuous regression loss | 완료·runtime 검증 통과 | z=4 loss/gradient=0, z=128 support-only regression, unknown 영향=0 |
+| A-only support-mask weighted baseline | 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
 ## 연구 흐름
@@ -56,6 +56,7 @@ registered XCT sparse support → screen-corner controls → 192 part/orientatio
 | `src/` | 재현 가능한 분석·전처리 코드 |
 | `프로젝트과정.md` | 기술적 의사결정, 현재 상태, 다음 검증 흐름 |
 | `docs/quality-control-images.md` | Git으로 보존한 11개 QC PNG의 panel별 의미·판정 한계·모델 영향 |
+| `docs/AMMT_프로젝트를_처음부터_이해하기.md` | 초심자 관점의 프로젝트 목적·데이터·검증·학습 흐름 안내서 |
 
 ## 핵심 기술 원칙
 
@@ -107,7 +108,7 @@ flowchart TD
 
 ## 현재 전처리 진행률
 
-현재 전처리는 **약 85% 완료**로 판단한다. 이 수치는 raw input 준비와 sparse spatial supervision의 runtime 연결을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset과 available/unknown sample 검증까지 완료됐다.
+현재 전처리와 target-loss 연결은 **약 90% 완료**로 판단한다. 이 수치는 raw input 준비, sparse spatial supervision의 runtime 연결, unknown-safe loss 검증을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset, available/unknown sample 검증, support-masked regression loss runtime 검증까지 완료됐다.
 
 | 구간 | 상태 | 전처리 비중 |
 |---|---|---:|
@@ -115,9 +116,9 @@ flowchart TD
 | 시계열 split·normalization·input Dataset | 완료 | 25% |
 | XCT sparse supervision·calibration·support audit | 완료 | 35% |
 | weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
-| XCT response 방향 검증·support-mask weighted loss | 진행 예정 | 15% |
+| XCT response direction 검증·A-only baseline 연결 | 진행 예정 | 10% |
 
-남은 15%는 모델 입력 자체가 아니라 **학습 target의 의미와 baseline 연결**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss 모듈은 구현됐으며, z=4 unknown·z=128 supported sample을 이용한 runtime 검증 뒤 A-only baseline에 연결한다.
+남은 10%는 **첫 baseline의 모델 연결과 target 의미 검증**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했으며, 다음 단계에서 A-only baseline에 연결한다.
 
 ## 실행 순서
 
