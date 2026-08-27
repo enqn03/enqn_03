@@ -1,0 +1,85 @@
+version: 1
+status: controlled_temporal_residual_experiment
+purpose: >
+  Controlled A-only temporal-residual experiment. This config is identical to
+  configs/a_only_baseline_c32_v1.yaml except that
+  model.use_endpoint_feature_residual=true and the output directory is new.
+  It tests whether an endpoint-frame residual bypass preserves A-input variation
+  that C32 lost at the temporal aggregation path. It is not a binary defect classifier.
+comparison:
+  reference_config: configs/a_only_baseline_c32_v1.yaml
+  reference_run: outputs/a_only_baseline_c32_v1
+  only_changed_model_variable: model.use_endpoint_feature_residual
+  unchanged_variables: >
+    Causal manifest, A-stage TIFF, six input channels, ROI, normalization,
+    registered XCT source, calibration, weak target rasterization sigma=2,
+    masked loss, base_channels=32, temporal kernel, seed, optimizer, batch size,
+    eight training epochs, candidate decoder, and train/validation/test split
+    remain fixed.
+data:
+  stage: A
+  sequence_length_k: 4
+  input_channels: 6
+  model_resolution: [256, 256]
+  batch_size: 2
+  num_workers: 0
+  pin_memory: false
+model:
+  name: a_only_causal_candidate_net
+  base_channels: 32
+  temporal_kernel_size: 3
+  use_endpoint_feature_residual: true
+  residual_equation: temporal_final = encoded_endpoint + temporal_update
+  temporal_update_description: >
+    The past-only padded Conv3D, GroupNorm, and SiLU temporal update remains
+    unchanged. The endpoint encoder feature is added before the unchanged decoder.
+  causal_policy: >
+    encoded_endpoint is from the current endpoint A frame and temporal_update
+    uses only the same causal K=4 history; no future layer is read.
+  output_activation: sigmoid
+  output_name: candidate_response_prediction
+loss:
+  config: configs/masked_regression_loss_v1.yaml
+  target_name: xct_derived_continuous_quality_response
+  response_direction: unresolved
+optimizer:
+  name: AdamW
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+training:
+  epochs: 8
+  seed: 20260827
+  device: auto
+  select_best_by: validation_supported_pixel_mean_smooth_l1
+  skip_optimizer_step_when_batch_has_no_support: true
+evaluation:
+  top_k_candidates_per_endpoint: 5
+  local_maximum_kernel_size: 7
+  spatial_plateau_range_atol: 0.000001
+  top_score_tie_atol: 0.000001
+  top_score_tie_fraction_max: 0.001
+  temporal_map_mae_atol: 0.000001
+  temporal_map_max_abs_atol: 0.000001
+  spatial_plateau_policy: >
+    Return no coordinate candidate when the entire prediction map is numerically
+    flat, when the top score is tied across more than 0.1 percent of model pixels,
+    or when consecutive endpoint maps are numerically invariant. These are
+    support-independent decoder safety gates, not defect thresholds.
+  score_semantics: >
+    Sigmoid-scaled prediction of the XCT-derived continuous quality response.
+    It is not an anomaly probability or confirmed defect score while response
+    direction remains unresolved.
+storage:
+  output_directory: outputs/a_only_baseline_c32_temporal_residual_v1
+  overwrite_output_directory: false
+  checkpoint_name: best_validation_supported_loss.pt
+  history_name: training_history.json
+  test_metrics_name: test_metrics.json
+  test_candidates_name: test_coordinate_candidates.json
+  persist_dense_heatmaps: false
+provenance:
+  causal_manifest: manifests/causal_sequence_manifest.csv
+  normalization_config: configs/normalization_v1.yaml
+  weak_target_config: configs/weak_target_v1.yaml
+  loss_config: configs/masked_regression_loss_v1.yaml

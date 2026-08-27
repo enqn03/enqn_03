@@ -93,6 +93,7 @@ def main() -> None:
         input_channels=int(data_config["input_channels"]),
         base_channels=int(model_config["base_channels"]),
         temporal_kernel_size=int(model_config["temporal_kernel_size"]),
+        use_endpoint_feature_residual=bool(model_config.get("use_endpoint_feature_residual", False)),
     ).to(device)
     checkpoint = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])

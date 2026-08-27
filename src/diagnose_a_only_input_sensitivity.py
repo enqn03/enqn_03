@@ -68,7 +68,8 @@ def stagewise_forward(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[s
     encoded_for_temporal = encoded_history.permute(0, 2, 1, 3, 4)
     padded = F.pad(encoded_for_temporal, (0, 0, 0, 0, model.temporal_kernel_size - 1, 0))
     temporal_history = F.silu(model.temporal_norm(model.temporal(padded)))
-    temporal_final = temporal_history[:, :, -1]
+    temporal_update = temporal_history[:, :, -1]
+    temporal_final = encoded_history[:, -1] + temporal_update if model.use_endpoint_feature_residual else temporal_update
     logits = model.decoder(temporal_final)
     score = torch.sigmoid(logits)
     return {
@@ -159,6 +160,7 @@ def main() -> None:
         input_channels=int(data_config["input_channels"]),
         base_channels=int(model_config["base_channels"]),
         temporal_kernel_size=int(model_config["temporal_kernel_size"]),
+        use_endpoint_feature_residual=bool(model_config.get("use_endpoint_feature_residual", False)),
     ).to(device)
     checkpoint = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -236,6 +238,7 @@ def main() -> None:
         "model": {
             "base_channels": int(model_config["base_channels"]),
             "temporal_kernel_size": int(model_config["temporal_kernel_size"]),
+            "use_endpoint_feature_residual": bool(model_config.get("use_endpoint_feature_residual", False)),
             "input_channels": int(data_config["input_channels"]),
         },
         "samples": sample_rows,

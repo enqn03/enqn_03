@@ -725,3 +725,26 @@ Audit 결과 sigma=3은 좋은 점과 보류해야 할 점을 동시에 보였�
 이 bypass는 현재 layer의 A feature를 직접 보존한다. 동시에 temporal update는 과거 3개 layer 정보를 계속 담는다. 현재 layer와 과거 layer만 쓰므로 미래 layer를 보는 leakage는 생기지 않는다.
 
 > 아직 model은 바꾸지 않는다. 먼저 이 변경의 범위, 기존 baseline 보존 방법, separate config/output path를 승인받은 뒤에만 dry-run과 controlled training을 준비한다.
+
+
+---
+
+## 29. temporal residual bypass는 무엇을 바꾸고, 무엇을 그대로 두는가
+
+이제 새 model option `use_endpoint_feature_residual`을 만들었다. 기본값은 `false`다. 그래서 이전 C8/E24/C32 checkpoint를 읽을 때는 예전 model과 같은 길로 계산되며, 기존 결과는 바뀌지 않는다.
+
+새 residual experiment config에서만 option을 `true`로 켠다. 그때 model 내부는 다음처럼 작동한다.
+
+```text
+현재 endpoint A frame ─> frame encoder ────────────────┐
+                                                        + ─> decoder ─> score map
+최근 4개 A history ─> past-only Conv3D/GroupNorm/SiLU ──┘
+```
+
+| 유지하는 것 | 바꾸는 한 가지 |
+|---|---|
+| A TIFF, K=4 causal history, 6 input channel, normalization, XCT weak target, sigma=2, masked loss, optimizer, seed, epoch=8, base channel=32, safety decoder | endpoint encoder feature를 temporal update에 더하는 residual bypass |
+
+이것은 현재 A frame의 visual feature가 temporal block에서 완전히 사라져도 decoder까지 갈 수 있는 경로를 준다. 동시에 past-only temporal branch는 과거 layer 문맥을 계속 제공한다. 따라서 model이 “현재 A 이미지와 시간 문맥을 모두 이용할 수 있는가”를 검사하는 공정한 실험이 된다.
+
+다음 dry run은 아직 학습이 아니다. model을 RAM에서 한 번 만들고 z=128 sample 하나가 input→target→masked loss까지 error 없이 흐르는지 확인한다. checkpoint, output directory, dense heatmap은 만들지 않는다. dry run이 통과한 뒤에만 8-epoch controlled training을 시작할지 별도로 결정한다.

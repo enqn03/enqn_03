@@ -76,11 +76,19 @@ class AOnlyCausalCandidateNet(nn.Module):
     is a sigmoid-scaled [B,1,H,W] continuous response prediction.
     """
 
-    def __init__(self, input_channels: int = 6, base_channels: int = 8, temporal_kernel_size: int = 3) -> None:
+    def __init__(
+        self,
+        input_channels: int = 6,
+        base_channels: int = 8,
+        temporal_kernel_size: int = 3,
+        use_endpoint_feature_residual: bool = False,
+    ) -> None:
         super().__init__()
         if temporal_kernel_size < 1 or temporal_kernel_size % 2 == 0:
             raise ValueError("temporal_kernel_size must be a positive odd integer.")
         self.temporal_kernel_size = temporal_kernel_size
+        # Default False preserves the architecture and state-dict contract of C8/E24/C32.
+        self.use_endpoint_feature_residual = bool(use_endpoint_feature_residual)
         self.frame_encoder = nn.Sequential(
             ConvNormAct(input_channels, base_channels),
             ConvNormAct(base_channels, base_channels),
@@ -106,12 +114,15 @@ class AOnlyCausalCandidateNet(nn.Module):
         if channels != 6:
             raise ValueError(f"A-only baseline expects six channels, got {channels}.")
 
-        encoded = self.frame_encoder(history.reshape(batch * steps, channels, height, width))
-        encoded = encoded.reshape(batch, steps, encoded.shape[1], height, width).permute(0, 2, 1, 3, 4)
+        encoded_history = self.frame_encoder(history.reshape(batch * steps, channels, height, width))
+        encoded_history = encoded_history.reshape(batch, steps, encoded_history.shape[1], height, width)
+        encoded_endpoint = encoded_history[:, -1]
+        encoded_for_temporal = encoded_history.permute(0, 2, 1, 3, 4)
         # F.pad order for 5D tensors: W-left/right, H-left/right, T-left/right.
-        encoded = F.pad(encoded, (0, 0, 0, 0, self.temporal_kernel_size - 1, 0))
-        temporal_features = F.silu(self.temporal_norm(self.temporal(encoded)))
-        logits = self.decoder(temporal_features[:, :, -1])
+        padded_history = F.pad(encoded_for_temporal, (0, 0, 0, 0, self.temporal_kernel_size - 1, 0))
+        temporal_update = F.silu(self.temporal_norm(self.temporal(padded_history)))[:, :, -1]
+        temporal_final = encoded_endpoint + temporal_update if self.use_endpoint_feature_residual else temporal_update
+        logits = self.decoder(temporal_final)
         return torch.sigmoid(logits)
 
 
@@ -505,6 +516,7 @@ def main() -> None:
         input_channels=int(data_config["input_channels"]),
         base_channels=int(model_config["base_channels"]),
         temporal_kernel_size=int(model_config["temporal_kernel_size"]),
+        use_endpoint_feature_residual=bool(model_config.get("use_endpoint_feature_residual", False)),
     ).to(device)
     loss_fn = SupportMaskedSmoothL1Loss(beta=float(objective["beta"]))
 
