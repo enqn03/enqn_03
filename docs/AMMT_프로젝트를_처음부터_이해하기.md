@@ -554,3 +554,21 @@ spatial diagnostic을 실제 checkpoint에 실행해 보니 처음 예상보다 
 이 evaluator는 저장된 checkpoint를 읽고 test data를 한 번 통과시킨 뒤, 아직 없던 두 결과 파일만 만든다. optimizer update, backward, 새로운 random initialization, checkpoint overwrite는 전혀 없다. 즉 “학습을 다시 하는 것”이 아니라 “이미 학습한 model의 시험지를 채점하는 것”에 가깝다.
 
 > 이 과정이 끝나면 8 epoch와 24 epoch 중 어느 쪽이 held-out test에서 더 나은지, 그리고 24 epoch가 반복 map 문제를 해결했는지를 공정하게 비교할 수 있다.
+
+
+---
+
+## 21. 평가 코드의 설정 이름 오류는 왜 학습을 망치지 않았는가
+
+checkpoint-only evaluator를 처음 실행했을 때, loss 설정에서 `loss.smooth_l1_beta`라는 이름을 찾으려 했지만 실제 설정에는 `objective.beta`가 있었다. 즉 evaluator가 설정표의 칸 이름을 잘못 읽은 오류였다.
+
+이 오류는 test data를 읽거나 checkpoint를 수정하기 **전**에 loss 계산기를 준비하는 단계에서 멈췄다. 그래서 이미 저장된 e24 checkpoint와 TIFF/XCT data는 전혀 바뀌지 않았다. e24 output folder에도 checkpoint 하나만 남아 있고, 아직 test result JSON은 없었다.
+
+| 확인한 것 | 결과 | 왜 중요한가 |
+|---|---|---|
+| 실제 loss 설정 | `objective.beta = 0.1` | training 때 쓴 Smooth L1 설정과 같아야 공정하게 비교 가능 |
+| 오류 시점 | evaluation 시작 전 | 원본 data와 checkpoint가 안전함 |
+| recovery 방식 | key 이름만 맞추고 checkpoint를 다시 읽음 | 24 epoch 학습을 다시 할 필요가 없음 |
+| output 보호 | test JSON이 이미 있으면 evaluator가 쓰기를 거부 | 결과를 실수로 덮어쓰지 않음 |
+
+이제 evaluator는 training과 같은 beta=0.1 loss를 사용해 e24 checkpoint의 held-out test 성능과 candidate safety status만 계산한다. 이것도 “학습”이 아니라 저장된 모델의 시험지를 다시 채점하는 과정이다.

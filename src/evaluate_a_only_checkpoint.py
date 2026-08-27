@@ -87,7 +87,7 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    loss_fn = SupportMaskedSmoothL1Loss(beta=float(loss_config["loss"]["smooth_l1_beta"]))
+    loss_fn = SupportMaskedSmoothL1Loss(beta=float(loss_config["objective"]["beta"]))
     test_dataset = make_dataset(args, split="test")
     test_loader = make_loader(
         test_dataset,
