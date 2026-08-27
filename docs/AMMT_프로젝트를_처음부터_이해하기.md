@@ -354,3 +354,25 @@ mask = 0인 pixel은 계산에서 완전히 제외
 4. candidate 위치가 support·XCT 검토와 공간적으로 말이 되는지 확인한다.
 
 이 단계가 끝나면 비로소 “전처리와 target 규칙을 갖춘 A-only 모델이 실제로 학습되고 평가됐다”라고 포트폴리오에 쓸 수 있다.
+
+
+---
+
+## 13. A-only 모델이 실제로 연결되는지 먼저 확인했다
+
+실제 training을 하기 전에 **dry-run**을 실행했다. dry-run은 model을 한 번 통과시켜 보되, model의 내부 값을 바꾸지 않고 파일도 저장하지 않는 사전 점검이다. 자동차를 출발시키기 전에 시동, 브레이크, 계기판이 연결됐는지 보는 것과 비슷하다.
+
+이번 dry-run의 결과는 다음과 같다.
+
+| 확인한 것 | 결과 | 쉬운 해석 |
+|---|---|---|
+| 실행 장치 | Apple `mps` | 현재 Mac의 GPU 가속 환경에서 model 계산이 가능했다. |
+| model 입력 | `[1,4,6,256,256]` | 한 번에 sample 1개, 최근 layer 4개, layer마다 정보 6장, 각 이미지 256×256으로 들어갔다. |
+| model 출력 | `[1,1,256,256]` | 한 endpoint layer에 대한 candidate response map 한 장이 나왔다. |
+| output 범위 | 약 0.518 | sigmoid를 썼으므로 0~1 범위를 벗어나지 않았다. 아직 학습 전이라 화면 전체가 거의 같은 값인 것은 정상이다. |
+| reference 연결 | z=128, support pixel=3,439 | XCT reference가 존재하는 위치가 model loss 계산까지 연결됐다. |
+| masked loss | 0.11099906 | 숫자가 정상적으로 계산됐다. 이 숫자는 아직 model 성능이 아니라 “연결이 된다”는 확인값이다. |
+
+따라서 이제 model, input, XCT weak target, support mask, loss가 한 줄로 이어졌다. 다음 실제 training에서는 model이 여러 train sample을 반복해서 보면서, support가 있는 위치에서만 prediction을 조금씩 바꿔 weak response에 가까워지도록 학습한다.
+
+> **현재 단계:** 전처리와 학습 안전장치는 준비됐고, 첫 A-only training만 남아 있다. training 후에는 validation으로 가장 좋은 checkpoint를 선택하고, 처음 보지 않은 test layer에서 `(x_pixel, y_pixel, layer_z, score)` 후보를 출력한다.
