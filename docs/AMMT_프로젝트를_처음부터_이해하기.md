@@ -892,3 +892,23 @@ Geometry gate를 켠 saved residual checkpoint evaluation은 새 model을 학습
 이 결과로 A-only baseline의 **candidate decoding pathway**는 current provisional geometry 안에서 일관되게 동작한다. “같은 score map”에서 part 밖 최고점 대신 part 내부의 local maximum을 선택할 수 있고, part 내부에 후보가 하나도 없으면 다음에는 `withheld_outside_provisional_part_geometry`라고 안전하게 보류한다.
 
 그러나 이 단계 역시 physical defect confirmation은 아니다. 현재 transform이 part geometry와 내부적으로 일관된다는 뜻일 뿐이며, 다른 plausible calibration candidate나 control point가 약간 흔들렸을 때도 같은 후보가 같은 part에 속하는지는 아직 모른다. 따라서 다음 독립 검증은 calibration robustness, 즉 좌표 결과가 provisional homography 선택에 얼마나 민감한지 살펴보는 것이다.
+
+
+---
+
+## 36. 선택한 calibration rank가 바뀌면 후보의 part와 좌표도 바뀌는가
+
+Geometry gate의 결과가 rank 2 transform에만 의존할 수 있으므로, 다음에는 새 calibration을 만들지 않고 기존 control-point ranking의 **rank 1과 rank 2**를 비교한다. Rank 1은 residual-only ranking에서 가장 낮은 leave-one-out error를 가졌던 alternative이고, rank 2는 local photometric refinement를 거쳐 현재 설정에 채택된 provisional candidate다.
+
+같은 geometry-filtered raw candidate 240개를 두 transform으로 각각 역투영해 다음을 측정한다.
+
+| 측정 | 질문 |
+|---|---|
+| Rank 1 / rank 2 containment | 같은 raw pixel이 두 transform에서도 known part rectangle 안에 있는가 |
+| Same-part agreement | 둘 다 part 안이라면 동일한 part로 분류되는가 |
+| Machine XY shift | transform 선택만 바꿨을 때 machine coordinate가 얼마나 움직이는가 |
+| Endpoint-level agreement | sensitivity가 특정 manufacturing layer에 집중되는가 |
+
+여기서 높은 agreement는 “현재 candidate reporting이 alternative existing transform에서도 비교적 안정적”이라는 증거일 뿐이고, rank 2를 더 정당화하거나 absolute coordinate가 맞다고 증명하지 않는다. 반대로 agreement가 낮으면 가장 안전한 보고 방식은 raw camera pixel `(x_pixel, y_pixel)`을 primary location으로 두고 machine/part coordinate는 selected rank-2 **provisional metadata**로 분리하는 것이다.
+
+이 audit은 compact JSON/CSV만 만들며 raw TIFF, XCT CSV, target, checkpoint, score map을 전혀 읽지 않는다. 따라서 calibration uncertainty를 model quality 변화나 label 변경과 섞지 않고 독립적으로 검증할 수 있다.
