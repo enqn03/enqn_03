@@ -696,3 +696,32 @@ Audit 결과 sigma=3은 좋은 점과 보류해야 할 점을 동시에 보였�
 이 검사는 z=203, 227, 250의 모든 pair에 대해 두 tensor의 MAE·최대 차이·RMSE를 출력한다. `max_abs > 1e-6`이면 적어도 숫자상으로는 차이가 남아 있다고 표시한다. 만약 input과 encoder feature는 다른데 temporal feature부터 같아지면, 다음 개선은 target 확대가 아니라 temporal 부분을 바꾸는 방향이 된다.
 
 > 중요한 점은 “차이가 있다”가 곧 “위치 예측이 성공했다”는 뜻은 아니라는 점이다. 이 검사는 실패의 위치를 좁혀 다음 한 가지 개선 실험을 공정하게 고르기 위한 단계다.
+
+
+---
+
+## 28. C32 model은 A 영상을 읽었지만, 시간 결합 단계에서 차이를 잃었다
+
+새 diagnostic은 세 test 시점 z=203, 227, 250의 A history를 서로 비교했다. 결과는 매우 명확하다.
+
+| model 내부 위치 | 세 A history 사이의 차이 | 뜻 |
+|---|---|---|
+| Input history | MAE 약 0.051–0.054, 최대 차이 1.0 | model에 들어간 A 영상은 실제로 다름 |
+| Frame encoder feature | MAE 약 0.064–0.068, 최대 차이 약 1.93–2.51 | encoder는 각 A 영상의 차이를 읽어 feature로 보존함 |
+| Temporal final feature | MAE=0, 최대 차이=0 | 시간 정보를 섞은 뒤에는 세 결과가 완전히 같아짐 |
+| Logit map과 score map | MAE=0, 최대 차이=0 | temporal 단계의 동일한 결과가 최종 출력까지 이어짐 |
+
+즉, 문제는 “A 이미지가 다 똑같다”도 아니고 “encoder가 영상을 못 읽는다”도 아니다. 이 C32 checkpoint에서는 `Conv3D → GroupNorm → SiLU`로 구성된 **temporal aggregation 단계가 input별 feature 차이를 완전히 없애고 있다.**
+
+이 결과가 믿을 만한 이유는 diagnostic이 내부 경로로 다시 계산한 score map과 model의 일반 `forward()` score map이 정확히 같았기 때문이다. 차이는 0이었다. 따라서 내부 측정 경로가 별도의 잘못된 model을 본 것은 아니다.
+
+다음 controlled improvement의 후보는 endpoint frame feature를 decoder로 바로 전달하는 residual bypass다.
+
+```text
+기존: temporal update ──> decoder
+개선 후보: endpoint encoder feature + temporal update ──> decoder
+```
+
+이 bypass는 현재 layer의 A feature를 직접 보존한다. 동시에 temporal update는 과거 3개 layer 정보를 계속 담는다. 현재 layer와 과거 layer만 쓰므로 미래 layer를 보는 leakage는 생기지 않는다.
+
+> 아직 model은 바꾸지 않는다. 먼저 이 변경의 범위, 기존 baseline 보존 방법, separate config/output path를 승인받은 뒤에만 dry-run과 controlled training을 준비한다.
