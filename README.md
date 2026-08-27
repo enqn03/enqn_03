@@ -6,7 +6,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 ## 현재 위치
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support 및 weak-target rasterization audit이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. response direction은 여전히 unresolved이므로 B−A나 XCT response를 direct defect label로 사용하지 않는다.
+데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support, weak-target rasterization audit, support-masked loss runtime 검증이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. `AOnlyCausalCandidateNet`과 training/evaluation script는 구현됐으며 사용자 dry-run 및 첫 학습 실행을 기다린다. response direction은 여전히 unresolved이므로 B−A나 XCT response를 direct defect label로 사용하지 않는다.
 
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
@@ -21,7 +21,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
 | Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
 | Support-mask weighted continuous regression loss | 완료·runtime 검증 통과 | z=4 loss/gradient=0, z=128 support-only regression, unknown 영향=0 |
-| A-only support-mask weighted baseline | 다음 단계 | continuous XCT-derived quality candidate map 및 `(x,y,z,score)` 후보 |
+| A-only support-mask weighted baseline | 구현 완료·dry-run/첫 학습 실행 대기 | 6-channel causal Conv3D + sigmoid response map + masked Smooth L1 + compact `(x,y,z,score)` candidate JSON |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
 ## 연구 흐름
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 현재 전처리 진행률
 
-현재 전처리와 target-loss 연결은 **약 90% 완료**로 판단한다. 이 수치는 raw input 준비, sparse spatial supervision의 runtime 연결, unknown-safe loss 검증을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset, available/unknown sample 검증, support-masked regression loss runtime 검증까지 완료됐다.
+현재 전처리와 첫 baseline 구현 준비는 **약 92% 완료**로 판단한다. 이 수치는 raw input 준비, sparse spatial supervision의 runtime 연결, unknown-safe loss 검증을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset, available/unknown sample 검증, support-masked regression loss runtime 검증까지 완료됐다.
 
 | 구간 | 상태 | 전처리 비중 |
 |---|---|---:|
@@ -118,7 +118,7 @@ flowchart TD
 | weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
 | XCT response direction 검증·A-only baseline 연결 | 진행 예정 | 10% |
 
-남은 10%는 **첫 baseline의 모델 연결과 target 의미 검증**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했으며, 다음 단계에서 A-only baseline에 연결한다.
+남은 8%는 **첫 baseline의 사용자 실행과 target 의미 검증**에 해당한다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했고, six-channel causal Conv3D A-only baseline에 연결됐다. 다음 gate는 dry-run과 첫 held-out evaluation이다.
 
 ## 실행 순서
 

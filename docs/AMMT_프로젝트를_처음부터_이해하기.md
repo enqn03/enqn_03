@@ -290,3 +290,67 @@ mask = 0인 pixel은 계산에서 완전히 제외
 ```
 
 주의할 점은 이번 loss 검증이 “모델이 결함을 찾는다”는 성공이 아니라, **결함 학습을 시작하기 전에 target가 없는 곳을 잘못 가르치지 않도록 안전장치를 검증한 성공**이라는 점이다.
+
+
+---
+
+## 12. 다음 단계: A-only baseline 모델을 실제로 학습할 준비
+
+이제 안전장치가 준비됐으므로, 첫 번째 실제 모델인 **A-only baseline**을 만들었다. 여기서 A-only는 “레이저를 쏘기 전의 A(AfterSpreading) 영상만 보고 판단한다”는 뜻이다.
+
+### 12.1 왜 A-only부터 시작하는가
+
+레이저 전 A 영상은 제조 중 가장 이른 시점에 얻을 수 있다. B 영상은 레이저를 쏜 뒤에야 생기므로, A-only 모델이 먼저 성립해야 진짜 조기 경보가 가능하다. 또한 A, B, fusion을 처음부터 모두 학습하면 성능이 좋아져도 어느 정보가 도움이 됐는지 알기 어렵다. 그래서 먼저 A-only를 기준점으로 만들고, 나중에 B-only와 A/B fusion이 얼마나 좋아지는지 공정하게 비교한다.
+
+### 12.2 A-only 모델이 받는 것과 내놓는 것
+
+```text
+입력: 최근 A 영상 4개 layer
+      각 layer = LED 밝기 3장 + 포화 신뢰도 mask 3장
+      전체 shape = [batch, 4, 6, 256, 256]
+
+출력: 현재 endpoint layer의 candidate response map 1장
+      전체 shape = [batch, 1, 256, 256]
+      값 범위 = 0~1
+```
+
+모델은 먼저 각 layer에서 “어디가 밝고, 어디가 포화되어 믿기 어려운가”를 보고, 그 다음 최근 4개 layer가 어떻게 변했는지를 본다. 시간 방향 convolution은 과거 쪽에만 padding하므로 앞으로의 layer를 몰래 보지 않는다.
+
+| 모델 구성 | 쉬운 설명 | 필요한 이유 |
+|---|---|---|
+| 6채널 frame encoder | 한 layer의 LED 밝기와 신뢰도 mask를 함께 읽는다. | 65535 포화 영역을 실제 밝기 정보처럼 오해하지 않는다. |
+| 과거만 보는 temporal convolution | 최근 4개 layer의 변화를 순서대로 합친다. | real-time 상황에서 미래 layer를 쓰지 않는다. |
+| sigmoid output | model의 출력값을 0~1 범위로 제한한다. | 0~1로 scaling된 continuous XCT response와 직접 비교한다. |
+| support-mask loss | XCT가 있는 위치에서만 오차를 계산한다. | 모르는 pixel을 정상이라고 가르치지 않는다. |
+
+### 12.3 모델이 학습할 때 일어나는 일
+
+학습 초반에는 model output이 거의 무작위다. 예를 들어 z=128에서 support mask가 1인 3,439개 pixel만 골라 model prediction과 XCT-derived weak response의 차이를 계산한다. 그 차이를 줄이는 방향으로 model의 내부 숫자가 조금씩 바뀐다.
+
+반대로 z=4처럼 XCT support가 전혀 없는 layer는 input으로 읽힐 수 있지만 target loss는 0이다. 즉, model은 그 layer를 “정상이다”라고 배우지 않고, **그 layer에는 XCT 선생님이 아직 없으니 채점하지 않는다**고 처리한다.
+
+### 12.4 실행은 두 단계다
+
+| 순서 | 실행 | 파일 변화 | 목적 |
+|---:|---|---|---|
+| 1 | dry-run | 없음 | 무작위 model이 input→prediction→masked loss까지 shape과 range에 맞게 연결되는지 확인 |
+| 2 | 실제 training | `outputs/a_only_baseline_v1/`에만 checkpoint·history·test metric·candidate JSON 생성 | validation으로 best model을 고르고 held-out test에서 candidate를 확인 |
+
+실제 training이 끝나면 model은 test layer별로 top-5 local maximum을 찾아 다음처럼 compact하게 저장한다.
+
+```text
+(x_pixel, y_pixel, layer_z, score)
+```
+
+여기서도 `score`는 아직 “확정 결함 확률”이 아니다. **XCT-derived continuous quality candidate score**다. 이 score의 high/low가 실제 물리적 이상과 어떤 관계인지 확인하려면, 다음 단계에서 XCT segmentation 또는 사람이 확인한 결함 영역과 비교해야 한다.
+
+### 12.5 현재 우리가 확인하려는 첫 성공 기준
+
+첫 baseline에서 바로 높은 정확도를 기대하거나 주장하지 않는다. 첫 성공은 아래 순서다.
+
+1. dry-run이 input/output/loss shape과 범위 오류 없이 통과한다.
+2. training 중 validation supported-pixel loss가 기록되고 best checkpoint가 저장된다.
+3. held-out test metric과 `(x,y,layer,score)` 후보 JSON이 생성된다.
+4. candidate 위치가 support·XCT 검토와 공간적으로 말이 되는지 확인한다.
+
+이 단계가 끝나면 비로소 “전처리와 target 규칙을 갖춘 A-only 모델이 실제로 학습되고 평가됐다”라고 포트폴리오에 쓸 수 있다.
