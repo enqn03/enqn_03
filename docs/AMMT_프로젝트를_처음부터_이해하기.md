@@ -1081,3 +1081,20 @@ SecondaryCamera에는 분홍/빨강 계열의 작은 spot가 실제로 보인다
 Dot/Checkerboard에서는 후보들이 일정한 간격으로 배열되는지 nearest-neighbor distance와 그 변동(CV)을 본다. SecondaryCamera에서는 각 red component의 넓이, 빨간 정도, 중심, 퍼짐(spread), image boundary 접촉 여부를 비교한다. 이는 앞의 global red centroid처럼 서로 다른 반사광을 하나의 origin으로 섞는 일을 막기 위한 것이다.
 
 코드는 small CSV와 JSON, detection overlay PNG 세 장만 생성한다. 결과가 좋아도 아직 “이 pixel이 machine `(0,0)`이다” 또는 “rank 2가 맞다”라고 말하지 않는다. 그 판단에는 발견된 feature들이 실제 metrology pattern과 얼마나 정확히 맞는지 계산하는 다음 calibration-fit audit과 사람의 QC 검토가 추가로 필요하다.
+
+
+### 43.1 실행 결과: 점과 코너는 보이지만, 자동 검출 결과를 그대로 쓰면 안 된다
+
+이번 detector는 세 reference image에서 실제 candidate를 찾는 데 성공했지만, 바로 calibration에 쓰기에는 후보가 섞여 있었다.
+
+| 그림 | 실제로 보인 것 | 왜 그대로 쓰면 위험한가 |
+|---|---|---|
+| DotGrid overlay | cyan 점은 대부분 dot panel 안에 있음 | plate의 글자, screw, 표면 texture도 일부 dot 후보로 잡혀 spacing이 고르지 않음 |
+| Checkerboard overlay | cyan 점이 checkerboard의 일부 영역에 모임 | board 전체가 아니라 아래쪽 왼쪽 일부에 집중되고, screw/background도 corner처럼 잡힘 |
+| Red component overlay | 왼쪽 반사광이 component #1로 가장 강하게 rank됨 | 사람이 보기에는 중앙 빨간 spot가 중요해 보이지만, 그 spot은 여러 작은 component #2–#10으로 나뉨 |
+
+그래서 자동 gate는 의도대로 **hold**를 반환했다. Dot 후보 5,000개의 이웃 간격 CV는 `0.7133`으로 기준 `0.65`보다 크고, Checkerboard 후보 679개의 CV는 `1.2555`로 기준 `0.75`보다 크다. 즉 “점이나 corner가 전혀 없다”가 아니라, **기준판 밖의 false positive를 먼저 제거하지 않으면 규칙적인 격자로 믿을 수 없다**는 뜻이다.
+
+또한 red component #1의 중심 `(791.03, 2109.00)`와 작은 spread `8.38 px`는 수학적으로 compact하지만, QC 그림에서는 left reflection이다. Compact하다는 조건만으로 machine origin이라고 정하면 위험하다는 것을 실제 data가 보여 준 것이다.
+
+> 다음 refinement에서는 dot/checkerboard의 planar target 영역을 먼저 찾고, 서로 가까운 red component를 하나의 cluster로 묶는다. 이 작업도 raw TIFF를 바꾸지 않고 image pixel에서 후보의 규칙성만 재검사한다. 새 homography나 rank selection은 여전히 그 다음 별도 단계다.
