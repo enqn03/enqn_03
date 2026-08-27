@@ -768,3 +768,25 @@ Residual dry run은 z=128 sample 하나를 사용해 model의 모든 연결을 �
 처음 만들어진 random residual model의 score 범위는 약 0.125–0.683이었다. 이 숫자나 loss를 기존 C32의 학습 완료 score/loss와 비교하면 안 된다. 학습을 전혀 하지 않은 model의 한 sample 결과이기 때문이다.
 
 > 지금 확인된 것은 “residual model이 data를 안전하게 받아 학습 준비가 됐다”는 점이다. 아직 “residual model이 더 좋은 localization을 한다”는 것은 아니다. 다음 8-epoch controlled training에서만 그 질문을 확인할 수 있다.
+
+
+---
+
+## 31. Residual model은 같은 A 영상 조건에서 더 나은 held-out score와 위치별 변화를 보였다
+
+Residual model을 8 epoch 학습한 결과, best validation checkpoint는 epoch 6에서 선택됐다. C32 temporal-only model과 비교하면 같은 test split에서 regression loss가 낮아졌고, 무엇보다 같은 모양을 반복하던 score map 문제가 사라졌다.
+
+| 항목 | C32 temporal-only | C32 temporal-residual | 무엇이 달라졌나 |
+|---|---:|---:|---|
+| Validation loss | 0.06151949 | 0.05642983 | 8.27% 낮아짐 |
+| Held-out test loss | 0.07363038 | 0.06992126 | 5.04% 낮아짐 |
+| Support 내부 prediction std | 0 | 약 0.041–0.045 | sampled location별 score 차이가 생김 |
+| z203·227·250 map 차이 | 정확히 0 | MAE 약 0.009–0.012 | A history에 따라 score map이 달라짐 |
+| Top-score 동점 | 0.3845% | 1 pixel=0.001526% | plateau safety gate를 통과 |
+| Candidate decoder | 48/48 withheld | 48/48 emitted, 총 240개 | endpoint당 compact top-5를 만들 수 있음 |
+
+또한 model 내부를 다시 확인했을 때 input → frame encoder → temporal final → logit → score의 모든 단계에서 세 test history의 차이가 남아 있었다. 특히 C32에서 0이었던 temporal final의 차이가 residual model에서는 MAE 약 0.048–0.051, 최대 차이 약 1.58–1.80으로 측정됐다. 이는 residual bypass가 current A frame의 feature를 temporal block 뒤까지 보존했다는 직접적인 근거다.
+
+> 지금까지 통과한 것은 **internal technical validation**이다. 즉 model이 A input에 반응하고, sparse XCT-supported response와의 held-out loss가 개선되며, 안전 gate가 통과한 compact candidate를 내보낼 수 있음을 확인했다.
+
+하지만 아직 candidate를 “확정 결함”이라고 할 수는 없다. 현재 calibration은 provisional이어서 pixel 좌표가 machine/part 좌표로 얼마나 정확히 바뀌는지 점검해야 하고, XCT response가 높을수록 또는 낮을수록 나쁜 quality인지도 정해지지 않았다. 다음에는 score 자체를 다시 바꾸지 않고 emitted candidate의 좌표가 calibration FOV 안에 있는지, camera→machine→camera round-trip에서 얼마나 오차가 나는지 검사한다.
