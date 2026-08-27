@@ -11,6 +11,12 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 [1] [NIST PDR: Overhang Part X4](https://data.nist.gov/od/id/mds2-2233)
 [2] [Lane & Yeung (2020), J. Res. NIST 125:125027](https://doi.org/10.6028/jres.125.027)
 
+### Independent NIST method-#2 candidate calibration audit — implementation ready
+
+`src/audit_independent_method2_calibration_candidate.py` is implemented and statically verified. It reads only immutable `DotGrid_2000x2000.tif` and the existing provisional calibration config. It refines dot centers to local response-weighted subpixel candidates, creates provisional 50×50 PCA lattice indices, fits `D→C` homography **candidates**, and evaluates deterministic held-out 5×5 lattice blocks. It retains all eight image-lattice axis variants and both `±2.5°` D/A angle-sign alternatives, yielding 16 non-selected `A→D→C` candidates.
+
+The gate measures only image-pixel consistency: at least 1,200 unique cells and 40 represented rows/columns, held-out RMSE≤0.25 and p95≤0.50 of detected inlier camera-dot pitch. The script emits compact CSV/JSON and two DotGrid QC overlays. It does not write raw metadata, modify `calibration_v1.yaml`, choose a candidate/rank, assert a red reference as machine origin, access model/XCT/target/checkpoint data, or change camera-primary candidate reporting. Passing the gate means that human transform review can begin, not that any calibration is deployed.[2]
+
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
 | A/B hyperstack 구조 검증 | 완료 | `TZYX=[3,250,2000,2000]`, `uint16` |
