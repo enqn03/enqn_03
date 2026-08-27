@@ -1009,3 +1009,24 @@ NIST 논문은 Part 1–4의 위치와 layer-125 part shape의 비대칭 기준�
 결론은 `visual_preference_hypothesis=inconclusive`이다. rank 2를 바꾸지 않고 계속 `provisional`로 둔다. 프로젝트의 primary output은 여전히 raw camera `(x_pixel, y_pixel, layer_z, score)`이고, machine XY/part ID는 selected rank 2를 썼을 때만 붙는 provisional metadata다. PNG two files는 training heatmap 또는 defect label이 아니라 calibration QC 그림이며 `processed/`에만 둔다.
 
 다음에 필요한 것은 model을 또 바꾸는 일이 아니라 NIST의 calibration metadata archive 안의 dot-grid/laser-origin/checkerboard 또는 수동으로 확인된 fiducial one pair처럼 **independent anchor**를 얻는 일이다. 그것이 있으면 rank 1과 rank 2 중 하나를 데이터와 독립적으로 배제할 수 있다.
+
+
+---
+
+## 41. 새 파일을 받지 않아도 calibration metadata가 이미 있었다
+
+처음에는 NIST에서 `Layer Camera Metadata.zip`을 다시 받으려 했지만, `raw_original/metadata/Layer Camera Metadata/`를 확인하니 ZIP을 예전에 풀어 둔 원본 파일이 이미 있었다. 그래서 다운로드 실패를 해결하려고 같은 archive를 중복 보관할 이유가 없어졌다.
+
+| 이미 있는 원본 TIFF | 역할 | 크기 |
+|---|---|---:|
+| `DotGrid_2000x2000.tif` | layer camera dot-grid의 pixel geometry | 4,000,384 bytes |
+| `SecondaryCamera_Laser00.tif` | 별도 camera에서 본 machine laser origin reference | 36,869,338 bytes |
+| `Checkerboard_2000x2000.tif` | layer camera checkerboard geometry | 4,000,148 bytes |
+
+세 파일은 모두 TIFF signature를 갖고, 현재 상태를 나중에 재현할 수 있게 각각 SHA-256 fingerprint도 기록했다. 하지만 원래 ZIP 파일은 남아 있지 않으므로 이 값들은 NIST가 공개한 ZIP checksum과 비교하는 값이 아니라 **현재 local original file identity를 기록하는 값**이다.
+
+이 발견의 핵심은 다음과 같다.
+
+> Rank 1/2의 part ID ambiguity를 해소하려면 model score를 더 손보는 대신, dot-grid·laser-origin·checkerboard처럼 score와 독립적인 장비 metrology 자료를 사용해야 한다.
+
+다음 단계는 이 TIFF three files를 read-only로 열어 실제 axes와 reference pattern을 audit하는 것이다. 아직 이 단계에서 calibration config를 바꾸거나 rank를 재선정하지 않는다. 새로운 metrology audit의 코드/결과 경로는 별도로 승인받은 뒤에만 추가한다.
