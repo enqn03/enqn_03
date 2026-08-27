@@ -376,3 +376,38 @@ mask = 0인 pixel은 계산에서 완전히 제외
 따라서 이제 model, input, XCT weak target, support mask, loss가 한 줄로 이어졌다. 다음 실제 training에서는 model이 여러 train sample을 반복해서 보면서, support가 있는 위치에서만 prediction을 조금씩 바꿔 weak response에 가까워지도록 학습한다.
 
 > **현재 단계:** 전처리와 학습 안전장치는 준비됐고, 첫 A-only training만 남아 있다. training 후에는 validation으로 가장 좋은 checkpoint를 선택하고, 처음 보지 않은 test layer에서 `(x_pixel, y_pixel, layer_z, score)` 후보를 출력한다.
+
+
+---
+
+## 14. 첫 A-only 학습을 실제로 해 본 결과
+
+이제 A-only model을 8번의 epoch 동안 실제로 학습했다. 한 epoch은 model이 train data 전체를 한 번 훑는 단위라고 생각하면 된다. 매번 model은 XCT support가 있는 곳에서만 자기 prediction을 조금씩 고쳤고, validation data로 얼마나 잘 일반화되는지 확인했다.
+
+### 14.1 잘 된 부분: model과 학습 규칙은 끝까지 연결됐다
+
+| 관찰한 값 | 처음 | 마지막 | 뜻 |
+|---|---:|---:|---|
+| Train masked loss | 0.11765 | 0.06041 | train support 위치의 오차가 약 48.65% 감소했다. model이 약한 XCT reference에서 학습 신호를 받았다는 뜻이다. |
+| Validation masked loss | 0.09674 | 0.06163 | 학습에 직접 쓰지 않은 validation layer에서도 오차가 약 36.28% 감소했다. 가장 낮았던 epoch 8 checkpoint를 선택했다. |
+| Held-out test masked loss | - | 0.07345 | 마지막 test layer에서 얻은 값이다. validation보다 약 19.17% 높아졌지만, 미래 layer를 몰래 보지 않고 측정한 초기 generalization gap이다. |
+
+이 결과는 “A 영상만으로도 quality response를 완벽히 맞혔다”는 뜻은 아니다. 하지만 **원본 입력 → sparse XCT target → unknown-safe loss → causal validation → held-out test**라는 전체 학습 체인이 실제로 실행됐다는 중요한 첫 성공이다.
+
+### 14.2 아직 안 된 부분: 위치 후보가 모두 같은 곳을 가리켰다
+
+training 후 model이 test layer마다 top-5 후보를 만들었다. 총 48개 test layer × 5개 = 240개 후보가 나왔다. 그런데 확인해 보니 모든 후보의 score가 `0.67868608` 하나로 같았고, 모든 layer에서 같은 다섯 pixel 위치가 반복됐다.
+
+이것은 결함이 그 위치에 계속 있다는 뜻이 아니다. model output이 화면 전체에서 거의 같은 값인 **flat plateau**가 되었을 때, top-k 함수가 같은 값 중 앞쪽에 놓인 pixel을 임의로 고른 현상이다. 즉, 지금 나온 좌표는 실제 품질 이상 위치가 아니라 computer tensor의 동점 처리 결과다.
+
+| 지금 신뢰할 수 있는 것 | 지금 신뢰하면 안 되는 것 |
+|---|---|
+| A-only model이 sparse supported pixel에서 학습·validation·test loss를 계산했다는 사실 | `test_coordinate_candidates.json`의 현재 `(x,y,layer,score)` 위치 |
+| test loss=0.07345라는 초기 held-out regression 지표 | score=0.67868608을 anomaly probability라고 부르는 것 |
+| early unknown layer가 loss에서 제외됐다는 정책 | 반복되는 화면 왼쪽 위 후보를 실제 defect라고 해석하는 것 |
+
+이 문제를 숨기지 않는 것이 중요하다. 포트폴리오에서는 “첫 baseline은 end-to-end regression을 통과했지만 spatial prediction이 평탄해 localization을 보류했고, 다음 diagnostic으로 원인을 분리했다”라고 쓰는 편이 훨씬 신뢰도 높은 설명이다.
+
+### 14.3 이제 무엇을 확인하는가
+
+다음에는 checkpoint가 만든 response map의 최소값·최대값·표준편차를, 입력 영상과 XCT support target의 공간 분포와 비교한다. 이 검사는 model이 정말 화면의 위치 차이를 보고 있는지, 아니면 전체 평균값만 내놓는지를 알려 준다. 결과가 나오기 전까지 현재 top-5 좌표는 사용하지 않는다.
