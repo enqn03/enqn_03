@@ -632,3 +632,23 @@ C32는 model의 feature channel만 8에서 32로 늘린 실험이었다. 결과�
 다음에는 model을 또 크게 바꾸지 않는다. 대신 sparse XCT 점 주변을 target map으로 바꾸는 Gaussian 폭 `sigma`를 2에서 3으로만 바꾼 audit을 한다. 폭이 커지면 loss를 받는 support pixel 수가 늘어 model이 위치별 학습 신호를 더 많이 받을 수 있다. 하지만 너무 커지면 서로 다른 점의 정보가 퍼져 흐려질 수 있다.
 
 > 먼저 sigma=3 audit으로 support가 얼마나 늘고 얼마나 퍼지는지 확인한다. 원본 CSV, A 입력, calibration, response 방향은 그대로 두며, binary defect label도 만들지 않는다. 충분히 안전하다고 판단된 경우에만 sigma=3으로 학습하는 다음 controlled run을 준비한다.
+
+
+---
+
+## 25. 다음 검증 코드: sigma=2와 sigma=3은 무엇을 비교하는가
+
+새 파일 `src/audit_weak_target_support_density.py`는 학습을 하지 않는 검증 코드다. A/B TIFF를 열지 않고, registered XCT CSV의 좌표와 값만 사용해 현재 학습 때와 같은 weak target을 RAM에서 다시 만든다. 이때 sigma만 2와 3으로 달리해 두 결과를 비교한다.
+
+| 구분 | 항상 고정하는 것 | 비교하는 것 |
+|---|---|---|
+| 좌표 | 현재 provisional calibration, `(0,-6)` pixel offset, working ROI, 256×256 grid, pixel rounding | 없음 |
+| 값 | train-only p01/p99 response scaling, `[0,1]` clipping, unresolved response direction | 없음 |
+| 라벨 의미 | support 밖은 `unknown`, binary defect label 미생성 | 없음 |
+| Gaussian support | weighted-average blend 방식 | kernel sigma=2 vs sigma=3 |
+
+이 코드는 layer마다 support pixel 수와 비율, response가 0보다 큰 pixel 수, support가 이어진 덩어리(component)의 개수·최대 비율을 기록한다. 그리고 sigma=3이 sigma=2보다 새 known pixel을 얼마나 늘렸는지, 기존 known pixel이 보존됐는지, 두 response가 공통 support에서 얼마나 달라졌는지, 작은 support island가 지나치게 합쳐졌는지를 수치로 비교한다.
+
+> 기대하는 결과는 “support는 충분히 늘지만, 기존 response의 의미와 위치 구분은 크게 흐려지지 않는다”이다. 이 결과는 sigma=3 training을 검토할 근거일 뿐, defect를 확정하거나 A-only model이 localization을 성공했다는 뜻은 아니다.
+
+실행 뒤에는 `processed/weak_target_support_density_v1/`에 CSV 두 개와 summary JSON 한 개만 생긴다. dense heatmap, model checkpoint, TIFF crop은 만들지 않으며 원본 TIFF/CSV도 그대로다.
