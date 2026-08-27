@@ -748,3 +748,23 @@ Audit 결과 sigma=3은 좋은 점과 보류해야 할 점을 동시에 보였�
 이것은 현재 A frame의 visual feature가 temporal block에서 완전히 사라져도 decoder까지 갈 수 있는 경로를 준다. 동시에 past-only temporal branch는 과거 layer 문맥을 계속 제공한다. 따라서 model이 “현재 A 이미지와 시간 문맥을 모두 이용할 수 있는가”를 검사하는 공정한 실험이 된다.
 
 다음 dry run은 아직 학습이 아니다. model을 RAM에서 한 번 만들고 z=128 sample 하나가 input→target→masked loss까지 error 없이 흐르는지 확인한다. checkpoint, output directory, dense heatmap은 만들지 않는다. dry run이 통과한 뒤에만 8-epoch controlled training을 시작할지 별도로 결정한다.
+
+
+---
+
+## 30. Residual model의 첫 연결 검사는 통과했다
+
+Residual dry run은 z=128 sample 하나를 사용해 model의 모든 연결을 확인한 검사다. 학습은 하지 않았다.
+
+| 확인 항목 | 실제 결과 | 의미 |
+|---|---:|---|
+| 실행 device | MPS | 현재 Mac 환경에서 residual model을 실행할 수 있음 |
+| Input shape | `[1,4,6,256,256]` | 기존 A-only causal input contract 유지 |
+| Prediction shape | `[1,1,256,256]` | 출력이 continuous 2D response map으로 유지 |
+| XCT weak target | available=true, support=3,439 | sigma=2와 unknown policy가 그대로 연결됨 |
+| Masked loss | 0.18406811, finite | loss가 support 위치에서 정상 계산됨 |
+| 저장 파일 | 없음 | checkpoint/heatmap/output folder 없이 RAM 검사만 수행 |
+
+처음 만들어진 random residual model의 score 범위는 약 0.125–0.683이었다. 이 숫자나 loss를 기존 C32의 학습 완료 score/loss와 비교하면 안 된다. 학습을 전혀 하지 않은 model의 한 sample 결과이기 때문이다.
+
+> 지금 확인된 것은 “residual model이 data를 안전하게 받아 학습 준비가 됐다”는 점이다. 아직 “residual model이 더 좋은 localization을 한다”는 것은 아니다. 다음 8-epoch controlled training에서만 그 질문을 확인할 수 있다.
