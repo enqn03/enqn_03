@@ -872,3 +872,23 @@ score map
 | 기존 `withheld_top_score_plateau` 등 | geometry 검사보다 먼저 기존 map quality safety가 동작 | XCT support를 deployment decoder가 사용함 |
 
 여기서 중요한 점은 gate가 score map, training loss, target, checkpoint를 바꾸지 않는다는 것이다. 저장된 residual epoch-6 checkpoint를 다시 읽어 test evaluation만 하고, original residual output은 건드리지 않는 별도 output directory에 compact metric와 candidate JSON만 쓴다. 따라서 geometry filter의 효과를 model quality 변화와 혼동하지 않고 비교할 수 있다.
+
+
+---
+
+## 35. Geometry gate를 켠 뒤에는 후보가 configured part 영역 안으로 안전하게 바뀌었다
+
+Geometry gate를 켠 saved residual checkpoint evaluation은 새 model을 학습한 것이 아니다. 기존 epoch-6 checkpoint의 score map을 그대로 다시 계산하고, local maxima 중 provisional geometry 안에 있는 것만 candidate로 남겼다. Held-out loss는 0.0699212649로 original residual evaluation과 같았고 optimizer step은 0이었다. 즉 score quality를 바꾼 것이 아니라 **후보 출력의 안전한 좌표 선택**만 바꾼 것이다.
+
+| 항목 | Geometry gate 전 | Geometry gate 후 |
+|---|---:|---:|
+| Candidate count | 240 | 240 |
+| Candidate part containment | outside 240 | part01 84, part02 126, part03 27, part04 3 |
+| Inverse coordinate part-rectangle check | 0/240 pass | 240/240 pass |
+| Grid/raw coordinate round trip | internal pass | internal pass |
+| Edge safety | 최소 3px | 최소 52px |
+| Same-endpoint duplicate | 0 | 0 |
+
+이 결과로 A-only baseline의 **candidate decoding pathway**는 current provisional geometry 안에서 일관되게 동작한다. “같은 score map”에서 part 밖 최고점 대신 part 내부의 local maximum을 선택할 수 있고, part 내부에 후보가 하나도 없으면 다음에는 `withheld_outside_provisional_part_geometry`라고 안전하게 보류한다.
+
+그러나 이 단계 역시 physical defect confirmation은 아니다. 현재 transform이 part geometry와 내부적으로 일관된다는 뜻일 뿐이며, 다른 plausible calibration candidate나 control point가 약간 흔들렸을 때도 같은 후보가 같은 part에 속하는지는 아직 모른다. 따라서 다음 독립 검증은 calibration robustness, 즉 좌표 결과가 provisional homography 선택에 얼마나 민감한지 살펴보는 것이다.
