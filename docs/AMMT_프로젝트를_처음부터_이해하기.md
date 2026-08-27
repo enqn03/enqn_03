@@ -1098,3 +1098,19 @@ Dot/Checkerboard에서는 후보들이 일정한 간격으로 배열되는지 ne
 또한 red component #1의 중심 `(791.03, 2109.00)`와 작은 spread `8.38 px`는 수학적으로 compact하지만, QC 그림에서는 left reflection이다. Compact하다는 조건만으로 machine origin이라고 정하면 위험하다는 것을 실제 data가 보여 준 것이다.
 
 > 다음 refinement에서는 dot/checkerboard의 planar target 영역을 먼저 찾고, 서로 가까운 red component를 하나의 cluster로 묶는다. 이 작업도 raw TIFF를 바꾸지 않고 image pixel에서 후보의 규칙성만 재검사한다. 새 homography나 rank selection은 여전히 그 다음 별도 단계다.
+
+
+---
+
+## 44. 두 번째 detector는 false positive를 어떻게 줄이는가
+
+첫 detector가 dot, checkerboard, red feature를 발견했지만 “찾았다”와 “정확히 그 기준점이다”는 다르다는 사실이 확인됐다. 두 번째 detector는 이 차이를 줄이기 위해 세 이미지를 다시 읽되, 기준판이 있어 보이는 **작은 영역만 따로 보고**, 서로 가까운 red 조각을 **하나의 cluster로 묶는다**.
+
+| 문제 | V2에서 하는 일 | 기대하는 확인 |
+|---|---|---|
+| Dot/Checkerboard 후보에 plate와 screw가 섞임 | 후보가 촘촘히 모인 부분을 automatic candidate ROI로 먼저 제한 | 점/코너의 이웃 간격이 더 일정해지는지 |
+| Central red spot가 여러 component로 분리됨 | 중심 사이 거리가 120 pixel 이하인 red components를 하나의 cluster로 결합 | central spot cluster가 isolated reflection보다 더 강한 evidence를 갖는지 |
+
+여기서 ROI는 “기준판처럼 보이는 detector 영역”일 뿐이다. 실제 물리 board boundary, camera의 perspective correction, machine coordinate가 아니다. Red cluster도 “가까운 red evidence를 모은 candidate”일 뿐 machine origin이라는 이름을 붙이지 않는다.
+
+다음 실행 후에는 V2 overlay에서 cyan candidate가 실제 dot/checkerboard panel에 얼마나 깨끗하게 모이는지, 그리고 central red cluster가 expected visual spot을 따라가는지를 확인한다. 세 가지가 모두 좋아도 그 결과는 **calibration fit을 설계해도 되는가**를 판단하는 자료일 뿐이다. Homography를 계산하거나 candidate의 machine coordinate를 결정하려면 별도의 승인과 검증이 필요하다.
