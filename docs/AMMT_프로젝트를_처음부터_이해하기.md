@@ -1030,3 +1030,22 @@ NIST 논문은 Part 1–4의 위치와 layer-125 part shape의 비대칭 기준�
 > Rank 1/2의 part ID ambiguity를 해소하려면 model score를 더 손보는 대신, dot-grid·laser-origin·checkerboard처럼 score와 독립적인 장비 metrology 자료를 사용해야 한다.
 
 다음 단계는 이 TIFF three files를 read-only로 열어 실제 axes와 reference pattern을 audit하는 것이다. 아직 이 단계에서 calibration config를 바꾸거나 rank를 재선정하지 않는다. 새로운 metrology audit의 코드/결과 경로는 별도로 승인받은 뒤에만 추가한다.
+
+
+---
+
+## 42. Independent metrology pre-audit: calibration을 바꾸기 전 먼저 확인하는 단계
+
+이제 시작할 audit은 candidate score나 XCT target을 보기 위한 것이 아니다. 이미 있는 metadata TIFF 세 장에서 **camera calibration에 쓸 수 있는 기준 무늬와 laser-origin reference가 실제로 읽히는지** 먼저 확인하는 단계다.
+
+| 입력 원본 | 확인하는 값 | 아직 하지 않는 일 |
+|---|---|---|
+| DotGrid TIFF | image axes, pixel size, brightness range, edge/grid structure | dot-center를 맞춰 새 camera model을 계산하지 않음 |
+| Checkerboard TIFF | image axes, pixel size, brightness range, corner-like edge structure | checkerboard corner fit을 하지 않음 |
+| SecondaryCamera Laser00 TIFF | RGB channel 존재 여부와 red-dominance spot candidate | spot 하나를 machine origin이라고 확정하지 않음 |
+
+새 코드 `src/audit_independent_metrology_metadata.py`는 세 TIFF를 `tifffile.memmap(..., mode='r')`로 읽는다. 원본 TIFF는 한 글자도 바꾸지 않는다. 결과로는 작은 CSV/JSON과 전체 화면을 줄인 deterministic QC contact sheet PNG 한 장만 만든다. dense crop, mask, heatmap, new homography, training output은 만들지 않는다.
+
+이 순서가 필요한 이유는 `rank2` transform을 바꾸기 전에 이미지 reference가 진짜로 usable한지 알아야 하기 때문이다. 예를 들어 red channel에서 밝은 위치를 찾았다고 해도 그것이 laser spot인지 saturated reflection인지 바로 알 수 없다. 그래서 pre-audit의 결과는 **candidate reference**와 image quality만 기록한다.
+
+> 다음 calibration fit 단계로 넘어갈 조건은 세 image가 usable Y/X geometry를 갖고 secondary image의 red-candidate 검사가 실행되는 것이다. 이것만으로 rank 1/2를 고르거나 `calibration_v1.yaml`을 바꾸지는 않는다.
