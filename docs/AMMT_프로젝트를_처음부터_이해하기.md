@@ -572,3 +572,22 @@ checkpoint-only evaluator를 처음 실행했을 때, loss 설정에서 `loss.sm
 | output 보호 | test JSON이 이미 있으면 evaluator가 쓰기를 거부 | 결과를 실수로 덮어쓰지 않음 |
 
 이제 evaluator는 training과 같은 beta=0.1 loss를 사용해 e24 checkpoint의 held-out test 성능과 candidate safety status만 계산한다. 이것도 “학습”이 아니라 저장된 모델의 시험지를 다시 채점하는 과정이다.
+
+
+---
+
+## 22. 24 epoch까지 학습했는데도 왜 다음에는 모델 크기를 바꾸는가
+
+E24 evaluator와 spatial diagnostic까지 끝내자, 24 epoch를 허용했어도 가장 좋은 validation checkpoint는 epoch 9였다는 사실이 확인됐다. held-out test loss도 8 epoch run보다 아주 조금 높았다. 더 중요한 것은 map의 모양이었다. 최고 점수 동점 영역은 여전히 96.9%였고, 서로 다른 test layer의 map은 완전히 같았다.
+
+| 비교 항목 | 8 epoch run | 24 epoch run의 best checkpoint | 의미 |
+|---|---:|---:|---|
+| Best validation loss | 0.06163192 | 0.06152481 | 아주 작게 낮아졌지만 결정적 개선은 아님 |
+| Held-out test loss | 0.07344962 | 0.07370871 | 24 epoch 쪽이 0.35% 높음 |
+| 최고 점수 동점 면적 | 96.9% | 96.9% | 위치 구분 문제가 그대로임 |
+| 서로 다른 layer map 차이 | 0 | 0 | A input 변화에 반응하지 않음 |
+| 안전장치 | 보류 필요 | 48개 모두 후보 0개로 보류 | 임의 좌표를 내지 않음 |
+
+따라서 “학습 시간이 부족했다”는 설명은 설득력이 약해졌다. 다음에는 학습 횟수를 다시 8로 고정하고, 모델이 image pattern을 표현할 수 있는 channel 수만 8에서 32로 늘린다.
+
+이것은 모델을 무작정 복잡하게 만드는 것이 아니다. 작은 모델이 충분한 표현 공간을 갖지 못해 평균적인 값을 반복했는지 확인하는 한 가지 실험이다. A input, XCT target, loss, data split, optimizer, random seed는 그대로 두므로, 결과가 달라지면 model capacity가 원인이었을 가능성을 더 강하게 말할 수 있다.
