@@ -985,3 +985,27 @@ NIST 논문은 Part 1–4의 위치와 layer-125 part shape의 비대칭 기준�
 하지만 overlay 한 번의 visual agreement는 `visual_preference_hypothesis`일 뿐이다. 확실하지 않으면 rank 2 provisional 상태와 camera-primary reporting을 유지한다. 한 overlay가 더 설득력 있어도 `calibration_v1.yaml`을 바꾸는 일은 별도 approval 이후의 작업이다.
 
 [1] [Lane & Yeung (2020), *Process Monitoring Dataset from the AMMT: Overhang Part X4*, J. Res. NIST 125:125027, Fig. 2](https://doi.org/10.6028/jres.125.027)
+
+
+---
+
+## 40. Layer 125 overlay를 실제로 본 결과: 숫자는 맞아도 part 이름은 확정할 수 없었다
+
+사용자가 만든 두 PNG는 같은 B-stage layer 125 원본 이미지에 서로 다른 rank의 XYPT path를 겹친 그림이다. 둘 다 네 개의 작은 part path region을 raw camera 중앙 부근에 잘 올려 놓는다. 따라서 “XYPT path가 sensor 밖으로 나간다”는 종류의 오류는 아니다.
+
+| 그림 | 위에서 아래로 붙은 label | 의미 |
+|---|---|---|
+| rank 1 | `part01 → part02 → part03 → part04` | 첫 번째 mirror convention |
+| rank 2 | `part04 → part03 → part02 → part01` | 현재 selected mirror convention |
+
+두 그림 모두 fit RMSE=`5.212059`px, leave-one-out RMSE=`7.028278`px이고, part별 laser-on command 37,868개가 모두 sensor에 들어왔다. 하지만 두 그림은 **같은 four path region에 반대의 part name만 붙인다.** B-stage 원본의 넓은 밝기 변화, texture, dense path overlay 때문에 layer-125 cavity가 실제로 어느 side인지와 overhang이 어느 side인지가 이 full-frame display만으로는 명확히 보이지 않았다.
+
+그래서 이 결과는 다음 두 문장을 동시에 지지한다.
+
+> Camera-space projection 산술은 가능한 상태다.
+>
+> 그러나 absolute machine `part_id`를 선택하기에는 독립적인 visual/metrology evidence가 부족하다.
+
+결론은 `visual_preference_hypothesis=inconclusive`이다. rank 2를 바꾸지 않고 계속 `provisional`로 둔다. 프로젝트의 primary output은 여전히 raw camera `(x_pixel, y_pixel, layer_z, score)`이고, machine XY/part ID는 selected rank 2를 썼을 때만 붙는 provisional metadata다. PNG two files는 training heatmap 또는 defect label이 아니라 calibration QC 그림이며 `processed/`에만 둔다.
+
+다음에 필요한 것은 model을 또 바꾸는 일이 아니라 NIST의 calibration metadata archive 안의 dot-grid/laser-origin/checkerboard 또는 수동으로 확인된 fiducial one pair처럼 **independent anchor**를 얻는 일이다. 그것이 있으면 rank 1과 rank 2 중 하나를 데이터와 독립적으로 배제할 수 있다.
