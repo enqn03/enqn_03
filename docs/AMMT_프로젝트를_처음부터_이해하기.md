@@ -611,3 +611,24 @@ C32는 `base_channels`만 8에서 32로 바꾸는 실험이다. Channel은 model
 C32에서 보는 질문은 “loss가 조금 더 낮아졌는가”만이 아니다. 더 중요한 질문은 **다른 A layer history를 입력했을 때 map 모양이 달라졌는가**, 그리고 **최고 score가 화면 대부분에 동점으로 퍼지는 현상이 줄었는가**다. 두 질문의 답이 모두 아니라면, 다음에는 model 크기보다 target rasterization 또는 A input–XCT target 연결 방식을 조사해야 한다.
 
 > C32가 candidate를 출력해도 그 좌표는 여전히 XCT-derived continuous quality candidate다. XCT response의 high/low 방향이 실제 결함과 어떻게 연결되는지는 별도 검증 전까지 확정하지 않는다.
+
+
+---
+
+## 24. C32 결과: 모델을 크게 했지만 왜 아직 위치 후보를 내지 않는가
+
+C32는 model의 feature channel만 8에서 32로 늘린 실험이었다. 결과는 한 가지 면에서는 바뀌었고, 가장 중요한 면에서는 바뀌지 않았다.
+
+| 관찰 | Run 1: C8 | C32 | 뜻 |
+|---|---:|---:|---|
+| 최고 score 동점 비율 | 96.8994% | 0.3845% | C32는 화면 전체의 고정 모양을 조금 더 세밀하게 만들 수 있었음 |
+| support 내부 prediction 변화 | 0 | 0 | 학습해야 할 sparse XCT 위치들 사이의 차이는 여전히 못 배움 |
+| 서로 다른 test layer map 차이 | 0 | 0 | 서로 다른 A 영상도 model은 동일한 map으로 처리함 |
+| held-out test loss | 0.07344962 | 0.07363038 | 더 큰 model이 test 성능을 개선하지 못함 |
+| candidate | 보류 필요 | 48개 endpoint 모두 보류 | 안전장치가 임의 좌표를 막음 |
+
+여기서 알 수 있는 것은 “model이 작아서 문제”라는 설명만으로는 충분하지 않다는 점이다. Model은 더 복잡한 **고정된 지도**를 만들었지만, 새로 들어온 A 영상의 차이를 반영한 지도는 만들지 못했다.
+
+다음에는 model을 또 크게 바꾸지 않는다. 대신 sparse XCT 점 주변을 target map으로 바꾸는 Gaussian 폭 `sigma`를 2에서 3으로만 바꾼 audit을 한다. 폭이 커지면 loss를 받는 support pixel 수가 늘어 model이 위치별 학습 신호를 더 많이 받을 수 있다. 하지만 너무 커지면 서로 다른 점의 정보가 퍼져 흐려질 수 있다.
+
+> 먼저 sigma=3 audit으로 support가 얼마나 늘고 얼마나 퍼지는지 확인한다. 원본 CSV, A 입력, calibration, response 방향은 그대로 두며, binary defect label도 만들지 않는다. 충분히 안전하다고 판단된 경우에만 sigma=3으로 학습하는 다음 controlled run을 준비한다.
