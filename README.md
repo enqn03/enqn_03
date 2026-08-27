@@ -6,7 +6,7 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 ## 현재 위치
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support, weak-target rasterization audit, support-masked loss runtime 검증이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. `AOnlyCausalCandidateNet`과 training/evaluation script는 구현됐고, z=128에서 `[1,4,6,256,256]` input·`[1,1,256,256]` sigmoid output·3,439 supervised pixel·finite masked loss=0.11099906의 `mps` dry-run을 통과했다. run 1 training은 epoch 8까지 완료되어 best validation supported-pixel Smooth L1=0.06163210, held-out test=0.07344962를 기록했다. 현재 candidate decoder에는 spatially flat plateau에서 좌표를 억지로 반환하지 않는 safety gate를 추가했다. map의 `max-min ≤ 1e-6`이면 candidate를 `withheld_spatial_plateau`로 보류한다. trained checkpoint의 spatial range/std·support correlation·decoder status를 읽기 전용으로 확인하는 diagnostic이 구현됐으며, 결과 확인 전에는 candidate 위치를 사용하지 않는다. response direction은 여전히 unresolved이므로 B−A나 XCT response를 direct defect label로 사용하지 않는다.
+데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support, weak-target rasterization audit, support-masked loss runtime 검증이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. `AOnlyCausalCandidateNet`과 training/evaluation script는 구현됐고, z=128에서 `[1,4,6,256,256]` input·`[1,1,256,256]` sigmoid output·3,439 supervised pixel·finite masked loss=0.11099906의 `mps` dry-run을 통과했다. run 1 training은 epoch 8까지 완료되어 best validation supported-pixel Smooth L1=0.06163210, held-out test=0.07344962를 기록했다. checkpoint spatial diagnostic은 test z=203/227/250에서 global map range=0.67868543·std=0.11746240이지만 support 내부 prediction std=0.0·Pearson=null인 고정 plateau를 확인했다. 따라서 global `max-min ≤ 1e-6` gate만으로는 candidate를 안전하게 보류할 수 없으며, 현재 `emitted` coordinate는 사용하지 않는다. 다음 보완은 상위-score plateau 면적·동점 비율·endpoint 간 map similarity를 검사하는 decoder diagnostic이다. response direction은 여전히 unresolved이므로 B−A나 XCT response를 direct defect label로 사용하지 않는다.
 
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
@@ -21,8 +21,8 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 | Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
 | Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
 | Support-mask weighted continuous regression loss | 완료·runtime 검증 통과 | z=4 loss/gradient=0, z=128 support-only regression, unknown 영향=0 |
-| A-only support-mask weighted baseline | run 1 end-to-end 완료·spatial diagnostic 대기 | best validation loss=0.06163210, test loss=0.07344962. flat map에서는 `withheld_spatial_plateau`로 좌표를 숨김 |
-| Checkpoint spatial diagnostic | 구현 완료·사용자 실행 대기 | prediction/target range·std·support correlation·plateau-safe decoder status를 read-only 확인 |
+| A-only support-mask weighted baseline | run 1 end-to-end 완료·localization hold | best validation loss=0.06163210, test loss=0.07344962. support-region prediction은 flat하여 current coordinate 무효 |
+| Checkpoint spatial diagnostic | 완료·decoder criterion 재보완 필요 | global map은 non-flat이나 support-region std=0·correlation null을 read-only 확인 |
 | B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
 
 ## 연구 흐름
@@ -119,7 +119,7 @@ flowchart TD
 | weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
 | XCT response direction 검증·A-only baseline 연결 | 진행 예정 | 10% |
 
-남은 핵심 과제는 **A-only spatial localization diagnostic·decoder 보완 및 target 의미 검증**이다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했고, six-channel causal Conv3D A-only baseline에 연결됐다. 다음 gate는 trained checkpoint의 spatial prediction/target diagnostic과 plateau-safe candidate decoder 검증이다. 이 gate를 통과할 때까지 score/좌표를 물리적 품질 후보로 사용하지 않는다.
+남은 핵심 과제는 **A-only spatial localization diagnostic·decoder 보완 및 target 의미 검증**이다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했고, six-channel causal Conv3D A-only baseline에 연결됐다. 다음 gate는 support-region plateau를 잡는 decoder diagnostic과 candidate withholding 검증이다. 이 gate를 통과할 때까지 score/좌표를 물리적 품질 후보로 사용하지 않는다.
 
 ## 실행 순서
 
