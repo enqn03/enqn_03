@@ -1049,3 +1049,18 @@ NIST 논문은 Part 1–4의 위치와 layer-125 part shape의 비대칭 기준�
 이 순서가 필요한 이유는 `rank2` transform을 바꾸기 전에 이미지 reference가 진짜로 usable한지 알아야 하기 때문이다. 예를 들어 red channel에서 밝은 위치를 찾았다고 해도 그것이 laser spot인지 saturated reflection인지 바로 알 수 없다. 그래서 pre-audit의 결과는 **candidate reference**와 image quality만 기록한다.
 
 > 다음 calibration fit 단계로 넘어갈 조건은 세 image가 usable Y/X geometry를 갖고 secondary image의 red-candidate 검사가 실행되는 것이다. 이것만으로 rank 1/2를 고르거나 `calibration_v1.yaml`을 바꾸지는 않는다.
+
+
+### 42.1 실행 결과: 세 calibration 그림은 보이지만, 좌표를 확정할 단계는 아니다
+
+실행 결과 세 파일의 실제 구조가 확인됐다. DotGrid와 Checkerboard는 모두 `2000×2000` 흑백 layer-camera TIFF이고, SecondaryCamera는 `3036×4048×3` RGB TIFF다. QC 그림에서 dot-grid의 점 패턴과 checkerboard의 흑백 사각형 경계는 선명하게 보인다. 따라서 이 두 기준판은 뒤에서 점 중심이나 코너를 찾는 metrology audit에 사용할 수 있다.
+
+SecondaryCamera에는 분홍/빨강 계열의 작은 spot가 실제로 보인다. 다만 현재의 간단한 방법은 image 전체에서 red dominance가 높은 상위 0.1% pixel을 모두 모아 무게중심을 냈다. 반사광처럼 다른 빨간 영역도 같이 들어가서 pixel 집합의 spread가 `613.08 px`로 너무 넓었다. 그래서 `(2341.28, 2039.94)`는 **red-reference candidate**이지 정밀한 machine origin 좌표가 아니다.
+
+| 이번에 확인한 것 | 아직 확인하지 않은 것 |
+|---|---|
+| calibration 기준 무늬가 metadata TIFF에서 가시적임 | 정확한 dot center·checkerboard corner 목록 |
+| secondary image가 RGB이고 red visual marker가 존재함 | 어떤 red component가 documented laser origin인지 |
+| independent detector-and-fit audit을 설계할 수 있음 | 새 homography, rank 1/2 선택, `calibration_v1.yaml` 수정 |
+
+이 결과 때문에 다음은 model을 다시 학습하는 작업이 아니다. 먼저 local red component를 분리해 spot 후보를 비교하고, dot-grid/checkerboard feature detection의 수·coverage·residual을 **read-only로 측정**해야 한다. 그 후에도 사람이 QC를 확인하고 별도로 승인하기 전에는 raw camera 좌표를 machine part 좌표라고 확정하지 않는다.
