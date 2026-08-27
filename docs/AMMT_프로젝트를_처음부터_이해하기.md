@@ -469,3 +469,23 @@ spatial diagnostic을 실제 checkpoint에 실행해 보니 처음 예상보다 
 이제 decoder는 화면 전체만 보지 않고, 높은 점수가 넓은 plateau를 이루는지, 최댓값 동점이 얼마나 많은지, 다른 layer에서도 map이 똑같이 반복되는지를 추가로 검사해야 한다. 그 기준을 충족하지 못하면 `candidate`를 반환하지 않고 “아직 위치를 구분하지 못함”이라고 명시한다.
 
 > 이 진단의 결론은 “model이 실패했다”가 아니라, **loss 감소와 위치 localization은 다른 검증 항목이며 둘을 따로 통과시켜야 한다**는 것이다. 이제 다음 개선 실험은 이 사실을 기준으로 설계한다.
+
+
+---
+
+## 17. 실제 실시간 상황에서도 후보를 안전하게 멈추게 하려면
+
+앞의 진단에서는 XCT support 안의 prediction이 모두 같다는 사실을 확인할 수 있었다. 하지만 실제 제조 중에는 XCT 검사 결과가 아직 없으므로, 실시간 model은 “지금 이 pixel이 XCT support에 속하는가”를 알 수 없다. 따라서 실제 candidate decoder가 support mask를 보고 후보를 막으면 안 된다. 그것은 미래 검사 정보를 미리 본 것이기 때문이다.
+
+그래서 decoder는 prediction map 자체만 보고 세 가지 안전 검사를 한다.
+
+| 순서 | decoder가 보는 것 | 멈추는 조건 | 반환 상태 |
+|---|---|---|---|
+| 1 | 화면 전체의 max-min | 값 차이가 `1e-6` 이하 | `withheld_spatial_plateau` |
+| 2 | 최고 score와 사실상 같은 pixel의 면적 | 전체 256×256 pixel의 0.1%를 초과 | `withheld_top_score_plateau` |
+| 3 | 이전 endpoint map과 현재 map의 차이 | MAE와 최대 차이가 모두 `1e-6` 이하 | `withheld_temporally_invariant_map` |
+| 4 | 위 세 조건을 통과 | finite local maximum 존재 | `emitted` 후 top-k candidate 출력 |
+
+두 번째 규칙은 “가장 높은 점수가 한 점이 아니라 넓은 바닥처럼 퍼져 있으면 어느 좌표가 대표인지 정할 수 없다”는 뜻이다. 세 번째 규칙은 layer가 바뀌어도 model map이 숫자까지 완전히 똑같이 반복되면, 그 map이 현재 input의 변화를 보고 만든 결과인지 의심해야 한다는 뜻이다.
+
+이 규칙들은 **결함을 판정하는 기준이 아니다.** model이 위치를 구분하지 못하는데도 임의 좌표를 내는 일을 막는 품질 안전장치다. 다음 실행에서 이 세 수치를 실제 checkpoint에 적용해 보고, candidate가 올바르게 보류되는지 확인한다.

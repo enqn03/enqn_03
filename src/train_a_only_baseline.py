@@ -251,19 +251,38 @@ def local_maximum_candidates(
     top_k: int,
     kernel_size: int,
     plateau_range_atol: float,
+    top_score_tie_atol: float,
+    top_score_tie_fraction_max: float,
+    previous_prediction: Tensor | None,
+    temporal_map_mae_atol: float,
+    temporal_map_max_abs_atol: float,
 ) -> dict[str, Any]:
     """Decode local maxima, withholding arbitrary coordinates on a flat map."""
     if prediction.shape != (1, 1, prediction.shape[-2], prediction.shape[-1]):
         raise ValueError(f"Expected one prediction [1,1,H,W], got {tuple(prediction.shape)}")
     if kernel_size < 1 or kernel_size % 2 == 0:
         raise ValueError("local maximum kernel_size must be a positive odd integer.")
-    if plateau_range_atol < 0:
-        raise ValueError("plateau_range_atol must be non-negative.")
+    if min(plateau_range_atol, top_score_tie_atol, temporal_map_mae_atol, temporal_map_max_abs_atol) < 0:
+        raise ValueError("All decoder tolerances must be non-negative.")
+    if not 0.0 <= top_score_tie_fraction_max <= 1.0:
+        raise ValueError("top_score_tie_fraction_max must be in [0, 1].")
 
     candidate_map = prediction[0, 0]
     prediction_min = float(candidate_map.min().item())
     prediction_max = float(candidate_map.max().item())
     spatial_range = prediction_max - prediction_min
+    top_score_tie_pixel_count = int(torch.isclose(candidate_map, candidate_map.max(), rtol=0.0, atol=top_score_tie_atol).sum().item())
+    top_score_tie_fraction = top_score_tie_pixel_count / int(candidate_map.numel())
+    temporal_map_mae: float | None = None
+    temporal_map_max_abs: float | None = None
+    temporally_invariant = False
+    if previous_prediction is not None:
+        if tuple(previous_prediction.shape) != tuple(prediction.shape):
+            raise ValueError("previous_prediction must have the same [1,1,H,W] shape as prediction.")
+        temporal_difference = (prediction - previous_prediction).abs()
+        temporal_map_mae = float(temporal_difference.mean().item())
+        temporal_map_max_abs = float(temporal_difference.max().item())
+        temporally_invariant = temporal_map_mae <= temporal_map_mae_atol and temporal_map_max_abs <= temporal_map_max_abs_atol
     metadata = sample["metadata"]
     status: dict[str, Any] = {
         "sample_id": str(metadata["sample_id"]),
@@ -272,12 +291,40 @@ def local_maximum_candidates(
         "prediction_max": prediction_max,
         "spatial_range": spatial_range,
         "plateau_range_atol": float(plateau_range_atol),
+        "top_score_tie_atol": float(top_score_tie_atol),
+        "top_score_tie_pixel_count": top_score_tie_pixel_count,
+        "top_score_tie_fraction": top_score_tie_fraction,
+        "top_score_tie_fraction_max": float(top_score_tie_fraction_max),
+        "temporal_map_mae_to_previous": temporal_map_mae,
+        "temporal_map_max_abs_to_previous": temporal_map_max_abs,
+        "temporal_map_mae_atol": float(temporal_map_mae_atol),
+        "temporal_map_max_abs_atol": float(temporal_map_max_abs_atol),
     }
     if spatial_range <= plateau_range_atol:
         status.update(
             {
                 "candidate_status": "withheld_spatial_plateau",
                 "reason": "prediction spatial range is at or below plateau tolerance; no meaningful location can be ranked",
+                "candidate_count": 0,
+                "candidates": [],
+            }
+        )
+        return status
+    if top_score_tie_fraction > top_score_tie_fraction_max:
+        status.update(
+            {
+                "candidate_status": "withheld_top_score_plateau",
+                "reason": "top-score tie occupies too much of the model map; no unique location can be ranked",
+                "candidate_count": 0,
+                "candidates": [],
+            }
+        )
+        return status
+    if temporally_invariant:
+        status.update(
+            {
+                "candidate_status": "withheld_temporally_invariant_map",
+                "reason": "consecutive endpoint prediction maps are numerically invariant",
                 "candidate_count": 0,
                 "candidates": [],
             }
@@ -329,11 +376,16 @@ def evaluate_test_candidates(
     top_k: int,
     kernel_size: int,
     plateau_range_atol: float,
+    top_score_tie_atol: float,
+    top_score_tie_fraction_max: float,
+    temporal_map_mae_atol: float,
+    temporal_map_max_abs_atol: float,
     max_samples: int | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     model.eval()
     candidates: list[dict[str, Any]] = []
     endpoint_statuses: list[dict[str, Any]] = []
+    previous_prediction: Tensor | None = None
     with torch.no_grad():
         sample_count = len(dataset) if max_samples is None else min(len(dataset), max_samples)
         for index in range(sample_count):
@@ -345,9 +397,15 @@ def evaluate_test_candidates(
                 top_k=top_k,
                 kernel_size=kernel_size,
                 plateau_range_atol=plateau_range_atol,
+                top_score_tie_atol=top_score_tie_atol,
+                top_score_tie_fraction_max=top_score_tie_fraction_max,
+                previous_prediction=previous_prediction,
+                temporal_map_mae_atol=temporal_map_mae_atol,
+                temporal_map_max_abs_atol=temporal_map_max_abs_atol,
             )
             candidates.extend(result.pop("candidates"))
             endpoint_statuses.append(result)
+            previous_prediction = prediction.clone()
     return candidates, endpoint_statuses
 
 
@@ -520,6 +578,10 @@ def main() -> None:
         top_k=int(evaluation_config["top_k_candidates_per_endpoint"]),
         kernel_size=int(evaluation_config["local_maximum_kernel_size"]),
         plateau_range_atol=float(evaluation_config["spatial_plateau_range_atol"]),
+        top_score_tie_atol=float(evaluation_config["top_score_tie_atol"]),
+        top_score_tie_fraction_max=float(evaluation_config["top_score_tie_fraction_max"]),
+        temporal_map_mae_atol=float(evaluation_config["temporal_map_mae_atol"]),
+        temporal_map_max_abs_atol=float(evaluation_config["temporal_map_max_abs_atol"]),
         max_samples=args.max_test_samples,
     )
     candidate_status_counts: dict[str, int] = {}
@@ -555,6 +617,10 @@ def main() -> None:
             "candidate_count": len(candidates),
             "top_k_per_endpoint": int(evaluation_config["top_k_candidates_per_endpoint"]),
             "spatial_plateau_range_atol": float(evaluation_config["spatial_plateau_range_atol"]),
+            "top_score_tie_atol": float(evaluation_config["top_score_tie_atol"]),
+            "top_score_tie_fraction_max": float(evaluation_config["top_score_tie_fraction_max"]),
+            "temporal_map_mae_atol": float(evaluation_config["temporal_map_mae_atol"]),
+            "temporal_map_max_abs_atol": float(evaluation_config["temporal_map_max_abs_atol"]),
             "endpoint_status_counts": candidate_status_counts,
             "endpoint_statuses": candidate_endpoint_statuses,
             "candidates": candidates,

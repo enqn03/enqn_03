@@ -101,12 +101,14 @@ def main() -> None:
     plateau_atol = float(evaluation_config["spatial_plateau_range_atol"])
 
     summaries: list[dict[str, Any]] = []
+    previous_prediction: Tensor | None = None
     with torch.no_grad():
         for index in args.indices:
             if not 0 <= index < len(dataset):
                 raise IndexError(f"--indices value {index} is outside split={args.split} range 0..{len(dataset)-1}")
             sample = dataset[index]
-            prediction = model(sample["model_input_history"].unsqueeze(0).to(device=device, dtype=torch.float32)).cpu()[0, 0]
+            prediction_4d = model(sample["model_input_history"].unsqueeze(0).to(device=device, dtype=torch.float32)).cpu()
+            prediction = prediction_4d[0, 0]
             target = sample["weak_response"][0].cpu()
             support = sample["weak_support_mask"][0].cpu() > 0
             predicted_supported = prediction[support]
@@ -115,11 +117,16 @@ def main() -> None:
             supported_target_stats = tensor_stats(target_supported)
             supported_prediction_stats = tensor_stats(predicted_supported)
             decoder_result = local_maximum_candidates(
-                prediction.unsqueeze(0).unsqueeze(0),
+                prediction_4d,
                 sample,
                 top_k=int(evaluation_config["top_k_candidates_per_endpoint"]),
                 kernel_size=int(evaluation_config["local_maximum_kernel_size"]),
                 plateau_range_atol=plateau_atol,
+                top_score_tie_atol=float(evaluation_config["top_score_tie_atol"]),
+                top_score_tie_fraction_max=float(evaluation_config["top_score_tie_fraction_max"]),
+                previous_prediction=previous_prediction,
+                temporal_map_mae_atol=float(evaluation_config["temporal_map_mae_atol"]),
+                temporal_map_max_abs_atol=float(evaluation_config["temporal_map_max_abs_atol"]),
             )
             decoded_candidates = decoder_result.pop("candidates")
             summaries.append(
@@ -137,11 +144,17 @@ def main() -> None:
                     "prediction_target_mae_on_support": None if target_supported.numel() == 0 else float((predicted_supported - target_supported).abs().mean().item()),
                     "flat_by_spatial_range_atol": bool(prediction_stats is not None and prediction_stats["spatial_range"] <= plateau_atol),
                     "spatial_plateau_range_atol": plateau_atol,
+                    "top_score_tie_pixel_count": int(decoder_result["top_score_tie_pixel_count"]),
+                    "top_score_tie_fraction": float(decoder_result["top_score_tie_fraction"]),
+                    "top_score_tie_fraction_max": float(decoder_result["top_score_tie_fraction_max"]),
+                    "temporal_map_mae_to_previous": decoder_result["temporal_map_mae_to_previous"],
+                    "temporal_map_max_abs_to_previous": decoder_result["temporal_map_max_abs_to_previous"],
                     "candidate_decoder_status": str(decoder_result["candidate_status"]),
                     "candidate_decoder_reason": decoder_result["reason"],
                     "candidate_decoder_count": len(decoded_candidates),
                 }
             )
+            previous_prediction = prediction_4d.clone()
 
     print(
         json.dumps(
@@ -152,6 +165,10 @@ def main() -> None:
                 "split": args.split,
                 "device": str(device),
                 "spatial_plateau_range_atol": plateau_atol,
+                "top_score_tie_atol": float(evaluation_config["top_score_tie_atol"]),
+                "top_score_tie_fraction_max": float(evaluation_config["top_score_tie_fraction_max"]),
+                "temporal_map_mae_atol": float(evaluation_config["temporal_map_mae_atol"]),
+                "temporal_map_max_abs_atol": float(evaluation_config["temporal_map_max_abs_atol"]),
                 "samples": summaries,
                 "interpretation": "Flat prediction maps must not produce physical coordinate candidates. Correlation is descriptive only while response direction remains unresolved.",
             },
