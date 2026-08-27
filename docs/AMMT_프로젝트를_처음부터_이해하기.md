@@ -790,3 +790,36 @@ Residual model을 8 epoch 학습한 결과, best validation checkpoint는 epoch 
 > 지금까지 통과한 것은 **internal technical validation**이다. 즉 model이 A input에 반응하고, sparse XCT-supported response와의 held-out loss가 개선되며, 안전 gate가 통과한 compact candidate를 내보낼 수 있음을 확인했다.
 
 하지만 아직 candidate를 “확정 결함”이라고 할 수는 없다. 현재 calibration은 provisional이어서 pixel 좌표가 machine/part 좌표로 얼마나 정확히 바뀌는지 점검해야 하고, XCT response가 높을수록 또는 낮을수록 나쁜 quality인지도 정해지지 않았다. 다음에는 score 자체를 다시 바꾸지 않고 emitted candidate의 좌표가 calibration FOV 안에 있는지, camera→machine→camera round-trip에서 얼마나 오차가 나는지 검사한다.
+
+
+---
+
+## 32. 후보 점수와 좌표가 나왔어도 좌표 변환 검사가 먼저다
+
+Residual model은 `(x_pixel, y_pixel, layer_z, score)` 후보를 내보낼 수 있게 됐다. 이때 `x_pixel`, `y_pixel`은 우선 **layer camera의 raw pixel center**이고, 그 원래 위치는 256×256 model grid의 index다. 제조 장비에서 쓸 machine/part 좌표로 읽으려면 calibration을 역으로 적용해야 한다.
+
+새 `audit_a_only_candidate_coordinates.py`는 이미 만든 compact candidate 240개만 읽어 다음 경로를 계산한다.
+
+```text
+256×256 model-grid index
+        ↓  ROI center convention
+raw layer-camera pixel
+        ↓  configured offset을 제거하고 homography 역변환
+machine / part coordinate
+        ↓  homography 정방향 변환과 offset 재적용
+raw layer-camera pixel
+        ↓  ROI-grid 역변환
+원래 model-grid index
+```
+
+| 검사 | 확인하는 내용 | 통과가 뜻하는 것 | 통과해도 뜻하지 않는 것 |
+|---|---|---|---|
+| Grid·ROI·sensor bounds | 후보가 256 grid, working ROI, 2000×2000 camera 안에 있는지 | 좌표 domain이 맞음 | 실제 defect 여부 |
+| Round trip | camera→machine→camera와 grid→camera→grid의 수치 차이 | 현재 코드·offset·homography가 서로 일관됨 | 외부 metrology accuracy |
+| Part containment | 역투영 좌표가 configured four-part rectangle에 속하는지 | provisional geometry 안에서 part domain이 맞음 | part edge의 진짜 위치 |
+| Edge margin | 후보가 model boundary에서 최소 3 pixel 떨어졌는지 | NMS padding 영향 warning 확인 | candidate score의 진짜 품질 |
+| Duplicate | 같은 endpoint에서 같은 model cell을 반복했는지 | top-5의 기본 좌표 다양성 확인 | 시간에 따른 defect persistence |
+
+이 audit은 TIFF, XCT CSV, target, model, checkpoint를 전혀 읽지 않는다. 새로운 dense heatmap도 만들지 않고, 작은 CSV/JSON 숫자만 남긴다.
+
+> 특히 “round trip이 통과했다”는 말은 같은 provisional calibration 식을 정방향·역방향으로 적용했을 때 숫자가 되돌아온다는 뜻이다. 현재 calibration에는 fit RMSE 약 5.2px, LOO RMSE 약 7.0px가 있으므로, 이 검사만으로 절대 machine coordinate 정확도가 확정되지는 않는다.
