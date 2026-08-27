@@ -1064,3 +1064,20 @@ SecondaryCamera에는 분홍/빨강 계열의 작은 spot가 실제로 보인다
 | independent detector-and-fit audit을 설계할 수 있음 | 새 homography, rank 1/2 선택, `calibration_v1.yaml` 수정 |
 
 이 결과 때문에 다음은 model을 다시 학습하는 작업이 아니다. 먼저 local red component를 분리해 spot 후보를 비교하고, dot-grid/checkerboard feature detection의 수·coverage·residual을 **read-only로 측정**해야 한다. 그 후에도 사람이 QC를 확인하고 별도로 승인하기 전에는 raw camera 좌표를 machine part 좌표라고 확정하지 않는다.
+
+
+---
+
+## 43. 다음 metrology audit은 무엇을 찾고, 왜 아직 calibration을 바꾸지 않는가
+
+이제 다음 코드는 calibration 숫자를 바꾸는 code가 아니다. 세 기준판 이미지에서 **실제로 반복되는 점·코너·작은 red spot를 찾을 수 있는지** 확인하는 detector다.
+
+| 이미지 | detector가 찾는 것 | 쉬운 설명 |
+|---|---|---|
+| DotGrid | dark dot-center 후보 | 주변보다 어두운 작은 원형 점의 중심 후보를 찾는다. |
+| Checkerboard | corner 후보 | 흰 사각형과 검은 사각형이 만나는 강한 모서리 후보를 찾는다. |
+| SecondaryCamera | red connected component 후보 | 빨간 성분이 서로 닿아 있는 pixel 묶음을 각각 따로 분리한다. |
+
+Dot/Checkerboard에서는 후보들이 일정한 간격으로 배열되는지 nearest-neighbor distance와 그 변동(CV)을 본다. SecondaryCamera에서는 각 red component의 넓이, 빨간 정도, 중심, 퍼짐(spread), image boundary 접촉 여부를 비교한다. 이는 앞의 global red centroid처럼 서로 다른 반사광을 하나의 origin으로 섞는 일을 막기 위한 것이다.
+
+코드는 small CSV와 JSON, detection overlay PNG 세 장만 생성한다. 결과가 좋아도 아직 “이 pixel이 machine `(0,0)`이다” 또는 “rank 2가 맞다”라고 말하지 않는다. 그 판단에는 발견된 feature들이 실제 metrology pattern과 얼마나 정확히 맞는지 계산하는 다음 calibration-fit audit과 사람의 QC 검토가 추가로 필요하다.
