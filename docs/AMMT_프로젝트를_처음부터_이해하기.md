@@ -489,3 +489,30 @@ spatial diagnostic을 실제 checkpoint에 실행해 보니 처음 예상보다 
 두 번째 규칙은 “가장 높은 점수가 한 점이 아니라 넓은 바닥처럼 퍼져 있으면 어느 좌표가 대표인지 정할 수 없다”는 뜻이다. 세 번째 규칙은 layer가 바뀌어도 model map이 숫자까지 완전히 똑같이 반복되면, 그 map이 현재 input의 변화를 보고 만든 결과인지 의심해야 한다는 뜻이다.
 
 이 규칙들은 **결함을 판정하는 기준이 아니다.** model이 위치를 구분하지 못하는데도 임의 좌표를 내는 일을 막는 품질 안전장치다. 다음 실행에서 이 세 수치를 실제 checkpoint에 적용해 보고, candidate가 올바르게 보류되는지 확인한다.
+
+
+---
+
+## 18. 안전장치 검증 결과와 다음 한 가지 실험
+
+새 안전장치를 첫 checkpoint에 적용해 보니, z=203·z=227·z=250에서 최고 점수와 사실상 같은 pixel이 각각 63,504개였다. 이는 256×256 화면의 약 96.9%다. 즉 “가장 높은 곳”이 한 점이나 작은 영역이 아니라 화면 대부분을 덮고 있었기 때문에, 좌표를 고르는 것이 의미 없었다.
+
+또한 z=203에서 z=227로, z=227에서 z=250으로 바꿔도 prediction map의 차이는 평균도 최대값도 정확히 0이었다. model은 서로 다른 시간의 A history를 받았지만 같은 그림을 반복하고 있었다.
+
+| 새 규칙 | run 1 결과 | 의미 |
+|---|---|---|
+| 최고 score 동점 면적 검사 | 96.9%로 허용 0.1%를 크게 초과 | 하나의 대표 위치를 정할 수 없다. |
+| endpoint map 변화 검사 | MAE=0, max difference=0 | model이 현재 입력 변화에 반응하지 않았다. |
+| candidate 반환 규칙 | 세 layer 모두 `withheld_top_score_plateau`, 후보 0개 | 임의 `(x,y)`가 더 이상 출력되지 않는다. |
+
+따라서 이번 단계는 성공이다. model의 위치 예측이 아직 좋다는 뜻이 아니라, **모델이 위치를 구분하지 못할 때 그 사실을 솔직하고 안전하게 표시하도록 만들었다**는 뜻이다.
+
+### 다음에는 무엇을 하나만 바꿀까?
+
+첫 개선 실험에서는 model 구조, XCT target, Gaussian rasterization, optimizer를 모두 그대로 둔다. 바꾸는 것은 학습 횟수뿐이다. 8 epoch에서 validation loss가 마지막 epoch까지 낮아지고 있었으므로, 먼저 24 epoch까지 충분히 학습시켜 보는 것이 가장 공정한 확인 방법이다.
+
+| 고정하는 것 | 바꾸는 것 | 확인할 질문 |
+|---|---|---|
+| 데이터 split, 6채널 A input, weak target, masked loss, model 크기, learning rate | epoch `8 → 24` | 8 epoch가 단순히 부족했는가? |
+
+24 epoch 후에도 map이 똑같이 반복되면, 다음 한 가지 실험에서 model capacity를 늘릴 근거가 생긴다. 반대로 spatial variation이 생기면 held-out loss와 candidate safety status를 함께 비교한다. 이렇게 한 번에 하나씩만 바꾸면 무엇이 효과를 냈는지 이해할 수 있다.
