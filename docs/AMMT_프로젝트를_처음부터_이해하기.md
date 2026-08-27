@@ -591,3 +591,23 @@ E24 evaluator와 spatial diagnostic까지 끝내자, 24 epoch를 허용했어도
 따라서 “학습 시간이 부족했다”는 설명은 설득력이 약해졌다. 다음에는 학습 횟수를 다시 8로 고정하고, 모델이 image pattern을 표현할 수 있는 channel 수만 8에서 32로 늘린다.
 
 이것은 모델을 무작정 복잡하게 만드는 것이 아니다. 작은 모델이 충분한 표현 공간을 갖지 못해 평균적인 값을 반복했는지 확인하는 한 가지 실험이다. A input, XCT target, loss, data split, optimizer, random seed는 그대로 두므로, 결과가 달라지면 model capacity가 원인이었을 가능성을 더 강하게 말할 수 있다.
+
+
+---
+
+## 23. 다음 실험 C32는 무엇을 바꾸고 무엇을 그대로 두는가
+
+C32는 `base_channels`만 8에서 32로 바꾸는 실험이다. Channel은 model이 image에서 동시에 보관하고 조합할 수 있는 feature의 통로 수라고 생각하면 된다. 작은 model이 밝기, texture, saturation validity, 최근 layer 변화처럼 여러 단서를 충분히 나누지 못했다면, 답을 평균값 하나로 단순화할 수 있다.
+
+| 항목 | Run 1 | C32 run | 이유 |
+|---|---:|---:|---|
+| Model feature channels | 8 | 32 | **유일하게 바꾸는 변수** |
+| Training epoch | 8 | 8 | 오래 학습한 효과를 섞지 않음 |
+| Input | A 영상 4 layer × 6 channel | 동일 | 새 정보를 추가하지 않음 |
+| XCT weak target와 masked loss | 동일 | 동일 | label 의미를 바꾸지 않음 |
+| Optimizer, seed, split | 동일 | 동일 | 우연한 학습 조건 차이를 줄임 |
+| Safety decoder | 동일 | 동일 | 좌표를 허용하는 기준을 바꾸지 않음 |
+
+C32에서 보는 질문은 “loss가 조금 더 낮아졌는가”만이 아니다. 더 중요한 질문은 **다른 A layer history를 입력했을 때 map 모양이 달라졌는가**, 그리고 **최고 score가 화면 대부분에 동점으로 퍼지는 현상이 줄었는가**다. 두 질문의 답이 모두 아니라면, 다음에는 model 크기보다 target rasterization 또는 A input–XCT target 연결 방식을 조사해야 한다.
+
+> C32가 candidate를 출력해도 그 좌표는 여전히 XCT-derived continuous quality candidate다. XCT response의 high/low 방향이 실제 결함과 어떻게 연결되는지는 별도 검증 전까지 확정하지 않는다.
