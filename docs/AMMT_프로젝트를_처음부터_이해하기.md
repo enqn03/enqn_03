@@ -652,3 +652,25 @@ C32는 model의 feature channel만 8에서 32로 늘린 실험이었다. 결과�
 > 기대하는 결과는 “support는 충분히 늘지만, 기존 response의 의미와 위치 구분은 크게 흐려지지 않는다”이다. 이 결과는 sigma=3 training을 검토할 근거일 뿐, defect를 확정하거나 A-only model이 localization을 성공했다는 뜻은 아니다.
 
 실행 뒤에는 `processed/weak_target_support_density_v1/`에 CSV 두 개와 summary JSON 한 개만 생긴다. dense heatmap, model checkpoint, TIFF crop은 만들지 않으며 원본 TIFF/CSV도 그대로다.
+
+
+---
+
+## 26. sigma=3은 더 많은 학습 지점을 만들었지만, 왜 바로 학습하지 않는가
+
+Audit 결과 sigma=3은 좋은 점과 보류해야 할 점을 동시에 보였다.
+
+| 확인한 항목 | 결과 | 뜻 |
+|---|---:|---|
+| XCT가 있는 available layer 수 | 8개 | train·validation·test layer를 함께 확인함 |
+| z=4의 support | sigma=2/3 모두 0 | 초기 layer의 `unknown`을 정상값으로 바꾸지 않음 |
+| median support 증가 | 29.3990% | model이 loss로 볼 수 있는 pixel 수는 늘어남 |
+| 기존 support 보존 | 100% | sigma=2에서 알고 있던 위치가 사라지지는 않음 |
+| 공통 support response MAE | 0.0538972 | 미리 둔 안정성 기준 0.05000보다 7.79% 큼 |
+| binary support component 변화 | 1개→1개 | 이 데이터에서는 component 수만으로 국소적인 섞임을 잘 구분하지 못함 |
+
+쉽게 말하면, Gaussian을 넓히면 각 XCT 점이 주변에 더 넓게 영향을 준다. 그래서 model이 배울 known pixel은 늘어난다. 하지만 가까운 점들이 서로 영향을 더 많이 주면서, **원래 이미 알고 있던 위치의 continuous target 값도 바뀌었다.** 이 변화가 기준보다 컸기 때문에 “support가 늘었으니 sigma=3으로 학습하자”라고 바로 말할 수 없다.
+
+> 결론: `weak_target_v1.yaml`의 production sigma=2를 그대로 유지하고, sigma=3 training은 시작하지 않는다. 이 판단은 sigma=3이 물리적으로 틀렸다는 뜻이 아니라, 현재 evidence만으로는 target 의미를 충분히 보존했다고 말하기 어렵다는 뜻이다.
+
+다음에는 target이나 model 크기를 또 바꾸지 않는다. 이미 저장된 A-only checkpoint를 읽기만 하면서, 서로 다른 A 영상을 넣었을 때 **frame encoder**, **temporal mixer**, **output logit**, **최종 score map** 중 어느 단계부터 결과가 같아지는지 확인한다. 이 검증이 완료되어야 static map collapse가 target 자체의 문제인지, model이 input 정보를 버리는 문제인지 더 정확하게 나눌 수 있다.
