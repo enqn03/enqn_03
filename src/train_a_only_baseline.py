@@ -389,6 +389,7 @@ def evaluate_test_candidates(
     with torch.no_grad():
         sample_count = len(dataset) if max_samples is None else min(len(dataset), max_samples)
         for index in range(sample_count):
+            sample = dataset[index]
             history = sample["model_input_history"].unsqueeze(0).to(device=device, dtype=torch.float32)
             prediction = model(history).cpu()
             result = local_maximum_candidates(

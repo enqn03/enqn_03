@@ -535,3 +535,22 @@ spatial diagnostic을 실제 checkpoint에 실행해 보니 처음 예상보다 
 두 번째 run의 loss가 더 낮아져도 아직 충분하지 않다. 최고 점수 동점 영역이 run 1의 96.9%보다 줄었는지, 서로 다른 layer의 map이 더 이상 완전히 같지 않은지, 그 뒤 decoder가 candidate를 보류하는지 또는 허용하는지를 모두 함께 본다.
 
 > 이 실험의 목적은 좋은 결과를 빨리 만드는 것이 아니라, **8 epoch가 부족했는지 아닌지를 하나의 변수만 바꿔 확인하는 것**이다. 24 epoch 뒤에도 map이 같다면 다음에는 학습 시간 대신 model capacity 한 가지만 바꾼다.
+
+
+---
+
+## 20. 학습은 끝났는데 왜 결과 파일이 없고, 다시 학습하지 않는가
+
+24 epoch run은 실제로 24번의 학습을 모두 마쳤다. validation에서 가장 좋았던 checkpoint도 epoch 9에 저장되어 있다. 다만 마지막 단계인 test 평가 중에 code 한 줄에서 “현재 test sample”을 가져오는 부분이 빠져 `NameError`가 발생했다. 이 오류는 이미 끝난 학습을 되돌리거나 TIFF/XCT data를 바꾸지 않는다.
+
+| 구분 | 보존된 것 | 아직 없는 것 |
+|---|---|---|
+| 학습 | 24 epoch가 끝났고 best checkpoint가 있음 | 없음 |
+| validation | best epoch=9, loss=0.06152481 기록 | 없음 |
+| held-out test | 원본 test data는 그대로 있음 | test loss와 candidate JSON이 아직 생성되지 않음 |
+
+이때 24 epoch를 다시 돌리는 것은 좋은 방법이 아니다. 이미 학습된 model을 다시 학습시키면 시간만 더 들고, controlled experiment에서 필요했던 checkpoint는 이미 존재하기 때문이다. 그래서 **checkpoint-only evaluator**를 별도로 사용한다.
+
+이 evaluator는 저장된 checkpoint를 읽고 test data를 한 번 통과시킨 뒤, 아직 없던 두 결과 파일만 만든다. optimizer update, backward, 새로운 random initialization, checkpoint overwrite는 전혀 없다. 즉 “학습을 다시 하는 것”이 아니라 “이미 학습한 model의 시험지를 채점하는 것”에 가깝다.
+
+> 이 과정이 끝나면 8 epoch와 24 epoch 중 어느 쪽이 held-out test에서 더 나은지, 그리고 24 epoch가 반복 map 문제를 해결했는지를 공정하게 비교할 수 있다.
