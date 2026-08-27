@@ -940,3 +940,25 @@ Caution:     rank1-vs-rank2 same-part agreement=0%; coordinate shift summary att
 ```
 
 이 정책은 model의 score map이 불안정해서가 아니라 **calibration의 mirror/part-ID ambiguity**를 score semantics와 섞지 않기 위해서다. 다음 단계에서 authoritative build metadata, visible identifier 또는 수동 verified fiducial로 part identity anchor를 찾기 전까지, machine/part 값은 action input이나 physical location claim이 아니라 provisional metadata로만 유지한다.
+
+
+---
+
+## 38. NIST 논문에서 part ID를 확인할 수 있는 공식 anchor를 찾았다
+
+프로젝트 폴더 안에는 `Build Metadata`나 `Layer Camera Metadata`라는 이름의 calibration archive가 없었다. 그래서 NIST 공개 record와 논문을 확인했다. 이 연구는 데이터를 변경하지 않고 “공식적으로 어떤 정보가 존재하는가”만 찾는 read-only 조사였다.
+
+NIST dataset description은 layer 125에서 Part 1–4의 machine-coordinate layout을 Fig. 2로 제공한다. Part 1은 upper side, Part 4는 lower side에 배치되어 있으며, 각 part는 왼쪽 `-X`에 cylindrical cavity, 오른쪽 `+X`에 overhang이라는 비대칭 feature를 가진다.[1] 즉 raw layer-camera image에서 이 비대칭 모양의 방향을 볼 수 있다면 rank 1과 rank 2 mirror hypothesis 중 어느 쪽이 physical machine orientation과 맞는지 검사할 수 있다.
+
+| 공개 자료 | 확인된 내용 | 현재 사용 방법 |
+|---|---|---|
+| NIST PDR | Build Metadata, Layer Camera Metadata, Part Geometry, XYPT Commands가 공식 archive로 존재 | authoritative provenance 확인 |
+| NIST Fig. 2 | part01–04의 machine-coordinate numbering과 layer-125 layout | visual orientation criterion |
+| Layer Camera Metadata file list | dot-grid, secondary-camera red laser origin, checkerboard calibration target | future direct metrology anchor의 정확한 artifact 이름 |
+| Current project | archive 자체는 없음 | calibration config 즉시 변경 금지 |
+
+NIST 논문은 dot-grid target와 secondary-camera red laser dot을 이용해 machine origin과 orientation을 layer camera에 연결하는 방법도 설명한다.[1] 그러나 논문에 적힌 origin/orientation 값만으로는 현재 TIFF의 raw pixel에 바로 적용할 수 있는 complete homography가 되지 않는다. 더구나 NIST PDR에서 metadata archive를 sandbox로 직접 받으려 했을 때 120초 동안 byte를 받지 못해 timeout되었다. Partial file은 사용하지 않았고 project data도 변경하지 않았다.
+
+그래서 다음 후보 작업은 **layer-125 B-stage visual orientation overlay audit**이다. single B frame에 existing rank 1과 rank 2의 projected part geometry를 side-by-side로 그려 논문의 left-cavity/right-overhang 기준과 비교한다. 이 작업은 calibration rank를 자동으로 바꾸지 않으며, 결과가 설득력 있어도 config update는 별도 승인 후에만 할 수 있다.
+
+[1] [Lane & Yeung (2020), *Process Monitoring Dataset from the AMMT: Overhang Part X4*, J. Res. NIST 125:125027](https://doi.org/10.6028/jres.125.027)
