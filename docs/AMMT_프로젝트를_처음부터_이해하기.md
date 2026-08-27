@@ -674,3 +674,25 @@ Audit 결과 sigma=3은 좋은 점과 보류해야 할 점을 동시에 보였�
 > 결론: `weak_target_v1.yaml`의 production sigma=2를 그대로 유지하고, sigma=3 training은 시작하지 않는다. 이 판단은 sigma=3이 물리적으로 틀렸다는 뜻이 아니라, 현재 evidence만으로는 target 의미를 충분히 보존했다고 말하기 어렵다는 뜻이다.
 
 다음에는 target이나 model 크기를 또 바꾸지 않는다. 이미 저장된 A-only checkpoint를 읽기만 하면서, 서로 다른 A 영상을 넣었을 때 **frame encoder**, **temporal mixer**, **output logit**, **최종 score map** 중 어느 단계부터 결과가 같아지는지 확인한다. 이 검증이 완료되어야 static map collapse가 target 자체의 문제인지, model이 input 정보를 버리는 문제인지 더 정확하게 나눌 수 있다.
+
+
+---
+
+## 27. 이제는 target이 아니라 model 안에서 A 영상 차이가 어디서 사라지는지 확인한다
+
+지금까지는 “XCT target을 조금 더 넓게 만들면 model이 더 잘 배울까?”를 검사했다. 결과는 보류였다. 이제는 target을 더 건드리지 않고, 이미 학습된 C32 model이 서로 다른 A 영상을 받을 때 내부에서 어떤 일이 생기는지 확인한다.
+
+새 `diagnose_a_only_input_sensitivity.py`는 C32 checkpoint와 A TIFF만 읽는다. XCT CSV, weak target, support mask는 아예 사용하지 않는다. 따라서 이 검증은 “label이 좋았는가”가 아니라 “model이 input을 듣고 있는가”를 묻는다.
+
+| 차이를 확인하는 위치 | 쉽게 말하면 | 결과가 같다면 뜻하는 후보 |
+|---|---|---|
+| `input_history` | 실제로 넣은 4장의 A 영상과 mask | Dataset 선택 또는 input이 같은지 먼저 확인 |
+| `encoded_final_history_frame` | 마지막 A 영상을 encoder가 읽은 특징 | frame encoder가 image 차이를 놓칠 수 있음 |
+| `encoded_history` | 4개 history 전체의 encoder 특징 | encoder가 temporal input을 충분히 구분하지 못할 수 있음 |
+| `temporal_final` | 과거 4개 layer를 섞은 뒤 특징 | temporal aggregation 또는 normalization이 차이를 줄일 수 있음 |
+| `logits` | sigmoid를 통과하기 전 score map | decoder가 feature 차이를 버릴 수 있음 |
+| `score` | 최종 0–1 score map | sigmoid saturation 때문에 작은 logit 차이가 사라질 수 있음 |
+
+이 검사는 z=203, 227, 250의 모든 pair에 대해 두 tensor의 MAE·최대 차이·RMSE를 출력한다. `max_abs > 1e-6`이면 적어도 숫자상으로는 차이가 남아 있다고 표시한다. 만약 input과 encoder feature는 다른데 temporal feature부터 같아지면, 다음 개선은 target 확대가 아니라 temporal 부분을 바꾸는 방향이 된다.
+
+> 중요한 점은 “차이가 있다”가 곧 “위치 예측이 성공했다”는 뜻은 아니라는 점이다. 이 검사는 실패의 위치를 좁혀 다음 한 가지 개선 실험을 공정하게 고르기 위한 단계다.
