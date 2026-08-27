@@ -516,3 +516,22 @@ spatial diagnostic을 실제 checkpoint에 실행해 보니 처음 예상보다 
 | 데이터 split, 6채널 A input, weak target, masked loss, model 크기, learning rate | epoch `8 → 24` | 8 epoch가 단순히 부족했는가? |
 
 24 epoch 후에도 map이 똑같이 반복되면, 다음 한 가지 실험에서 model capacity를 늘릴 근거가 생긴다. 반대로 spatial variation이 생기면 held-out loss와 candidate safety status를 함께 비교한다. 이렇게 한 번에 하나씩만 바꾸면 무엇이 효과를 냈는지 이해할 수 있다.
+
+
+---
+
+## 19. 두 번째 학습은 왜 24 epoch만 바꾸는가
+
+첫 학습에서 model map이 똑같이 반복됐다고 해서 바로 model을 크게 바꾸거나 XCT target을 다시 만들면, 무엇이 문제였는지 알 수 없어진다. 아직 8 epoch만 학습했으므로, 단순히 학습 시간이 부족했을 가능성부터 먼저 확인하는 것이 공정하다.
+
+그래서 두 번째 run에서는 첫 번째와 거의 모든 것을 똑같이 둔다. A 영상, 4개 layer history, 6개 input channel, train/validation/test split, XCT weak target, masked loss, model 크기, optimizer, random seed, candidate safety rule은 그대로다. 오직 model이 data를 반복해서 보는 횟수만 8에서 24로 늘린다.
+
+| 그대로 두는 것 | 한 가지만 바꾸는 것 | 실행 후 볼 질문 |
+|---|---|---|
+| 데이터와 target | 학습 epoch: 8→24 | 더 오래 학습하면 model이 location 차이를 배우는가? |
+| model 구조와 optimizer | output directory | 이전 run을 보존한 채 정직하게 비교할 수 있는가? |
+| candidate safety gate | 없음 | 변화가 생겨도 허위 좌표는 계속 막히는가? |
+
+두 번째 run의 loss가 더 낮아져도 아직 충분하지 않다. 최고 점수 동점 영역이 run 1의 96.9%보다 줄었는지, 서로 다른 layer의 map이 더 이상 완전히 같지 않은지, 그 뒤 decoder가 candidate를 보류하는지 또는 허용하는지를 모두 함께 본다.
+
+> 이 실험의 목적은 좋은 결과를 빨리 만드는 것이 아니라, **8 epoch가 부족했는지 아닌지를 하나의 변수만 바꿔 확인하는 것**이다. 24 epoch 뒤에도 map이 같다면 다음에는 학습 시간 대신 model capacity 한 가지만 바꾼다.
