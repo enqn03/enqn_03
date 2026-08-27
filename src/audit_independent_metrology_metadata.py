@@ -28,15 +28,17 @@ import tifffile
 
 
 ARTIFACTS: tuple[tuple[str, str, str], ...] = (
-    ("dot_grid", "DotGrid_2000x2000.tif", "layer-camera dot-grid geometry"),
-    ("secondary_laser_origin", "SecondaryCamera_Laser00.tif", "secondary-camera machine-origin laser reference"),
-    ("checkerboard", "Checkerboard_2000x2000.tif", "layer-camera checkerboard geometry"),
+    ("dot_grid", "dot_grid", "layer-camera dot-grid geometry"),
+    ("secondary_laser_origin", "secondary_camera", "secondary-camera machine-origin laser reference"),
+    ("checkerboard", "checkerboard", "layer-camera checkerboard geometry"),
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--metadata-root", required=True, type=Path, help="Directory containing the three immutable metadata TIFF files.")
+    parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid_2000x2000 TIFF.")
+    parser.add_argument("--secondary-camera", required=True, type=Path, help="Immutable SecondaryCamera_Laser00 TIFF.")
+    parser.add_argument("--checkerboard", required=True, type=Path, help="Immutable Checkerboard_2000x2000 TIFF.")
     parser.add_argument("--output-dir", required=True, type=Path, help="New directory for compact CSV/JSON/QC PNG output.")
     parser.add_argument("--max-display-pixels", type=int, default=1000, help="Maximum side length of QC contact-sheet images.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace an existing audit output directory only after review.")
@@ -196,8 +198,7 @@ def red_laser_candidate(channels: np.ndarray) -> dict[str, Any]:
     }
 
 
-def inspect_tiff(name: str, filename: str, role: str, root: Path, max_display_pixels: int) -> tuple[dict[str, Any], np.ndarray, np.ndarray | None, dict[str, Any] | None]:
-    path = root / filename
+def inspect_tiff(name: str, path: Path, role: str, max_display_pixels: int) -> tuple[dict[str, Any], np.ndarray, np.ndarray | None, dict[str, Any] | None]:
     if not path.is_file():
         raise FileNotFoundError(f"Required metadata artifact not found: {path}")
     with tifffile.TiffFile(path) as handle:
@@ -279,15 +280,16 @@ def plot_qc(items: list[tuple[dict[str, Any], np.ndarray, np.ndarray | None, dic
 
 def main() -> None:
     args = parse_args()
-    if not args.metadata_root.is_dir():
-        raise FileNotFoundError(f"Metadata root not found: {args.metadata_root}")
+    for required_path in (args.dot_grid, args.secondary_camera, args.checkerboard):
+        if not required_path.is_file():
+            raise FileNotFoundError(f"Required metadata TIFF not found: {required_path}")
     if args.max_display_pixels < 128:
         raise ValueError("--max-display-pixels must be at least 128.")
     output_dir = args.output_dir
     prepare_output_directory(output_dir, args.overwrite)
     inspected: list[tuple[dict[str, Any], np.ndarray, np.ndarray | None, dict[str, Any] | None]] = []
-    for name, filename, role in ARTIFACTS:
-        inspected.append(inspect_tiff(name, filename, role, args.metadata_root, args.max_display_pixels))
+    for name, cli_attribute, role in ARTIFACTS:
+        inspected.append(inspect_tiff(name, getattr(args, cli_attribute), role, args.max_display_pixels))
     records = [item[0] for item in inspected]
     inventory_path = output_dir / "metrology_metadata_artifact_inventory.csv"
     fieldnames = [key for key in records[0] if key != "laser_origin_candidate"]
@@ -305,7 +307,9 @@ def main() -> None:
     summary = {
         "audit_type": "read-only independent layer-camera metrology metadata pre-audit; not calibration refit, rank selection, or defect labeling",
         "inputs": {
-            "metadata_root": str(args.metadata_root),
+            "dot_grid": str(args.dot_grid),
+            "secondary_camera": str(args.secondary_camera),
+            "checkerboard": str(args.checkerboard),
             "artifact_count": len(records),
             "tiff_access": "tifffile.memmap(..., series=0, mode='r')",
         },
