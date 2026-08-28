@@ -449,7 +449,25 @@ cd ~/ammt_project
 
 가장 작은 보완은 모든 edge-connected component의 size를 세고, **candidate 수가 가장 큰 component**를 BFS seed로 고르는 것이다. size가 같을 때만 aggregate response와 deterministic spatial order로 tie-break한다. detector threshold, fixed 5×5 held-out rule, RMSE/p95 gate, calibration config, model/XCT data는 그대로 유지한다.
 
-refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+이 보완은 새 파일 `src/audit_independent_method2_lattice_correspondence_refinement_v2.py`로 구현됐다. V2는 먼저 `method2_refined_2d_graph_components.csv`를 작성해 component별 candidate 수, edge 수, aggregate response, BFS seed, raw image bounding box를 남긴다. 그래서 다시 일찍 멈추더라도 단순 traceback만 남지 않고, **어느 component가 왜 선택됐는지**를 확인할 수 있다.
+
+| V2가 바꾸는 것 | V2가 바꾸지 않는 것 |
+|---|---|
+| BFS가 시작하는 graph component 선택 규칙과 component diagnostics | DotGrid detector·ROI·subpixel center rule |
+| failure 시 compact JSON/CSV/graph overlay를 먼저 남기는 순서 | `0.45–1.75×` neighbor distance, `≥0.92` axis alignment |
+| 새 `_v2` output directory | same 5×5 holdout, coverage/RMSE/p95 gate |
+| largest component 안의 high-response seed | calibration config/rank, A/B/XCT/target/model data, camera-primary reporting |
+
+실행할 때는 V1 failure directory를 지우거나 `--overwrite`하지 않고 새 V2 directory를 쓴다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement_v2.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v2
+```
+
+`status=fail_closed_before_heldout_validation`이면 graph/component diagnostics만 해석하고 transform을 만들지 않는다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
