@@ -974,3 +974,25 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 QC 그림에서 endpoint-repeat panel은 causal panel과 넓은 영역에서 다르게 보인다. t0/t1/t2 panel은 전체 모양은 비슷하지만 국소적인 색과 texture가 달라진다. 이는 CSV 숫자와 같은 내용을 보기 쉽게 확인하는 그림이다. 색은 해당 endpoint 내부에서 variant를 비교하는 용도이며 raw camera image나 physical defect 그림이 아니다. 검토한 세 PNG는 작고 재현 가능한 evidence이므로 `docs/qc/a_only_temporal_difference_stability_v1/`에 Git으로 보관한다.
 
 **다음 작업:** 과거 image 변경 때 top candidate가 바뀌는 원인을 구분한다. top1과 top2 score가 거의 비슷해서 순위만 바뀌는 것인지, 아니면 높은 score가 실제로 멀리 이동하는 것인지 top-K score margin/rank audit으로 확인한다. 이 audit은 decoder rule을 바꾸지 않고 설명만 한다. 결과를 보기 전에는 seed 추가나 다음 model 학습을 시작하지 않는다.
+
+
+---
+
+## 30. top candidate가 바뀌는 이유를 먼저 나누어 보는 이유
+
+새 model은 과거 image에 반응하지만, 그 반응 때문에 top candidate가 바뀌기도 했다. 이때 바로 “model이 불안정하다”라고만 말하거나 score threshold를 새로 넣으면 안 된다. top candidate가 바뀌는 상황에는 적어도 두 종류가 있다.
+
+첫째는 **near-tie rank switch**다. 서로 가까운 두 local maximum의 score가 거의 같은 경우, 아주 작은 map 변화로 1위와 2위 순서만 바뀔 수 있다. 원래 1위 점이 새 map의 2위나 3위로 남아 있으면 이런 가능성이 있다. 둘째는 **high-margin peak relocation**이다. 원래 1위 peak 자체가 새 map top-K에서 사라지고, 새 1위 peak도 충분히 높은 score margin을 가진 경우다. 이 경우는 단순 순위 바꿈보다 더 강한 response relocation일 수 있다.
+
+다음 audit은 causal map과 four counterfactual map마다 top-K=5 local maximum을 찾고, top1/top2 score 차이, score 차이를 map 전체 range로 나눈 값, 점 사이 거리, causal 1위가 새 top-K에서 몇 위인지, top-K가 얼마나 겹치는지를 기록한다. 5% 이하 margin은 near-tie 설명을, 20% 이상 margin과 causal peak의 top-K 소실은 high-margin relocation 설명을 시험하는 사전 고정 기준이다. 둘 중 어느 하나도 맞지 않으면 `ambiguous`로 남긴다.
+
+| 그림 marker | 뜻 |
+|---|---|
+| 흰색 × | normal causal map의 top1 위치 |
+| 색 있는 숫자 1–5 | 현재 panel에서 rank 1–5 local maximum |
+| 같은 위치 근처의 서로 다른 숫자 | peak가 남아 있지만 rank가 바뀐 경우일 수 있음 |
+| 흰색 ×와 멀리 떨어진 1번 | top candidate가 바뀐 공간적 관계 |
+
+이 그림은 score map 위에 marker를 얹은 내부 계산 확인 그림이다. 원본 A camera photo, XCT target, 물리적 결함 위치, 실제 장비에서 움직인 물체를 뜻하지 않는다. Audit 결과도 decoder를 자동 변경하지 않는다. near-tie가 많더라도 별도의 안전 margin 설계와 승인이 필요하며, high-margin relocation이 많더라도 fusion/target robustness를 따로 연구해야 한다.
+
+**다음 작업:** 이 margin/rank audit를 한 번 실행하여 switch mechanism class를 확인한다. 그 후 결과가 near-tie 중심이면 safety-withhold margin을 설계하는 작업을 제안하고, high-margin relocation 중심이면 temporal difference fusion/target robustness를 설계하는 작업을 제안한다. 어느 경우든 먼저 결과를 기록하고 승인받은 뒤 다음 source/config를 바꾼다.
