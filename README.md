@@ -221,3 +221,21 @@ This produces visible-panel extent evidence in raw camera coordinates only. It c
 #### Human outer-extent selector V1 — GUI backend hold
 
 The initial `select_visible_dotgrid_extent_controls.py` correctly preserved raw/control/config state but could not accept clicks on macOS: it imported a batch-QC module that sets the noninteractive Matplotlib `Agg` backend, so `plt.ginput` emitted `FigureCanvasAgg is non-interactive`. No four-click controls JSON was written and no human extent evidence exists. The next proposed correction is an isolated V2 selector with its own read-only TIFF/grayscale helper and an explicit GUI backend selected before `pyplot` import. It will use a separate control JSON path, preserve the same ordered four visible outer-dot clicks and compact-output policy, and make no grid/gate/config/rank/model/target/candidate change.
+
+
+#### Human outer-extent selector V2 — GUI backend isolated implementation ready
+
+`src/select_visible_dotgrid_extent_controls_v2.py` is the separately approved repair for the V1 `Agg` backend hold. It intentionally imports no batch-QC/audit module. Instead, it reads only the immutable `DotGrid_2000x2000.tif` through a local `tifffile.TiffFile` metadata check and `tifffile.memmap(..., series=0, mode='r')` YX grayscale reader. Before importing `matplotlib.pyplot`, it requests the macOS `MacOSX` interactive backend; only when that is unavailable does it attempt `TkAgg`. The selector rejects a noninteractive `Agg` result and raises an explanatory error if neither GUI backend can be selected.
+
+The V2 display is downsampled only for click visibility. It saves raw-camera coordinates by multiplying the display clicks by the recorded stride, returns automatically after four left-clicks, supports right-click removal of the latest point, and writes `processed/calibration/visible_dotgrid_extent_controls_v2.json` **only after exactly four clicks** in `TL → TR → BR → BL` order have been obtained. `py_compile`, source-order inspection, read-only memmap contract inspection, and whitespace validation passed; the interactive selector itself was deliberately not executed by the assistant. V1 source/output remain untouched. V2 neither edits raw data nor changes `GRID_SIZE=50`, the 40-row gate, V3 results, `calibration_v1.yaml`, transform/rank/orientation, machine origin, A/B/XCT/weak target/model/checkpoint/decoder data, or camera-primary XCT-derived continuous quality candidate reporting. Its future JSON is human visible-panel extent evidence only and must be inspected by the existing validator before any separate policy discussion.
+
+To create a new V2 control file, the user runs:
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/select_visible_dotgrid_extent_controls_v2.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-json processed/calibration/visible_dotgrid_extent_controls_v2.json
+```
+
+If the output JSON already exists, it must be listed and reviewed before any deliberate replacement; this guide does not recommend `--overwrite` automatically.

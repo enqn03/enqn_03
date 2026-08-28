@@ -578,7 +578,42 @@ Human selector V1은 click 창을 열지 못했다. Terminal에 `FigureCanvasAgg
 | noninteractive `Agg` backend가 적합 | macOS GUI backend가 필요 |
 | imported helper가 `Agg`를 미리 고정해도 됨 | `pyplot` import 전에 GUI backend를 명시해야 함 |
 
-V1은 control JSON을 쓰기 전에 click을 기다렸으므로, 네 click control evidence는 생성되지 않았다. raw DotGrid TIFF와 config/grid/gate/model/target도 바뀌지 않았다. 다음 V2 selector는 batch-QC module을 import하지 않고 자체 read-only TIFF memmap/grayscale helper를 사용하며, GUI backend를 먼저 고른 뒤 click 창을 열도록 분리해야 한다. V2는 V1 output을 덮지 않고 새로운 control JSON path를 사용한다.
+V1은 control JSON을 쓰기 전에 click을 기다렸으므로, 네 click control evidence는 생성되지 않았다. raw DotGrid TIFF와 config/grid/gate/model/target도 바뀌지 않았다.
+
+### 21.1 V2 selector: 배치 PNG 작업과 사람 click 작업을 분리한 수리
+
+승인 후 `src/select_visible_dotgrid_extent_controls_v2.py`를 새로 만들었다. 이 script는 V1처럼 batch-QC helper를 import하지 않는다. 대신 자신 안에서 DotGrid TIFF가 grayscale `YX` image인지 확인하고 `tifffile.memmap(..., mode='r')`로 read-only 접근한다. 그 뒤 **`pyplot`를 import하기 전에** macOS GUI용 `MacOSX` backend를 먼저 선택한다. `MacOSX`가 이 Python 환경에서 불가능할 때만 `TkAgg`를 대안으로 시도한다. 어떤 GUI backend도 쓸 수 없거나 결과가 `Agg`이면 script는 error로 멈추고 JSON을 전혀 만들지 않는다.
+
+| V2가 하는 일 | V2가 하지 않는 일 |
+|---|---|
+| 축소 preview에서 four outer-dot centre click을 받음 | raw TIFF를 변경·복사·재저장하지 않음 |
+| preview click에 recorded stride를 곱해 raw camera `(x,y)`로 저장 | calibration point, machine origin, physical DotGrid index를 정하지 않음 |
+| 네 번째 left-click 후 자동 완료 | 네 점 이전의 partial result를 JSON으로 저장하지 않음 |
+| right-click으로 마지막 click 하나만 취소 | `GRID_SIZE=50`, 40-row gate, V3 result를 바꾸지 않음 |
+
+사용자는 새 Terminal에서 아래처럼 V2만 실행한다. `visible_dotgrid_extent_controls_v2.json`이 이미 있으면 먼저 검토하고 자동 overwrite하지 않는다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/select_visible_dotgrid_extent_controls_v2.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-json processed/calibration/visible_dotgrid_extent_controls_v2.json
+```
+
+V2 JSON이 생긴 **후에만** existing validator를 새 output folder에서 실행한다. validator는 click가 실제 dot에 가까운지, 네 점이 TL→TR→BR→BL 순서의 convex panel인지, 그 visible panel 안에 V3/fresh/nominal footprint가 얼마나 있는지를 확인한다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_visible_dotgrid_extent_controls.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v3-features-csv processed/calibration/independent_method2_lattice_correspondence_refinement_v3/features.csv \
+  --controls-json processed/calibration/visible_dotgrid_extent_controls_v2.json \
+  --output-dir processed/calibration/visible_dotgrid_extent_validation_v2
+```
+
+V2 source는 syntax·backend-before-pyplot·read-only memmap contract를 정적으로 점검했지만, 실제 GUI click과 validator 실행은 사용자가 수행한다. validator가 pass해도 그것은 사람이 볼 수 있는 DotGrid panel의 범위 evidence일 뿐이다. fixed 40-row rule, transform/rank/orientation, machine origin, calibration config, target projection, model 또는 raw-camera-primary `XCT-derived continuous quality candidate` 표현을 자동으로 바꾸지 않는다.
+
+If `FigureCanvasAgg is non-interactive` appears again, the user should verify that the executed filename ends with `_v2.py` and use a fresh Terminal session. If V2 says both `MacOSX` and `TkAgg` are unavailable, the user should retain the no-JSON state and provide the full error rather than forcing `Agg` or hand-writing four controls.
 
 Human click을 넣더라도 `GRID_SIZE=50`과 40-row gate는 바뀌지 않는다. Passed validation은 future human design review를 위한 evidence일 뿐이며, `calibration_v1.yaml`, target re-projection, retraining, machine/part candidate metadata를 수정하는 trigger가 아니다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
