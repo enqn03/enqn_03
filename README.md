@@ -248,7 +248,7 @@ The existing validator defines its completed-V3 feature input as `--v3-features`
 ```bash
 /usr/local/bin/python3 src/audit_visible_dotgrid_extent_controls.py \
   --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
-  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/features.csv \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
   --controls-json processed/calibration/visible_dotgrid_extent_controls_v2.json \
   --output-dir processed/calibration/visible_dotgrid_extent_validation_v2
 ```
