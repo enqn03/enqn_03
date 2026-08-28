@@ -570,6 +570,16 @@ Preview image가 작아도 문제가 없다. script가 preview click을 raw came
 | 39-row shortfall이 clicked outer extent 밖에서 생기는가 | 40-row gate를 바꿔도 되는가 |
 | V3 assignment가 visibly physical dot panel과 얼마나 겹치는가 | machine calibration transform, rank, orientation, part ID |
 
+Human selector V1은 click 창을 열지 못했다. Terminal에 `FigureCanvasAgg is non-interactive, and thus cannot be shown`이라는 warning이 나타났다. 이는 DotGrid가 깨졌거나 사용자가 click을 못한 문제가 아니다. 이전 batch-QC script는 PNG를 재현 가능하게 만들기 위해 Matplotlib의 `Agg` backend를 사용한다. `Agg`는 화면 창을 열지 않는 backend이므로, 사람의 mouse click을 받는 `ginput`과 함께 사용할 수 없다.
+
+| Batch QC script | Human click selector |
+|---|---|
+| PNG를 background에서 안정적으로 생성해야 함 | 화면 창과 mouse event를 받아야 함 |
+| noninteractive `Agg` backend가 적합 | macOS GUI backend가 필요 |
+| imported helper가 `Agg`를 미리 고정해도 됨 | `pyplot` import 전에 GUI backend를 명시해야 함 |
+
+V1은 control JSON을 쓰기 전에 click을 기다렸으므로, 네 click control evidence는 생성되지 않았다. raw DotGrid TIFF와 config/grid/gate/model/target도 바뀌지 않았다. 다음 V2 selector는 batch-QC module을 import하지 않고 자체 read-only TIFF memmap/grayscale helper를 사용하며, GUI backend를 먼저 고른 뒤 click 창을 열도록 분리해야 한다. V2는 V1 output을 덮지 않고 새로운 control JSON path를 사용한다.
+
 Human click을 넣더라도 `GRID_SIZE=50`과 40-row gate는 바뀌지 않는다. Passed validation은 future human design review를 위한 evidence일 뿐이며, `calibration_v1.yaml`, target re-projection, retraining, machine/part candidate metadata를 수정하는 trigger가 아니다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
