@@ -509,7 +509,31 @@ V3는 정상 완료했다. 15개 graph component 중 가장 큰 component가 can
 
 39 row는 기준보다 단 한 row 부족하지만, 결과를 본 뒤 “39도 충분하다”고 기준을 낮추면 validation의 신뢰성이 사라진다. 더구나 NIST source note에는 50×50 dot grid가 문서화되어 있으므로, **visible field-of-view인지, target-count convention인지, detector/reassignment boundary인지**를 먼저 따로 확인해야 한다. 현재 low residual은 2D correspondence algorithm이 좋아졌다는 strong evidence지만, published D coordinate 또는 machine calibration config를 적용할 충분한 evidence는 아니다.
 
-따라서 다음 작업은 gate를 낮추는 것이 아니라 separate read-only coverage-definition audit이다. It will measure the printed/visible grid extent and indexing convention before any grid-size or coverage assumption is changed. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+따라서 다음 작업은 gate를 낮추는 것이 아니라 separate read-only coverage-definition audit이다. 이 audit은 구현된 `src/audit_independent_method2_dotgrid_coverage_definition.py`로 수행한다. V3 feature CSV와 DotGrid image를 같이 읽어 50×50 nominal image-lattice cell 각각에 아래 네 질문을 묻는다.
+
+1. 이 nominal cell은 V3 final correspondence에서 실제 assigned됐는가?
+2. V3 feature만으로 예측한 cell 위치가 2000×2000 camera sensor 안에 있는가?
+3. sensor 안이라면 새 DotGrid detector candidate가 기존 V3 assignment bound(`0.45×` pitch) 안에 있는가?
+4. 그 위치의 local raw-image darkness는 어떠한가?
+
+| Missing cell의 관찰 pattern | 이 audit이 허용하는 해석 | 이 audit이 하지 않는 해석 |
+|---|---|---|
+| 80% 이상이 sensor 밖 | field-of-view clipping이 plausible | row gate를 자동으로 낮춤 |
+| sensor 안이고 가까운 fresh detector candidate가 다수 | indexing/reassignment boundary가 plausible | grid size·machine coordinate를 자동 변경 |
+| sensor 안이지만 가까운 detector candidate가 다수 없음 | visible target extent 또는 detector boundary가 plausible | physical target specification 오류를 단정 |
+| 어느 한 pattern도 다수 아님 | mixed evidence | 임의의 하나를 원인으로 선택 |
+
+Script는 row/column occupancy와 contiguous run, nominal 2,500 cell coverage table, JSON summary, QC plot 두 장만 새 output directory에 쓴다. temporary image-lattice mapping은 dot이 sensor 안에 있을지를 점검하는 데만 메모리에서 쓰며, calibration H나 config file로 저장하지 않는다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_dotgrid_coverage_definition.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --output-dir processed/calibration/independent_method2_dotgrid_coverage_definition_v1
+```
+
+It will measure the printed/visible grid extent and indexing convention before any grid-size or coverage assumption is changed. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
