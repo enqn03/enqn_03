@@ -871,3 +871,28 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 보통 `outputs/`는 다시 만들 수 있는 파일이 많으므로 Git에 넣지 않는다. 하지만 이 세 그림처럼 작고, deterministic하며, CSV/JSON 수치와 해석이 함께 검토된 QC 그림은 포트폴리오와 재현성 기록에 도움이 된다. 그래서 `docs/qc/a_only_candidate_stability_v1/`에 별도로 보관한다. 이 원칙은 raw TIFF·dense map·dense target/support·checkpoint·대량 결과를 Git에 저장하자는 뜻이 아니다.
 
 **다음 작업:** temporal-path mechanism audit를 실행하면 endpoint feature branch, temporal-update branch, 그리고 두 branch 차이를 보여 주는 새 QC 그림이 나온다. 그 그림도 먼저 무엇을 계산했는지와 한계를 설명한 뒤, compact reviewed evidence인 것만 Git에 보관한다.
+
+
+---
+
+## 25. 시간 convolution weight가 있어도 과거 layer를 쓰는 것은 아니다
+
+다음 audit은 “temporal Conv3D의 과거 time weight가 0인가?”와 “실제로 과거 image를 바꾸면 output이 달라지는가?”를 따로 확인했다. 이 둘은 다르다. 이번 checkpoint에서 temporal Conv3D kernel의 energy는 endpoint와 과거 lag에 거의 고르게 있었다. 과거 lag 두 개를 합치면 전체 kernel energy의 약 66.8%였다. 따라서 과거 weight가 모두 0이어서 history를 못 쓰는 것은 아니었다.
+
+그런데 실제로 past image를 endpoint image로 바꿔도 temporal update와 final prediction은 세 endpoint에서 모두 `0.0`만큼 변했다. Temporal update 자체는 0이 아니지만 endpoint feature보다 매우 작았다. endpoint feature L2 norm이 약 920인 반면 temporal update는 약 4.41이었다. full prediction에서 temporal update를 제거하면 작은 차이는 생겼지만, 그 update는 과거 image가 변해도 그대로였다.
+
+| QC PNG panel | 무엇을 계산했는가 | 그림이 의미하는 것 |
+|---|---|---|
+| 1. Full residual | endpoint feature와 temporal update를 더한 실제 checkpoint output | 현재 response map |
+| 2. Endpoint only | endpoint feature만 decoder에 넣은 진단 output | endpoint path의 영향 |
+| 3. Temporal update only | temporal update만 decoder에 넣은 진단 output | temporal branch 단독 모양 |
+| 4. Absolute difference | panel 1과 2의 pixel별 절대 차이 | temporal branch가 final map에 주는 작은 효과 |
+| 5. Update change after endpoint-repeat | 과거 frame을 endpoint로 바꾼 뒤 temporal update의 변화 | history를 실제로 쓰는지 여부 |
+
+세 그림에서 panel 5가 어둡게 나온 것은 temporal update가 변하지 않았다는 뜻이다. Panel 4가 완전히 어둡지 않은 것은 temporal branch가 0은 아니라는 뜻이다. 따라서 현재 가장 정확한 설명은 “temporal branch가 endpoint-conditioned spatial model에 작은 static-like correction을 더하지만, tested earlier frames에는 반응하지 않는다”이다.
+
+또 하나의 구조상 제약도 확인했다. K=4 `[t0,t1,t2,endpoint]`를 temporal kernel size 3으로 마지막 output만 사용하면, 제일 오래된 t0는 그 마지막 temporal convolution output에 직접 들어가지 않는다. t1, t2, endpoint만 직접 경로를 가진다. 앞으로의 구조는 past difference를 더 명시적으로 보여 주어야 한다.
+
+이 branch QC PNG도 candidate stability PNG와 같은 이유로 `docs/qc/a_only_temporal_path_mechanism_v1/`에 Git 기록한다. 작은 검토용 계산 그림이지 원본 제조 이미지나 defect label을 저장하는 방식은 아니다.
+
+**다음 작업:** 새 temporal architecture를 바로 학습시키기 전에, 변경할 mechanism을 하나로 고정해야 한다. 예를 들어 endpoint encoded feature에 `endpoint−prior` causal difference feature를 별도 branch로 넣는 설계를 선택하고, 동일 split/target/loss/decoder 아래에서 기존 C32 residual baseline과만 비교한다. 이 단계는 새 source/config가 필요하므로 별도 승인을 받은 뒤 진행한다.
