@@ -996,3 +996,22 @@ QC 그림에서 endpoint-repeat panel은 causal panel과 넓은 영역에서 다
 이 그림은 score map 위에 marker를 얹은 내부 계산 확인 그림이다. 원본 A camera photo, XCT target, 물리적 결함 위치, 실제 장비에서 움직인 물체를 뜻하지 않는다. Audit 결과도 decoder를 자동 변경하지 않는다. near-tie가 많더라도 별도의 안전 margin 설계와 승인이 필요하며, high-margin relocation이 많더라도 fusion/target robustness를 따로 연구해야 한다.
 
 **다음 작업:** 이 margin/rank audit를 한 번 실행하여 switch mechanism class를 확인한다. 그 후 결과가 near-tie 중심이면 safety-withhold margin을 설계하는 작업을 제안하고, high-margin relocation 중심이면 temporal difference fusion/target robustness를 설계하는 작업을 제안한다. 어느 경우든 먼저 결과를 기록하고 승인받은 뒤 다음 source/config를 바꾼다.
+
+
+---
+
+## 31. “높은 점수가 다른 곳으로 갔다”와 “비슷한 두 점의 순위가 바뀌었다”는 다르다
+
+Top-K margin/rank audit을 한 결과, 12개의 counterfactual 비교 중 3개는 near-tie rank switch와 일치했고, 5개는 아직 ambiguous였으며, 4개는 top1이 유지됐다. high-margin peak relocation 조건을 만족한 것은 없었다. 즉 위치가 바뀌었다고 해서 높은 확신의 peak가 항상 멀리 이동했다고 말할 수는 없었다.
+
+near-tie 예에서는 normal causal map의 1위 점이 variant map에서 2위 또는 3위로 남아 있었다. 예를 들어 z=203의 t0/t2, z=227의 t1이 그렇다. score 차이가 map의 전체 variation에 비해 작으면, map이 조금 바뀌어도 1위/2위 순서가 바뀔 수 있다. 반대로 endpoint-repeat와 일부 t1은 causal 1위가 new top-K에 없었지만, 새 1위와 2위의 score 차이도 작아 “강한 peak relocation”이라고 부를 근거가 부족했다. 그래서 `ambiguous`로 정직하게 남겼다.
+
+| 현재 확인한 것 | 아직 확인하지 못한 것 |
+|---|---|
+| explicit temporal-difference model이 prior A frame 변화에 반응함 | ordinary causal input에서 top1-top2 margin이 얼마나 자주 작은지 |
+| 일부 coordinate switch가 near-tie rank competition과 일치함 | near-tie margin을 실제 decoder safety rule에 써도 되는지 |
+| high-margin relocation class는 이 12개 stress case에서 없음 | counterfactual이 아닌 real held-out causal layer에서 candidate를 얼마나 withhold할지 |
+
+검토한 marker 그림은 Git의 `docs/qc/a_only_temporal_difference_candidate_margin_v1/`에 보관한다. 흰색 ×는 normal causal map의 1위, 색 있는 숫자는 각 panel의 top 1–5다. marker는 map 내부 계산 위치이며 실제 machine position, defect 위치, XCT target을 뜻하지 않는다.
+
+**다음 작업:** counterfactual stress test가 아니라 48개 ordinary held-out causal map을 모두 보고 top1-top2 score margin과 peak distance가 어떻게 분포하는지 측정한다. 미리 정한 1%, 2%, 5% margin을 적용했다고 *가정했을 때* 몇 개를 withhold하게 되는지 계산만 한다. 아직 decoder는 바꾸지 않는다. 이 결과가 있어야 특정 margin safety policy가 과도하게 많은 `XCT-derived continuous quality candidate`를 막지 않는지 설계할 수 있다.
