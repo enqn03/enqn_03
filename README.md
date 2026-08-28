@@ -254,3 +254,12 @@ The existing validator defines its completed-V3 feature input as `--v3-features`
 ```
 
 This correction changes no source, raw/processed data, V2 controls, calibration/gate/model policy, or candidate reporting. The validator result remains pending.
+
+
+#### V2 human visible-extent validation result — click/snap hold
+
+The user completed `audit_visible_dotgrid_extent_controls.py` with the V2 controls and the actual V3 feature CSV. The audit executed read-only and created only its three compact CSVs, one JSON summary, and two deterministic overlays. It preserved raw TIFF/CSV, the V2 controls JSON, V3 outputs, `GRID_SIZE=50`, the rows≥40 gate, `calibration_v1.yaml`, transform/rank/orientation, machine-origin status, target/model/checkpoint/decoder, and camera-primary XCT-derived continuous quality candidate policy.
+
+The controls are sensor-contained and form a strictly convex ordered `TL→TR→BR→BL` quadrilateral (all cross-products positive). However, the fixed click-to-fresh-candidate snap test fails: only TL is within the frozen `8.73835 px` bound (`3.47989 px`); TR, BR, and BL are respectively `170.41794 px` (13.070 pitches), `87.56457 px` (6.716 pitches), and `16.03069 px` (1.229 pitches) from their nearest fresh detector candidate. The minimum per-edge support count is 5≥3, but the right edge alone has only 5 candidates versus 38/43/51 on the top/bottom/left. Therefore `all_control_validity_checks_pass=false` and the correct result is `hold_extent_interpretation`, not a panel-extent pass.
+
+The overlays nevertheless supply narrow diagnostic evidence: V3 assigned cells are 1,539/1,554 (99.0347%) inside the human quadrilateral, fresh candidates are 1,554/1,616 (96.1634%) inside, and nominal 50×50 predictions are 1,900/2,500 inside with 600 outside. Visually, the selected quad covers the central detector-supported lattice, while a right-side nominal region extends beyond it and two V3 assigned points lie left of the quad. Because three outer clicks failed fresh-dot snap and the right edge has sparse support, these counts cannot resolve whether the shortfall is visible physical extent, detector footprint, click placement, or nominal-window convention. No grid/gate/config/calibration decision follows from this run.

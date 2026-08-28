@@ -664,3 +664,25 @@ Human click을 넣더라도 `GRID_SIZE=50`과 40-row gate는 바뀌지 않는다
 [1] [Lane, B. and Yeung, H. (2020). *Process Monitoring Dataset from the Additive Manufacturing Metrology Testbed (AMMT): Overhang Part X4*. Journal of Research of NIST, 125, 125027.](https://doi.org/10.6028/jres.125.027)
 
 [2] [NIST PDR: AMMT Overhang Part X4 dataset record.](https://data.nist.gov/od/id/mds2-2233)
+
+
+---
+
+## 21.2 V2 validator 결과: 사각형 모양은 맞아도 dot 중심 근접성이 통과하지 못할 수 있다
+
+V2 selector는 정상적으로 창을 열었고 네 점을 저장했다. 이어 validator도 정상 종료했다. 여기서 중요한 점은 “script가 끝났다”와 “사람이 찍은 네 점이 실제 outer dot의 중심이라는 evidence가 통과했다”가 서로 다르다는 것이다. 이번 결과에서 네 점은 sensor 안에 있고 TL→TR→BR→BL 사각형도 뒤집히거나 교차하지 않는 convex shape였다. 하지만 validator는 각 click가 자동 detector가 새로 찾은 실제 dot 중심에 충분히 가까운지를 **별도로** 검사한다.
+
+| Click | 실제 dot 후보까지 거리 | 허용 상한 | 판정 |
+|---|---:|---:|---|
+| TL | 3.48 px | 8.74 px | 통과 |
+| TR | 170.42 px | 8.74 px | 실패 |
+| BR | 87.56 px | 8.74 px | 실패 |
+| BL | 16.03 px | 8.74 px | 실패 |
+
+즉 사용자가 흰 판의 모서리가 아닌 중앙 dot panel을 선택했다는 큰 방향은 맞지만, 오른쪽과 아래쪽 outer click가 detector가 인식한 fresh dot 중심과 일치하지 않았다. 특히 오른쪽 edge는 그 line 근처 fresh dot가 5개뿐이고, top/bottom/left의 38/43/51개보다 현저히 적다. 이 때문에 “사각형은 그럴듯하다”는 조건만으로 outer extent를 확정하지 않는다. 이 엄격함은 사람이 panel border·shadow·희미한 dot·white plate edge를 클릭했을 때 coverage rule을 그럴듯하게 바꿔버리는 오류를 막는다.
+
+두 overlay는 후속 검토를 위한 제한적 관찰도 제공한다. V3가 assignment한 1,554 cells 중 1,539개(99.03%)가 human quad 안에 있고, fresh dot 후보도 1,616개 중 1,554개(96.16%)가 안에 있다. 반면 V3 nominal 50×50 prediction은 2,500개 중 1,900개만 안에 있고 600개가 밖에 있다. 그림에서는 nominal prediction의 오른쪽 일부가 human quad 밖으로 나가며, assignment된 점 두 개는 quad 왼쪽에 보인다. 그러나 click-to-dot validation이 실패했기 때문에 이 수치는 physical DotGrid의 실제 행/열 수, D origin, machine direction 또는 coverage gate의 변경 근거가 될 수 없다.
+
+> 결론은 **`hold_extent_interpretation`**이다. 자료가 삭제되거나 실패한 것이 아니라, “현재 네 click만으로는 visible outer boundary를 충분히 정확하게 증명하지 못했다”는 안전한 결과다. `GRID_SIZE=50`, 40-row rule, V3 39-row hold, rank/orientation, machine origin, `calibration_v1.yaml`, target projection, model 또는 raw-camera-primary `XCT-derived continuous quality candidate` 표현은 그대로 유지한다.
+
+따라서 지금 V2 selector/validator를 `--overwrite`로 다시 실행하거나 JSON 숫자를 손으로 고치지 않는다. 기존 control JSON과 validation outputs는 evidence로 보존한다. 이후 click placement 또는 fresh-detector outer-boundary 방법을 바꿀 필요가 있다면, 왜 현재 strict snap check가 충분하지 않은지부터 별도 설계로 검토하고 승인받아야 한다.
