@@ -467,6 +467,15 @@ cd ~/ammt_project
   --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v2
 ```
 
+V2의 첫 실행은 graph fragmentation을 넘어서 component CSV·neighbor-edge CSV·refined lattice-feature CSV와 graph/correspondence overlay까지 만들었다. 그러나 마지막 held-out residual overlay를 저장하는 줄에서 **함수 인자를 하나 더 넘긴 code mismatch**로 멈췄다. 따라서 V2 directory는 partial debug evidence로 보존하고, final summary JSON과 held-out residual overlay가 없으므로 pass/fail 수치를 채택하지 않는다.
+
+| 이미 만들어진 것 | 아직 없는 것 | 현재 처리 |
+|---|---|---|
+| component/edge/feature compact CSV와 graph/correspondence overlay | held-out residual overlay와 final summary JSON | V2를 덮어쓰지 않고 V3의 새 output directory를 사용 |
+| raw/config/model/target을 바꾸지 않은 computation | accepted V2 validation result | transform/rank/config hold 유지 |
+
+다음 V3는 same calculation의 plotting call에서 obsolete `residual` argument 하나만 제거한다. static check로 definition/call arity도 맞춘다. detector, largest-component seed, fixed 5×5 holdout, coverage/RMSE/p95 gates는 모두 고정한다.
+
 `status=fail_closed_before_heldout_validation`이면 graph/component diagnostics만 해석하고 transform을 만들지 않는다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
