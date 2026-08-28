@@ -476,6 +476,23 @@ V2의 첫 실행은 graph fragmentation을 넘어서 component CSV·neighbor-edg
 
 다음 V3는 same calculation의 plotting call에서 obsolete `residual` argument 하나만 제거한다. static check로 definition/call arity도 맞춘다. detector, largest-component seed, fixed 5×5 holdout, coverage/RMSE/p95 gates는 모두 고정한다.
 
+V3는 `src/audit_independent_method2_lattice_correspondence_refinement_v3.py`로 구현됐다. 쉽게 말해 “grid를 찾는 수학”이나 “합격 기준”을 다시 바꾼 것이 아니라, 계산이 끝난 뒤 held-out error 화살표를 그림으로 저장할 때 주던 불필요한 입력 하나를 제거한 것이다. 따라서 V2와 V3의 결과가 다르게 나와도 그 차이는 new algorithm이 아니라 V2가 summary/last overlay까지 도달하지 못했던 실행 경계 때문이다.
+
+| V3에서 확인하는 것 | V3에서 확인하지 않는 것 |
+|---|---|
+| function definition과 call의 5-argument 일치 | DotGrid detector threshold가 더 좋아졌는지 |
+| same V2 correspondence가 final JSON·held-out overlay까지 완주하는지 | calibration transform/rank가 더 정확한지 |
+| fixed gate를 계산해 review 가능한 evidence가 남는지 | machine origin, physical part, confirmed defect 위치 |
+
+V3 command는 다음과 같다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement_v3.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v3
+```
+
 `status=fail_closed_before_heldout_validation`이면 graph/component diagnostics만 해석하고 transform을 만들지 않는다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
