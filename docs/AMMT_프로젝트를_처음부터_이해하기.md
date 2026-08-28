@@ -222,57 +222,49 @@ NIST method #2의 published facts는 dot grid 50×50, 1.00 mm pitch, D origin=lo
 
 이 단계에서 config를 자동 변경하거나 candidate를 선택하지 않는다. 통과의 뜻은 “사람이 transform/overlay/residual을 검토할 정보가 준비됐다”는 것뿐이다.
 
+### 9.3 실행 결과: panel detection은 성공했지만 correspondence는 보류
+
+V1 audit은 1,518개의 provisional lattice cell을 만들었고 PCA column 50개·row 48개를 표현해 **coverage 검사**는 통과했다. 이것은 dot board가 잘 보인다는 뜻이다. 그러나 "board가 보인다"와 "각 dot의 50×50 grid 번호를 정확히 안다"는 별개의 문제다.
+
+| 검사 | 결과 | 쉬운 해석 |
+|---|---:|---|
+| held-out dot 수 | 298 | 학습에 넣지 않은 dot blocks도 충분히 검사함 |
+| camera dot pitch | 14.59340 px | 한 dot 간격은 약 14.6 camera pixel |
+| held-out RMSE | 6.00155 px = **0.41125 pitch** | 허용 기준 0.25 pitch보다 큼 |
+| held-out p95 | **9.78092 px** | 허용 기준 7.29670 px보다 큼 |
+| 최종 gate | **fail** | 16개 candidate transform 전체 hold |
+
+Overlay에서도 board 위치 자체는 맞지만, 여러 held-out block에서 yellow actual dot과 magenta prediction이 계속 어긋난다. 특히 PCA와 서로 독립적인 1D 50-cluster가 perspective가 있는 2D grid를 완전하게 row/column으로 index하지 못한 흔적이 보인다. 따라서 이번 실패는 “장비 calibration이 틀렸다”는 결론도, “새 transform이 맞다”는 결론도 아니다. **현재 correspondence algorithm이 아직 충분하지 않다**는 결론이다.
+
 ---
 
-## 10. 지금 사용자가 다음에 실행할 코드
+## 10. 지금은 무엇을 보류하는가
 
-```bash
-cd ~/ammt_project
-/usr/local/bin/python3 src/audit_independent_method2_calibration_candidate.py \
-  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
-  --calibration-config configs/calibration_v1.yaml \
-  --output-dir processed/calibration/independent_method2_calibration_candidate_v1
-```
-
-출력 directory가 이미 있으면 `--overwrite`를 붙이지 말고, 우선 오류와 directory listing을 확인한다.
-
-| 생성 파일 | 읽는 방법 |
+| 지금 하지 않는 일 | 이유 |
 |---|---|
-| `dot_grid_indexed_subpixel_features.csv` | 어떤 dot cell이 inlier/held-out block이 되었는지 확인 |
-| `method2_candidate_transforms.csv` | 8×2 candidate transform과 residual 지표를 검토 |
-| `method2_candidate_vs_existing_comparison.csv` | 기존 rank1/rank2와의 raw-pixel displacement를 비교 |
-| `method2_dot_grid_indexing_overlay.png` | index/inlier/held-out distribution을 육안 확인 |
-| `method2_dot_grid_heldout_residual_overlay.png` | held-out residual vector가 특정 영역으로 몰리는지 확인 |
-| `independent_method2_calibration_candidate_summary.json` | gate, hold, prohibitions를 한 번에 확인 |
+| `calibration_v1.yaml` 교체 | held-out error가 통과 기준을 넘지 못함 |
+| rank1/rank2/method-#2 중 하나 선택 | 16 alternatives가 모두 보류 상태 |
+| candidate의 machine XY/part 확정 | coordinate ambiguity가 여전히 큼 |
+| XCT target 재투영이나 retraining | calibration이 바뀐 것이 아니므로 model data contract도 바꿀 이유가 없음 |
 
-### 통과/보류 기준
+이 시점의 가장 안전한 현재 상태는 변하지 않는다.
 
-| 검사 | 통과 기준 | 통과해도 하지 않는 일 |
-|---|---|---|
-| lattice coverage | indexed cell ≥1,200, PCA row/column 각각 ≥40 | D origin/orientation 자동 확정 |
-| held-out residual | RMSE ≤ detected dot pitch의 0.25, p95 ≤ 0.50 | transform 자동 선택 |
-| human overlay QC | inlier와 held-out residual이 board 전체에서 타당 | `calibration_v1.yaml` 자동 교체 |
-| rank comparison | existing rank1/rank2와의 차이를 숫자로 설명 가능 | physical part identity 선언 |
+> **모델 output은 raw camera `(x_pixel, y_pixel, layer_z, score)`로 보고하며, physical machine coordinate/part interpretation은 hold한다.**
 
 ---
 
-## 11. 실행 후에는 무엇을 할 것인가
+## 11. 다음에 필요한 일
 
-### A. Gate가 통과하지 않는 경우
+다음 기술 작업은 새 homography를 반복해서 fit하는 일이 아니다. 먼저 perspective-aware 2D grid correspondence를 정제하는 **read-only audit**이 필요하다. 목표는 row와 column을 함께 보면서 “이 dot은 정확히 몇 번째 row·column인가”를 더 안정적으로 정한 뒤, 같은 5×5-block held-out test를 다시 수행하는 것이다.
 
-새 transform을 사용하지 않는다. 어떤 row/column 또는 board edge에서 index/residual이 깨졌는지 보고, detector/lattice indexing만 개선한다. A-only model, weak target, existing calibration config는 변하지 않는다.
+| 다음 audit에서 개선할 것 | 그대로 유지할 것 |
+|---|---|
+| 2D row/column correspondence와 outlier rejection | immutable raw TIFF와 read-only memmap |
+| DotGrid indexing overlay·held-out vector QC | K=4 causal A-only model 및 residual checkpoint |
+| same block-held-out residual test | weak target sigma/direction/unknown policy |
+| candidate transform을 human-review output으로 기록 | camera-primary reporting, no automatic config update |
 
-### B. Gate가 통과하는 경우
-
-다음 순서를 지킨다.
-
-1. candidate transform CSV와 두 overlay를 사람이 검토한다.
-2. rank1/rank2와의 displacement·orientation alternative를 비교한다.
-3. independent candidate transform을 새 audit output에서만 재현한다.
-4. **그 뒤 별도 승인**을 받아 calibration config revision audit을 설계한다.
-5. config revision과 model target re-projection은 또 별도의 결정이다.
-
-이 절차는 좋은 residual 하나가 기존 training target·candidate position을 무심코 바꾸는 일을 막는다.
+새 refinement code의 추가는 별도 승인을 받은 뒤에만 시작한다. 기준을 느슨하게 하거나, 실패한 candidate 중 수치가 작아 보이는 것 하나를 고르는 방식은 사용하지 않는다.
 
 ---
 

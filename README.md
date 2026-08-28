@@ -17,6 +17,10 @@ LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노�
 
 The gate measures only image-pixel consistency: at least 1,200 unique cells and 40 represented rows/columns, held-out RMSE≤0.25 and p95≤0.50 of detected inlier camera-dot pitch. The script emits compact CSV/JSON and two DotGrid QC overlays. It does not write raw metadata, modify `calibration_v1.yaml`, choose a candidate/rank, assert a red reference as machine origin, access model/XCT/target/checkpoint data, or change camera-primary candidate reporting. Passing the gate means that human transform review can begin, not that any calibration is deployed.[2]
 
+#### Method-#2 candidate audit V1 execution result — hold all transforms
+
+The V1 run indexed 1,518 unique DotGrid cells across 50 PCA columns and 48 PCA rows, so the coverage gate passed. However, 5×5-block held-out validation failed: 298 held-out cells gave RMSE=`6.00155 px` = `0.41125` of the detected inlier camera-dot pitch (`14.59340 px`), and p95=`9.78092 px` exceeded the `0.50`-pitch limit (`7.29670 px`). The in-sample robust fit was similarly too coarse for deployment (`6.14185 px` RMSE, p95=`9.80831 px`). QC overlays show correct board localization but systematic predicted-vs-actual dot offsets in multiple blocks and rejected/off-panel candidates near text/hardware. The failure is therefore attributed to the provisional PCA + separate 1D 50-cluster correspondence/indexing, not to a demonstrated physical calibration result. All 16 method-#2 alternatives remain held; no rank/config/origin change is allowed. The next possible scope is a separately approved read-only perspective-aware 2D lattice-correspondence refinement, followed by a fresh held-out audit—not another unrestricted homography fit.[2]
+
 | 단계 | 상태 | 핵심 산출물 |
 |---|---|---|
 | A/B hyperstack 구조 검증 | 완료 | `TZYX=[3,250,2000,2000]`, `uint16` |
