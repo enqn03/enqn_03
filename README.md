@@ -315,3 +315,12 @@ ls -ld processed/calibration/calibration_design_review_v1
 ```
 
 The expected compact output is three CSVs, one JSON summary, and two deterministic QC overlays. No raw input, V2/V3 artifact, detector setting, `GRID_SIZE=50`, rows>=40 gate, homography, rank/orientation, `calibration_v1.yaml`, XCT target/model/checkpoint/decoder, or raw-camera-primary XCT-derived continuous quality candidate policy can change. Static `py_compile`, fixed-rule inspection, and whitespace validation passed; the assistant did not run the audit.
+
+
+#### Calibration design review V1 result — neither fixed extent reaches 40 rows; mirror tie remains
+
+The user completed `audit_calibration_design_review_v1.py` successfully. It read only the immutable DotGrid TIFF plus preserved V2/V3/outer-boundary/ranking compact artifacts and wrote three compact CSVs, one JSON summary, and two deterministic QC overlays. Raw data, V2 controls, outer-boundary results, detector threshold/ROI, `GRID_SIZE=50`, coverage gate, calibration config, model/target/checkpoint/decoder, and raw-camera-primary XCT-derived continuous quality candidate reporting remain unchanged.
+
+Neither pre-existing extent candidate reaches the fixed `rows>=40` rule. The frozen detector ROI contains all 1,554 V3 assigned points with 50 columns but only 39 distinct rows; it contains row indices 0–37 and 39, while 38 and 40–49 are absent. The held V2 human quad excludes 15 V3 points and contains only 38 rows, 0–37, while retaining all 50 columns. Thus the wider frozen detector footprint is the less restrictive descriptive candidate but **still fails** the frozen row gate; the V2 quad is strictly worse for coverage. The output correctly blocks evidence-expanded extent construction because outer-control evidence remains mixed.
+
+The orientation ranking retains an exact two-way residual tie: rank1 `mirror_rotate_90` / `part01;part02;part03;part04` has LOO RMSE `7.028278322386677 px`, rank2 `mirror_rotate_270` / `part04;part03;part02;part01` has `7.028278322386715 px`, a maximum difference of only `3.82e-14 px`. All remaining tested candidates are materially worse, but no independently validated asymmetric cross-camera anchor is available. Therefore the correct decision is `hold_extent_and_orientation; no candidate satisfies all predeclared independent requirements`, not a rank/config update.

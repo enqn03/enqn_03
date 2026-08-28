@@ -760,3 +760,21 @@ cd ~/ammt_project
 ```
 
 이 실행은 compact CSV 세 개, JSON 하나, QC overlay 두 개만 만든다. raw TIFF/CSV, human controls, prior V2/V3 result, detector ROI/threshold, 50×50 grid, 40-row gate, homography/rank/orientation, calibration config, XCT/model/decoder는 바꾸지 않는다. 결과가 나와도 primary output은 raw-camera 좌표의 **XCT-derived continuous quality candidate**이고, machine-coordinate interpretation은 provisional 상태로 유지한다.
+
+
+---
+
+## 21.6 Design review 결과: 더 큰 extent도 40번째 row를 만들지 못했고 방향도 두 개가 남았다
+
+Calibration design review를 실제로 실행한 결과, 기존 frozen detector ROI와 held human quad 중 어느 것을 써도 고정 rule `rows>=40`을 통과하지 못했다. Frozen detector ROI는 V3 assigned point 1,554개를 모두 포함하고 50개 column을 포함하지만, unique row는 39개다. 흥미롭게도 label은 `0–37`과 `39`가 있고 `38`이 빠져 있다. 즉 단순히 outer boundary를 조금 넓힌다고 40개 연속 row가 생기는 문제가 아니다. Held human quad는 15개 point를 더 제외해 38개 row만 남는다.
+
+| 비교 기준 | 포함 V3 points | unique rows | unique columns | 결과 |
+|---|---:|---:|---:|---|
+| Frozen detector ROI | 1,554 / 1,554 | 39 | 50 | 40-row gate hold |
+| Held V2 human quad | 1,539 / 1,554 | 38 | 50 | 더 강한 hold |
+
+따라서 “human quad가 너무 작았으니 조금 키우면 40 rows가 된다”는 설명은 현재 자료로 지지되지 않는다. 또 모든 outer click가 local lattice evidence를 통과하지 않았으므로, local dot 하나를 근거로 새 expanded extent를 만드는 것도 차단됐다. 이 결과는 failure가 아니라, 같은 evidence를 보고 난 뒤에 boundary를 임의 조정해 통과시키지 않도록 한 안전장치다.
+
+Orientation도 마찬가지다. 192개 hypothesis 가운데 rank1 `mirror_rotate_90`과 rank2 `mirror_rotate_270`는 LOO RMSE가 각각 약 7.028 px이고 차이는 약 `3.819×10⁻¹⁴ px`이다. 이는 계산 오차 수준의 tie이며, 다른 후보들은 훨씬 나쁘지만 이 두 mirror 방향 중 어느 것이 실제 physical direction인지는 residual만으로 고를 수 없다. 독립적으로 확인된 asymmetric cross-camera anchor가 없으므로, 이제 이 둘 중 하나를 final calibration으로 선언하면 안 된다.
+
+현재 정식 결론은 `hold_extent_and_orientation`이다. `GRID_SIZE=50`, rows≥40 gate, V3 39-row hold, rank2 provisional config, raw-camera-primary **XCT-derived continuous quality candidate** 정책은 그대로다. 다음 calibration 작업은 같은 controls나 residual을 다시 해석하는 것이 아니라, 별도의 asymmetric physical reference 또는 사전에 고정된 alternative detector/extent experiment를 추가하는 방향이어야 한다.
