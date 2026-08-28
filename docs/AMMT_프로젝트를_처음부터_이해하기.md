@@ -545,7 +545,32 @@ QC overlay는 이 해석을 보완한다. Cyan assigned cell은 printed dot 위�
 
 따라서 40-row gate는 계속 fail이다. 39가 40보다 하나 작다고 해서 결과를 본 뒤 기준을 낮추면, 원래 정한 validation이 project에 주는 안전장치가 사라진다. 이 audit은 gate를 바꾸기 위한 증거가 아니라, future human review가 무엇을 확인해야 하는지 좁혀 준 evidence다.
 
-다음 작업은 자동 transform fit이 아니라 separately approved human-reviewed DotGrid extent/index-convention design audit이어야 한다. It should compare the actual printed/visible dot-panel extent, documented target convention, and current provisional 50×50 image-lattice window before any discussion of grid size or coverage threshold. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+다음 작업은 자동 transform fit이 아니라 human-reviewed visible DotGrid extent control audit이다. `select_visible_dotgrid_extent_controls.py`가 full DotGrid image를 screen에 맞춰 보여 주면, 사람이 **실제로 보이는 가장 바깥 dot의 중심** 네 개를 아래 순서로 click한다.
+
+| Click 순서 | 선택할 것 | 선택하면 안 되는 것 |
+|---:|---|---|
+| 1 | top-left outer visible dot centre | white paper corner, screw, text |
+| 2 | top-right outer visible dot centre | 한 column 안쪽의 dot |
+| 3 | bottom-right outer visible dot centre | black panel shadow나 paper edge |
+| 4 | bottom-left outer visible dot centre | 한 row 안쪽의 dot |
+
+Preview image가 작아도 문제가 없다. script가 preview click을 raw camera pixel coordinate로 되돌려 compact JSON에 저장한다. Click 하나를 잘못했으면 right-click으로 마지막 point만 지우고 다시 click한다. 네 point가 보인 후 middle mouse button으로 끝낸다.
+
+그 다음 `audit_visible_dotgrid_extent_controls.py`가 click을 calibration point가 아니라 **visible panel evidence**로만 검증한다.
+
+1. each click가 fresh dot candidate의 `0.60×` camera pitch 이내인지 검사한다.
+2. 네 click이 서로 다른 candidate로 snap되는지 검사한다.
+3. TL→TR→BR→BL 순서가 self-crossing 없는 convex quadrilateral인지 검사한다.
+4. 네 edge마다 `0.55×` pitch band 안에 fresh dot candidate가 최소 3개 있는지 검사한다.
+5. human quad 안에 V3 assigned cell, fresh candidate, nominal V3 prediction이 각각 얼마나 들어가는지 센다.
+
+| 이 workflow가 답하는 질문 | 답하지 않는 질문 |
+|---|---|
+| 현재 V3 nominal 50×50 window가 사람이 확인한 visible dot panel보다 어느 방향에서 넓거나 좁은가 | physical 50×50 target의 D origin / physical cell index가 무엇인가 |
+| 39-row shortfall이 clicked outer extent 밖에서 생기는가 | 40-row gate를 바꿔도 되는가 |
+| V3 assignment가 visibly physical dot panel과 얼마나 겹치는가 | machine calibration transform, rank, orientation, part ID |
+
+Human click을 넣더라도 `GRID_SIZE=50`과 40-row gate는 바뀌지 않는다. Passed validation은 future human design review를 위한 evidence일 뿐이며, `calibration_v1.yaml`, target re-projection, retraining, machine/part candidate metadata를 수정하는 trigger가 아니다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
