@@ -954,3 +954,23 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 이 차이가 나는 이유는 validation만 보고 architecture를 계속 바꾸면 test에 우연히 맞지 않는 model을 선택할 수 있기 때문이다. 그래서 지금은 “새 model이 더 좋다”라고 결론 내리지 않는다. 또한 240 candidate가 나왔다는 것은 flat map 때문에 decoder가 막히지 않았다는 뜻이지, 실제 이상 위치나 score 방향을 확인했다는 뜻이 아니다.
 
 다음에는 이 model이 과거 image를 정말 쓰는지 확인한다. z=203, 227, 250에서 normal causal history를 endpoint image 반복으로 바꾸고, t0/t1/t2를 한 장씩 바꾼 뒤 map이 material하게 달라지는지를 본다. 그 결과가 history use의 증거다. history-sensitive이고 raw-camera candidate가 안정적일 때만 여러 random seed에서 test 성능을 비교한다. 여전히 무반응이면 학습을 더 길게 하는 것이 아니라 prior feature average/difference/fusion의 어느 부분에서 time information이 사라지는지 진단해야 한다.
+
+
+---
+
+## 29. 과거 image에 반응한다는 것과 위치가 안정적이라는 것은 다르다
+
+새 temporal-difference model은 이전 model과 달리 과거 A image를 바꾸면 response map이 달라졌다. z=203, 227, 250에서 과거 세 장을 모두 endpoint image로 바꾸면 map의 평균 차이가 약 0.102–0.105였다. t0, t1, t2를 한 장씩 바꾸어도 약 0.0077–0.0105의 차이가 생겼다. 사전에 정한 material difference 기준 `0.0001`보다 훨씬 크므로, 이 model은 tested prior history를 실제로 본다는 근거가 생겼다.
+
+그렇다고 top candidate의 위치가 충분히 안정적이라는 뜻은 아니다. 같은 diagnostic substitution에서 가장 높은 score의 local maximum이 수십~수백 raw camera pixel 이동하는 경우가 있었다. 모든 과거 image를 endpoint로 바꾼 경우는 세 endpoint 모두 1 model pixel equivalent tolerance를 넘었고, 한 장씩 바꾼 경우에도 9개 중 4개만 tolerance 안이었다.
+
+| 확인 질문 | 현재 답 |
+|---|---|
+| model이 과거 A frame에 반응하는가? | **그렇다**. 세 endpoint에서 map change 조건을 통과했다. |
+| 그 반응이 quality candidate 위치를 안정적으로 만드는가? | **아직 아니다**. top local maximum 전환이 크다. |
+| 실제 machine에서 그만큼 candidate가 움직였다는 뜻인가? | 아니다. 이는 일부 history를 인위적으로 endpoint로 교체한 진단 실험이다. |
+| 새 model이 기존보다 test 성능이 좋은가? | 아직 아니다. 한 seed held-out test loss는 조금 높았다. |
+
+QC 그림에서 endpoint-repeat panel은 causal panel과 넓은 영역에서 다르게 보인다. t0/t1/t2 panel은 전체 모양은 비슷하지만 국소적인 색과 texture가 달라진다. 이는 CSV 숫자와 같은 내용을 보기 쉽게 확인하는 그림이다. 색은 해당 endpoint 내부에서 variant를 비교하는 용도이며 raw camera image나 physical defect 그림이 아니다. 검토한 세 PNG는 작고 재현 가능한 evidence이므로 `docs/qc/a_only_temporal_difference_stability_v1/`에 Git으로 보관한다.
+
+**다음 작업:** 과거 image 변경 때 top candidate가 바뀌는 원인을 구분한다. top1과 top2 score가 거의 비슷해서 순위만 바뀌는 것인지, 아니면 높은 score가 실제로 멀리 이동하는 것인지 top-K score margin/rank audit으로 확인한다. 이 audit은 decoder rule을 바꾸지 않고 설명만 한다. 결과를 보기 전에는 seed 추가나 다음 model 학습을 시작하지 않는다.
