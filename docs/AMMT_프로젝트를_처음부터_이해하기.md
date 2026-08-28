@@ -533,7 +533,19 @@ cd ~/ammt_project
   --output-dir processed/calibration/independent_method2_dotgrid_coverage_definition_v1
 ```
 
-It will measure the printed/visible grid extent and indexing convention before any grid-size or coverage assumption is changed. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+Coverage-definition audit은 정상 완료했다. 가장 중요한 수치는 `946/946`이다. V3에서 nominal 50×50 cell 중 할당되지 않은 946개는 모두 2000×2000 camera sensor 안에 예측됐고, 새 dot detector candidate가 V3의 기존 assignment bound(`6.55369 px`) 안에 있는 경우는 `0/946`이었다.
+
+| 먼저 예상했던 원인 | 결과 | 왜 제외/보류됐는가 |
+|---|---|---|
+| 센서가 grid를 잘라 냈다 | 지지되지 않음 | missing 946개 중 sensor 밖 예측이 0개 |
+| dot은 찾았지만 V3 assignment만 놓쳤다 | 지지되지 않음 | missing 946개 중 fresh detector candidate가 가까운 경우가 0개 |
+| visible target extent, detector footprint, 또는 provisional image-lattice window/index convention | 여전히 plausible | inside sensor이지만 fresh detector support가 없는 structured missing region |
+
+QC overlay는 이 해석을 보완한다. Cyan assigned cell은 printed dot 위에 모이지만, red missing cell은 image left의 넓은 영역과 dot panel right/central boundary에 structured하게 모인다. Row occupancy는 0–37까지 연속이지만 초반에는 10개에서 점차 늘고, 39번째 row는 2개뿐이다. 반면 column 0–49는 모두 등장하지만 각 column은 약 25–37개 dot만 가진다. 즉 **“39개의 완전한 row가 보이고 한 row만 잘렸다”**라고 간단히 말할 수 없다.
+
+따라서 40-row gate는 계속 fail이다. 39가 40보다 하나 작다고 해서 결과를 본 뒤 기준을 낮추면, 원래 정한 validation이 project에 주는 안전장치가 사라진다. 이 audit은 gate를 바꾸기 위한 증거가 아니라, future human review가 무엇을 확인해야 하는지 좁혀 준 evidence다.
+
+다음 작업은 자동 transform fit이 아니라 separately approved human-reviewed DotGrid extent/index-convention design audit이어야 한다. It should compare the actual printed/visible dot-panel extent, documented target convention, and current provisional 50×50 image-lattice window before any discussion of grid size or coverage threshold. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
