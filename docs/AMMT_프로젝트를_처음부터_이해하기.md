@@ -733,3 +733,30 @@ cd ~/ammt_project
 TR 결과는 향후 “detector ROI가 printed outer-right dot를 놓칠 수 있다”는 별도 설계 검토 근거가 된다. 그러나 **그 즉시 ROI를 넓히면 안 된다.** ROI를 넓히면 text, plate texture, hardware까지 새 dot 후보로 섞일 수 있고, 이미 39 rows였던 V3 coverage를 결과를 본 뒤 유리하게 바꾸는 오류가 생길 수 있다. BR/BL이 ambiguous인 것도 같은 이유로 중요하다. 현재 prompt에서 가장 편한 해석 하나를 고르면 실제 outer edge를 잘못 정할 수 있다.
 
 따라서 이번 결과의 정식 결론은 `hold_outer_boundary_diagnosis; mixed_or_ambiguous_image_space_evidence`이다. 기존 V2 JSON, V2 validator output, 새 diagnostic output은 모두 보존한다. JSON 재클릭·수정, `--overwrite`, detector threshold/ROI 수정, 50×50/40-row gate 완화, homography/calibration/model 변경은 진행하지 않는다. 나중에 개선한다면 human outer-boundary의 뜻과 detector outer-boundary alternatives를 미리 고정한 새 design review가 필요하다. 그 review의 결과도 raw-camera-primary **XCT-derived continuous quality candidate**를 즉시 physical defect나 machine action으로 바꾸지 않는다.
+
+
+---
+
+## 21.5 다음 단계: extent, 40-row coverage, orientation을 한 번에 확정하지 않는 design review
+
+현재 calibration 문제는 “homography 수식이 없는 문제”가 아니다. 수식은 이미 있지만, 그 수식에 넣을 image boundary와 physical direction을 정확히 확정할 evidence가 부족한 문제다. 그래서 다음 코드는 정답을 새로 만드는 코드가 아니라, 이미 존재하는 두 extent 후보와 orientation 후보를 **같은 고정 기준으로 비교하는 코드**다.
+
+첫 extent 후보는 기존 frozen detector ROI이고, 둘째 후보는 V2 human click로 만든 quad다. V2 quad는 strict snap에서 실패했으므로 ‘사람이 봤으니 정답’으로 올리지 않는다. 반대로 TR에는 current detector가 놓친 local dot lattice가 있어 detector ROI도 당연한 정답이라고 올리지 않는다. mixed evidence 상태에서는 새 expanded boundary를 만들지 않는 것이 안전하다. 네 corner가 모두 local lattice evidence를 통과할 때만 future review에서 expanded extent를 후보로 추가할 수 있다.
+
+`src/audit_calibration_design_review_v1.py`는 각 기존 extent 안에 V3 assigned point가 몇 개 들어가는지, 어떤 lattice row/column이 있는지, nominal 0–49 중 무엇이 빠졌는지를 적는다. 그리고 `rows>=40`, `columns>=50`을 그대로 적용한다. 어떤 candidate가 더 많은 row를 포함해도 이 코드가 gate를 바꾸거나 final extent를 고르지는 않는다. 그 이유는 결과를 확인한 뒤 boundary·row 정의를 조정하면 39-row hold를 인위적으로 통과시킬 수 있기 때문이다.
+
+또한 기존 orientation ranking에서 rank1과 rank2의 LOO residual 차이가 `1e-6 px` 이내이면 둘은 residual tie로 기록한다. DotGrid는 대칭적인 lattice라 residual만으로 mirror/rotation을 충분히 구별하기 어렵다. SecondaryCamera의 red marker처럼 비대칭적인 자료가 있어도, 그것을 LayerCamera DotGrid와 직접 연결하는 독립 cross-camera bridge가 없으면 direction을 확정하는 데 사용하지 않는다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_calibration_design_review_v1.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v2-validation-summary processed/calibration/visible_dotgrid_extent_validation_v2/visible_dotgrid_extent_validation_summary.json \
+  --v2-controls-csv processed/calibration/visible_dotgrid_extent_validation_v2/visible_dotgrid_extent_control_validation.csv \
+  --outer-boundary-csv processed/calibration/visible_dotgrid_outer_boundary_diagnostic_v1/visible_dotgrid_outer_boundary_diagnostic_by_control.csv \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --orientation-ranking-csv processed/calibration/orientation_audit_v1/calibration_candidate_ranking.csv \
+  --output-dir processed/calibration/calibration_design_review_v1
+```
+
+이 실행은 compact CSV 세 개, JSON 하나, QC overlay 두 개만 만든다. raw TIFF/CSV, human controls, prior V2/V3 result, detector ROI/threshold, 50×50 grid, 40-row gate, homography/rank/orientation, calibration config, XCT/model/decoder는 바꾸지 않는다. 결과가 나와도 primary output은 raw-camera 좌표의 **XCT-derived continuous quality candidate**이고, machine-coordinate interpretation은 provisional 상태로 유지한다.

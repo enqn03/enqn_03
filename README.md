@@ -292,3 +292,26 @@ The four evidence classes are `TL=current_detector_supported`, `TR=printed_dot_v
 BR is 11.405 px outside the frozen ROI and the nearest local dark-dot candidate is `(1701,1586)`, 14.346 px from the click near `(1706,1599)`; the visible dot lattice ends above the clicked point. BL is inside the frozen ROI but the nearest frozen/local candidate `(975,1614)` is 16.031 px above the click near `(973,1630)`, while V3/nominal reference points lie around y≈1595–1615. Both lower controls are therefore conservatively `ambiguous`, not promoted to confirmed click-placement or detector-miss evidence. Overlay review agrees with this classification.
 
 The diagnostic establishes mixed image-space evidence only. The existing V2 JSON and outputs must remain preserved; no reclick, JSON edit, `--overwrite`, threshold/ROI change, gate relaxation, homography refit, calibration/config update, or model/target action follows automatically. A future correction workflow, if proposed, requires separately approved human-reselection and/or detector-boundary design with fixed predeclared acceptance criteria.
+
+
+#### Calibration design review V1 — implementation ready
+
+`src/audit_calibration_design_review_v1.py` implements the approved read-only review after the mixed outer-boundary evidence hold. It uses only the immutable DotGrid TIFF, V2 validation summary/control CSV, V1 outer-boundary diagnostic per-control CSV, V3 compact feature CSV, and the existing 192-hypothesis ranking CSV. It compares two fixed extent candidates—frozen refined-detector ROI and the held V2 human quad—without constructing a new expanded extent. An evidence-expanded extent is explicitly blocked unless all four controls show local lattice evidence; the current mixed classes do not meet that rule.
+
+For each fixed candidate the audit reports V3 point inclusion, unique assigned rows/columns, missing nominal `0..49` row/column indices, and the unchanged `rows>=40` plus `columns>=50` descriptive occupancy gate. It separately records whether the top residual-ranked orientation is tied within `1e-6 px` LOO RMSE. It marks the current top tie as unresolved because no independent asymmetric cross-camera anchor is supplied. Neither residual rank nor image extent is selected for calibration deployment.
+
+```bash
+cd ~/ammt_project
+ls -ld processed/calibration/calibration_design_review_v1
+
+/usr/local/bin/python3 src/audit_calibration_design_review_v1.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v2-validation-summary processed/calibration/visible_dotgrid_extent_validation_v2/visible_dotgrid_extent_validation_summary.json \
+  --v2-controls-csv processed/calibration/visible_dotgrid_extent_validation_v2/visible_dotgrid_extent_control_validation.csv \
+  --outer-boundary-csv processed/calibration/visible_dotgrid_outer_boundary_diagnostic_v1/visible_dotgrid_outer_boundary_diagnostic_by_control.csv \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --orientation-ranking-csv processed/calibration/orientation_audit_v1/calibration_candidate_ranking.csv \
+  --output-dir processed/calibration/calibration_design_review_v1
+```
+
+The expected compact output is three CSVs, one JSON summary, and two deterministic QC overlays. No raw input, V2/V3 artifact, detector setting, `GRID_SIZE=50`, rows>=40 gate, homography, rank/orientation, `calibration_v1.yaml`, XCT target/model/checkpoint/decoder, or raw-camera-primary XCT-derived continuous quality candidate policy can change. Static `py_compile`, fixed-rule inspection, and whitespace validation passed; the assistant did not run the audit.
