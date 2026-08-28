@@ -157,3 +157,10 @@ flowchart TD
 ## 실행 순서
 
 프로젝트 전체의 코드 실행 순서, 코드별 역할, 필요 입력, 생성 출력, 실행 전후 상태는 [실행가이드.md](실행가이드.md)에 지속적으로 관리한다. 새 코드가 추가될 때마다 이 guide와 `프로젝트과정.md`를 함께 갱신한다.
+
+
+### Perspective-aware 2D lattice-correspondence refinement — implementation ready
+
+`src/audit_independent_method2_lattice_correspondence_refinement.py` is the separately approved read-only follow-up to the V1 method-#2 candidate audit. It reads only immutable `DotGrid_2000x2000.tif` through the existing `tifffile.memmap(..., mode='r')` path. After automatic planar ROI restriction and subpixel dark-dot centers, it builds a local graph from up to six nearest neighbors. An edge is retained only when its distance is `0.45–1.75×` the estimated local dot pitch and its PCA-axis direction alignment is at least `0.92`. BFS propagation forms provisional 2D image-lattice labels; a maximum-count 50×50 image-lattice window and iterative projective nearest-cell reassignment then refine correspondence and suppress off-grid candidates.
+
+The audit repeats the **same** deterministic 5×5-block held-out scheme and fixed V1 gates: at least 1,200 unique cells, at least 40 represented rows and columns, held-out RMSE≤0.25 and p95≤0.50 of the train-inlier camera-dot pitch. It writes two compact CSV files, one JSON, and exactly three deterministic QC overlays. It does not read or modify `calibration_v1.yaml`, existing controls, A/B manufacturing TIFF, XCT, weak target/support, model/checkpoint, decoder, candidate output, transform rank, or camera-primary reporting. The intermediate image-lattice homography is used only in memory to test correspondence; it is not a deployed machine calibration. Any passing result permits human review of the correspondence evidence only, never automatic transform selection or config replacement.

@@ -416,7 +416,29 @@ QC overlay에서도 board ROI 위치는 맞지만, grid right side에 robust rej
 | same held-out residual gate | XCT response scale, sigma=2, unknown policy |
 | candidate transform을 human-review-only output으로 기록 | camera-primary reporting, no automatic config update |
 
-이 refinement code를 새로 추가하려면 별도 승인이 필요하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다.
+승인된 다음 구현은 `src/audit_independent_method2_lattice_correspondence_refinement.py`다. 이 코드는 DotGrid TIFF 하나만 read-only로 열고, V1의 독립적인 1D clustering 대신 다음 순서를 사용한다.
+
+1. 자동 DotGrid ROI 안에서 dark-dot response/NMS 후보와 response-weighted subpixel center를 만든다.
+2. 각 후보의 가까운 여섯 neighbor를 조사한다. 거리 `0.45–1.75×` local dot pitch, PCA axis alignment `≥0.92`를 동시에 만족하는 edge만 남긴다.
+3. 이 edge를 따라 BFS로 provisional 2D image-lattice row/column을 전파하고, cycle conflict와 graph에 연결되지 않은 후보를 수치로 기록한다.
+4. 가장 dense한 provisional 50×50 image-lattice window를 고른다. 이것은 machine D origin이 아니라 image-plane correspondence의 후보 범위다.
+5. 그 window의 image-lattice homography를 in-memory로 사용해 후보를 가장 가까운 2D cell에 다시 배정한다. `0.45×` pitch 밖의 candidate는 off-grid로 보류하며, cell 안 duplicate는 residual이 더 작은 점 하나만 남긴다.
+6. 마지막으로 V1과 **완전히 같은 5×5-block held-out rule**, RMSE `≤0.25×` train-inlier pitch, p95 `≤0.50×` 같은 pitch gate를 적용한다.
+
+| 이 코드가 읽는 것 | 이 코드가 쓰는 것 | 이 코드가 하지 않는 것 |
+|---|---|---|
+| `DotGrid_2000x2000.tif` 한 파일 | compact feature CSV, neighbor-edge CSV, summary JSON, QC overlay 3장 | config/control JSON·A/B·XCT·model/checkpoint 접근, transform/rank 선택, `calibration_v1.yaml` 변경 |
+
+실행은 다음과 같다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v1
+```
+
+refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
