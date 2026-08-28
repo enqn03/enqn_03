@@ -831,3 +831,24 @@ cd ~/ammt_project
 ```
 
 이 작업 뒤의 다음 갈림길도 미리 정해 둔다. Endpoint-repeat와 prior replacement가 map을 충분히 바꾸면서 top coordinate가 한 model pixel 안에서 안정적이면, 모델이 history를 무시하지 않는다는 근거가 되므로 다음은 multi-seed 또는 controlled capacity comparison이다. 반대로 map이 거의 변하지 않으면 training epoch를 늘리는 대신 temporal representation 자체를 다시 점검한다. 두 경우 모두 score는 계속 **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.
+
+
+---
+
+## 23. 중요한 발견: map은 layer마다 다르지만, 과거 layer를 실제로 쓰지는 않았다
+
+C32 residual model은 예전 temporal collapse보다 좋아 보였다. z=203, z=227, z=250의 map은 서로 다르고, 한 map 안에서도 평평하지 않으며 top pixel도 하나였다. 하지만 이것만으로 모델이 K=4 time sequence를 잘 사용한다고 결론 내릴 수는 없다. 현재 endpoint image 한 장만 보고 서로 다른 map을 만들 수도 있기 때문이다.
+
+그래서 같은 endpoint에서 과거 frame을 바꾸는 반사실(counterfactual) 실험을 했다. 예를 들어 z=203의 원래 history `[200,201,202,203]`를 `[203,203,203,203]`으로 바꾸고, 또 `[203,201,202,203]`, `[200,203,202,203]`, `[200,201,203,203]`처럼 과거 하나씩만 바꿨다. 그런 뒤 model map과 raw camera candidate를 원래 결과와 비교했다.
+
+결과는 세 endpoint 모두 완전히 동일했다. 모든 variant에서 map MAE와 maximum difference가 `0.0`이었고, top coordinate·score·candidate count도 동일했다. QC 그림의 다섯 panel도 구별할 수 없었다.
+
+| 확인한 사실 | 의미 |
+|---|---|
+| 서로 다른 endpoint의 map은 서로 다름 | endpoint frame 자체가 spatial variation을 만듦 |
+| 같은 endpoint에서 prior 3 frame을 모두 또는 하나씩 바꿔도 map이 완전히 같음 | 저장된 checkpoint는 tested K=4 prior history를 사용하지 않음 |
+| raw-camera top coordinate도 `0.0 px` 이동 | temporal robustness가 아니라 output invariance |
+
+따라서 이 모델을 “temporal model”이라고 부르는 것은 아직 정확하지 않다. 코드 구조에는 causal Conv3D가 있지만, 학습된 weight가 현재 endpoint에만 반응하는 방식일 수 있다. residual connection은 map이 모두 동일해지는 현상을 막았지만, 과거 information을 쓰게 만들었다는 증거는 아니다.
+
+이 결과 뒤의 **다음 작업**은 training epoch를 무작정 늘리는 것이 아니다. 먼저 temporal Conv3D weight를 time lag별로 검사하고, decoder input에서 `encoded_endpoint`와 `temporal_update`가 각각 얼마나 기여하는지 보는 **temporal-path mechanism audit**을 해야 한다. 그 결과로 과거 lag weight가 사실상 0인지, temporal update가 endpoint만 보고 있는지, 또는 residual branch가 너무 약한지를 구분한 뒤에만 새 architecture를 제안한다. 여전히 output의 정확한 이름은 raw-camera **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.

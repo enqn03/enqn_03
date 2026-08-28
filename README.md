@@ -360,3 +360,12 @@ ls -ld outputs/a_only_candidate_stability_v1
 ```
 
 The new output directory must not exist on the first run. The audit does not train or change a checkpoint/config/manifest/TIFF/XCT CSV, does not read weak response/support, does not use provisional geometry/calibration, and does not change raw-camera-primary XCT-derived continuous quality candidate reporting. **Next task after this audit:** if endpoint-repeated and prior-frame counterfactuals change maps materially without unstable candidate coordinates, compare C32 residual seeds/capacity; if maps are insensitive, isolate the temporal architecture before any more training.
+
+
+#### A-only candidate stability V1 result — spatial diversity survives, but prior causal history is unused
+
+The user executed the read-only candidate-stability audit successfully on the saved C32 endpoint-feature-residual checkpoint at held-out endpoints z=203, z=227, and z=250. In all three endpoints, the normal causal K=4 input, endpoint-repeated history, and each individual prior-frame replacement produced **exactly identical** maps: `map_mae_vs_causal=0.0`, `map_max_abs_vs_causal=0.0`, same top-score tie count (1 pixel), same spatial range, same top score, same five emitted candidates, and raw top-candidate displacement `0.0 px`. Each top coordinate is consequently stable within the predeclared one-model-pixel tolerance of `5.859375 raw px`, but that stability arises because the prediction is invariant—not because temporal robustness has been demonstrated.
+
+This differs from the earlier spatial-collapse result. The residual architecture produces non-flat, non-identical maps across different endpoints, so the endpoint encoder supplies spatial variation. However, this counterfactual shows that, for these three representative test endpoints, replacing any/all preceding frames with the endpoint frame makes no numerical difference. The correct conclusion is **hold temporal-contribution claim**: the saved residual checkpoint behaves as an endpoint-conditioned spatial model under this test, not as a demonstrated K=4 history-sensitive model.
+
+No raw TIFF/CSV, checkpoint, config, manifest, XCT/weak support, calibration, provisional geometry, decoder threshold, candidate policy, or dense prediction artifact changed. **Next task:** a separately approved read-only temporal-path mechanism audit should measure Conv3D temporal-kernel energy by lag and the relative endpoint-feature versus temporal-update contribution before proposing any retraining or architecture change.
