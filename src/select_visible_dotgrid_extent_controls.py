@@ -64,7 +64,7 @@ def collect_points(gray: np.ndarray, stride: int) -> list[tuple[float, float]]:
     print("\nClick exactly four visible OUTER dot centers in this order:")
     for index, name in enumerate(POINT_ORDER, start=1):
         print(f"  {index}. {name}")
-    print("Close the window only after four points are visible. Press Esc to cancel.")
+    print("The selector returns automatically after the fourth left-click. Right-click removes the latest point; press Esc to cancel.")
     points = plt.ginput(n=4, timeout=0, show_clicks=True, mouse_add=1, mouse_pop=3, mouse_stop=2)
     plt.close(figure)
     if len(points) != 4:
