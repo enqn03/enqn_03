@@ -778,3 +778,24 @@ Calibration design review를 실제로 실행한 결과, 기존 frozen detector 
 Orientation도 마찬가지다. 192개 hypothesis 가운데 rank1 `mirror_rotate_90`과 rank2 `mirror_rotate_270`는 LOO RMSE가 각각 약 7.028 px이고 차이는 약 `3.819×10⁻¹⁴ px`이다. 이는 계산 오차 수준의 tie이며, 다른 후보들은 훨씬 나쁘지만 이 두 mirror 방향 중 어느 것이 실제 physical direction인지는 residual만으로 고를 수 없다. 독립적으로 확인된 asymmetric cross-camera anchor가 없으므로, 이제 이 둘 중 하나를 final calibration으로 선언하면 안 된다.
 
 현재 정식 결론은 `hold_extent_and_orientation`이다. `GRID_SIZE=50`, rows≥40 gate, V3 39-row hold, rank2 provisional config, raw-camera-primary **XCT-derived continuous quality candidate** 정책은 그대로다. 다음 calibration 작업은 같은 controls나 residual을 다시 해석하는 것이 아니라, 별도의 asymmetric physical reference 또는 사전에 고정된 alternative detector/extent experiment를 추가하는 방향이어야 한다.
+
+
+---
+
+## 21.7 SecondaryCamera의 빨간 점 하나만으로 방향을 고를 수 없는 이유
+
+다음으로 확인한 것은 SecondaryCamera의 빨간 laser indicator가 rank1/rank2 mirror tie를 해결할 수 있는지였다. 현재 파일에는 `SecondaryCamera_Laser00.tif` 한 장이 있고, red cluster는 secondary-camera pixel `(2582.34,2029.18)` 부근에서 잘 검출된다. 하지만 그 숫자는 **SecondaryCamera 화면 안에서의 위치**일 뿐, LayerCamera DotGrid 화면에서의 위치가 아니다.
+
+두 camera에서 같은 물리 점을 서로 옮기려면 보통 서로 다른 위치의 공통점이 여러 개 필요하다. 그런데 현재에는 LayerCamera에서 같은 red indicator를 본 이미지도 없고, SecondaryCamera에서 red dot가 DotGrid의 여러 known 위치에 놓인 여러 장의 이미지도 없다. 그러므로 빨간 점의 pixel을 억지로 LayerCamera로 투영하면 실제 evidence가 아니라 추측으로 calibration을 만드는 셈이다.
+
+NIST method #2의 원문도 red indicator가 `A(0,0)` origin relation에는 도움을 주지만 **orientation은 주지 않는다**고 설명한다. 논문에 나온 DotGrid `{D}`와 machine `{A}`의 2.5° 관계는 red dot가 DotGrid의 다양한 위치에 있을 때 추가로 측정해 얻은 것이다 [1]. 현재 local metadata에는 그 추가 multi-position images가 없다.
+
+| 현재 보유 evidence | 가능한 말 | 하면 안 되는 말 |
+|---|---|---|
+| `Laser00` 한 장의 compact red cluster | SecondaryCamera에서 red visual candidate를 찾음 | LayerCamera의 machine origin을 확정함 |
+| DotGrid의 대칭 lattice와 rank1/rank2 residual tie | 좋은 후보가 두 mirror 방향으로 좁혀짐 | residual이 낮은 후보가 physical truth임 |
+| LayerCamera와 SecondaryCamera의 별도 image | 두 sensor가 존재함 | 두 image 사이 transform을 알고 있음 |
+
+그래서 이 경로에서는 새 cross-camera homography 코드를 만들지 않았다. 지금 데이터로는 검증할 대응점이 없기 때문이다. 다음으로 할 수 있는 유효한 작업은 calibration을 억지로 확정하는 것이 아니라, machine-coordinate truth가 필요 없는 **raw-camera candidate model evaluation**이다. 예를 들어 같은 C32 residual model이 seed가 달라도 안정적인지, LED/channel 또는 temporal history가 실제로 map에 기여하는지, candidate가 같은 pixel에 고정되지 않는지를 검사할 수 있다. 이 모든 평가는 계속 raw-camera 좌표의 **XCT-derived continuous quality candidate**만 다루므로 current calibration hold를 침범하지 않는다.
+
+[1]: https://doi.org/10.6028/jres.125.027 "Lane & Yeung (2020), Process Monitoring Dataset from the AMMT: Overhang Part X4"
