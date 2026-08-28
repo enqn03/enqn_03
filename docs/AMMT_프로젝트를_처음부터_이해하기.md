@@ -926,3 +926,14 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 마지막 비교에서 새 model map이 과거 frame 교체에 따라 material하게 변하면서 raw-camera top candidate가 지나치게 불안정하지 않다면, 다음은 여러 random seed에서 같은 결과가 재현되는지 보는 generalization test다. 반대로 여전히 거의 변하지 않으면, 새 fusion도 prior information을 쓰지 않는 것이므로 더 긴 training이 아니라 difference representation과 objective를 다시 설계해야 한다.
 
 새 stability audit의 QC PNG도 내부에서 계산한 작은 확인 그림이다. causal input과 네 counterfactual variant map을 나란히 보여 주지만, 원본 camera image, XCT target, defect map, anomaly probability, physical position을 뜻하지는 않는다. 수치 CSV/JSON과 그림을 함께 확인한 경우에만 `docs/qc/`에 Git 기록한다.
+
+
+---
+
+## 27. 새 model을 바로 오래 학습시키지 않고 dry run부터 하는 이유
+
+새 temporal-difference model은 먼저 z=128의 한 training sample로 dry run을 통과했다. Input은 `[1,4,6,256,256]`, output은 `[1,1,256,256]`였고, 3,439개의 supported pixel에서 masked loss도 finite하게 계산됐다. 즉 image sequence, model shape, sparse XCT-derived support-masked loss, MPS device가 서로 맞게 연결됐다는 뜻이다.
+
+하지만 이때 나온 loss `0.12180285`는 random initialization model의 값이다. 이미 학습된 C32 residual checkpoint의 loss와 비교해서 새 model이 더 좋다거나 나쁘다고 말할 수 없다. Dry run은 “배선 검사”이지 성능 시험이 아니다.
+
+이 단계에서는 output folder, checkpoint, QC PNG가 새로 만들어지지 않았고 raw TIFF/XCT/config/calibration도 바뀌지 않았다. **다음 작업은 단 하나다:** 이전과 같은 fixed setting으로 8 epoch만 학습하여 `outputs/a_only_temporal_difference_v1/`에 결과를 만든다. Training이 끝나면 validation/test 수치와 candidate safety status를 먼저 확인하고, 그 다음에만 과거 frame replacement counterfactual audit를 실행한다. 한 결과를 보기 전에 epoch나 architecture를 또 바꾸지 않는 이유는 성능 차이의 원인을 분명히 하기 위해서다.

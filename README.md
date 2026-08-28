@@ -402,3 +402,10 @@ The controlled comparison keeps A-only six-channel input, causal split/guards, w
 `src/audit_a_only_temporal_difference_stability_v1.py` is the matched post-training counterfactual audit. It uses only A TIFF causal input through read-only memmap and the new checkpoint; it does not instantiate XCT/weak support or geometry. It repeats the same causal vs endpoint-repeat and individual-prior-replacement test used for the C32 residual checkpoint and writes only compact metrics plus three display-only five-panel QC PNGs. Those images may be copied into `docs/qc/a_only_temporal_difference_stability_v1/` only after result/metric review and documented explanation.
 
 **Next task after dry run:** if tensors and loss are valid, run exactly the controlled 8-epoch training comparison. **Next task after training:** run checkpoint-only matched counterfactual audit; a material history map change in the new architecture is necessary but not sufficient evidence before considering multi-seed generalization.
+
+
+#### Temporal-difference V1 dry run — passed
+
+The user ran the approved no-write dry run on the available training endpoint z=128. It returned the required input shape `[1,4,6,256,256]`, prediction shape `[1,1,256,256]`, finite sigmoid range `[0.13726304, 0.96532851]`, `weak_target_available=true`, `3,439` supervised pixels, and finite masked loss `0.12180285` on MPS. This verifies only that the new architecture, Dataset contract, on-the-fly sparse support-masked loss wiring, and device execution are valid before training. The random-initialization loss is not comparable with a trained checkpoint and is not a quality conclusion.
+
+No training/output directory/checkpoint/PNG was created or modified; raw TIFF/XCT/config/calibration stayed unchanged. **Next task:** execute exactly one fixed 8-epoch controlled training run into the new `outputs/a_only_temporal_difference_v1/` directory, then compare its held-out metrics with the frozen residual reference and run its matched counterfactual stability audit.
