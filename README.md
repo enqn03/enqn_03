@@ -239,3 +239,18 @@ cd ~/ammt_project
 ```
 
 If the output JSON already exists, it must be listed and reviewed before any deliberate replacement; this guide does not recommend `--overwrite` automatically.
+
+
+#### Visible-extent validator CLI correction
+
+The existing validator defines its completed-V3 feature input as `--v3-features`, not `--v3-features-csv`. An initial V2 guide invocation stopped at `argparse` before opening any TIFF or control data because the former spelling was supplied; this was a documentation-only command mismatch, not a calibration/validation outcome. The corrected read-only command is:
+
+```bash
+/usr/local/bin/python3 src/audit_visible_dotgrid_extent_controls.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/features.csv \
+  --controls-json processed/calibration/visible_dotgrid_extent_controls_v2.json \
+  --output-dir processed/calibration/visible_dotgrid_extent_validation_v2
+```
+
+This correction changes no source, raw/processed data, V2 controls, calibration/gate/model policy, or candidate reporting. The validator result remains pending.
