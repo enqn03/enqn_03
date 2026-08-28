@@ -896,3 +896,33 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 이 branch QC PNG도 candidate stability PNG와 같은 이유로 `docs/qc/a_only_temporal_path_mechanism_v1/`에 Git 기록한다. 작은 검토용 계산 그림이지 원본 제조 이미지나 defect label을 저장하는 방식은 아니다.
 
 **다음 작업:** 새 temporal architecture를 바로 학습시키기 전에, 변경할 mechanism을 하나로 고정해야 한다. 예를 들어 endpoint encoded feature에 `endpoint−prior` causal difference feature를 별도 branch로 넣는 설계를 선택하고, 동일 split/target/loss/decoder 아래에서 기존 C32 residual baseline과만 비교한다. 이 단계는 새 source/config가 필요하므로 별도 승인을 받은 뒤 진행한다.
+
+
+---
+
+## 26. 다음 모델은 과거 image의 차이를 직접 보여 주도록 바꾼다
+
+기존 residual model은 temporal branch가 존재했지만, 과거 image를 바꿔도 output이 달라지지 않았다. 그래서 다음 model은 “time convolution이 알아서 과거를 쓸 것”이라고 기대하지 않는다. 대신 endpoint와 과거 image의 encoded feature 차이를 직접 계산해 model이 반드시 볼 수 있는 입력으로 준다.
+
+```text
+1. t0, t1, t2, endpoint image를 각각 같은 encoder에 넣는다.
+2. t0, t1, t2 feature의 평균을 만든다.
+3. endpoint feature − prior 평균 feature를 계산한다.
+4. 이 difference feature와 endpoint feature를 fusion한다.
+5. fusion result로 continuous response map을 만든다.
+```
+
+이 방법의 장점은 K=4의 세 prior frame이 모두 fusion input에 직접 들어간다는 것이다. 기존 final temporal convolution은 kernel size가 3이라 마지막 output에서 가장 오래된 t0를 직접 보지 못했지만, 새 model에는 그런 direct-path 제외가 없다. 물론 이 구조를 만들었다고 자동으로 history를 잘 활용한다는 뜻은 아니다. 학습 뒤에도 같은 counterfactual test를 해야 한다.
+
+| 무엇을 유지하는가 | 왜 유지하는가 |
+|---|---|
+| A-only 6 channels, causal K=4 split/guard, ROI와 normalization | 데이터 조건을 바꾸면 성능 변화 원인을 구분할 수 없기 때문 |
+| XCT-derived sparse continuous target와 support-masked loss | target 의미와 unknown policy를 유지하기 위해 |
+| raw-camera coordinate decoder와 safety rules | model 비교 중 candidate reporting 기준이 달라지는 것을 막기 위해 |
+| calibration hold와 geometry gate off | unresolved machine mapping이 model 비교에 섞이지 않게 하기 위해 |
+
+실행은 세 단계다. 먼저 z=128 training sample으로 dry run을 해서 input shape `[1,4,6,256,256]`, output shape `[1,1,256,256]`, finite masked loss를 확인한다. 이 단계에서는 아무 파일도 저장하지 않는다. 그 다음에만 고정된 8 epoch training을 하고, 마지막으로 z=203/227/250에서 normal causal history와 endpoint-repeat/prior replacement 결과를 비교한다.
+
+마지막 비교에서 새 model map이 과거 frame 교체에 따라 material하게 변하면서 raw-camera top candidate가 지나치게 불안정하지 않다면, 다음은 여러 random seed에서 같은 결과가 재현되는지 보는 generalization test다. 반대로 여전히 거의 변하지 않으면, 새 fusion도 prior information을 쓰지 않는 것이므로 더 긴 training이 아니라 difference representation과 objective를 다시 설계해야 한다.
+
+새 stability audit의 QC PNG도 내부에서 계산한 작은 확인 그림이다. causal input과 네 counterfactual variant map을 나란히 보여 주지만, 원본 camera image, XCT target, defect map, anomaly probability, physical position을 뜻하지는 않는다. 수치 CSV/JSON과 그림을 함께 확인한 경우에만 `docs/qc/`에 Git 기록한다.

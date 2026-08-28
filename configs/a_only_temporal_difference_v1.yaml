@@ -1,0 +1,91 @@
+version: 1
+status: controlled_temporal_architecture_experiment
+purpose: >
+  Controlled A-only causal experiment that replaces the inert Conv3D residual
+  temporal path with explicit endpoint-minus-mean-prior encoded-feature fusion.
+  It preserves the causal split, K=4 six-channel inputs, ROI, normalization,
+  sparse XCT-derived continuous weak target, masked loss, and raw-camera decoder.
+comparison:
+  reference_config: configs/a_only_baseline_c32_temporal_residual_v1.yaml
+  reference_checkpoint: outputs/a_only_baseline_c32_temporal_residual_v1/best_validation_supported_loss.pt
+  reference_test_loss: 0.06992126491182837
+  only_changed_variable: model.temporal_fusion
+  unchanged_variables: >
+    AfterSpreading A-only input, causal K=4 manifest and guards, train-only
+    normalization, 256x256 ROI resize, three intensity plus three saturation-
+    validity channels, sparse XCT 5x5x5 response, sigma=2 rasterization,
+    support-masked Smooth L1, optimizer, seed, epoch budget, validation selection,
+    and support-independent raw-camera candidate decoder.
+data:
+  stage: A
+  sequence_length_k: 4
+  input_channels: 6
+  model_resolution: [256, 256]
+  batch_size: 2
+  num_workers: 0
+  pin_memory: false
+model:
+  name: a_only_causal_temporal_difference_candidate_net
+  base_channels: 32
+  temporal_fusion: endpoint_minus_mean_of_all_preceding_encoded_frames
+  temporal_equation: >
+    encoded_prior_mean = mean(encoded_history[:, 0:K-1]);
+    difference_feature = encoded_endpoint - encoded_prior_mean;
+    fused_feature = fusion([encoded_endpoint, difference_encoder(difference_feature)])
+  causal_policy: >
+    The current endpoint and only preceding K-1 A-stage frames are used. No
+    future layer, B-stage, XCT target, support mask, or geometry enters model input.
+  structural_change_rationale: >
+    The prior-frame difference enters an explicit fusion input, so every
+    preceding K=4 frame has a direct path to fused_feature; this avoids relying
+    on a final temporal Conv3D kernel that previously left t0 outside its direct
+    receptive field and produced history-invariant temporal updates.
+  output_activation: sigmoid
+  output_name: candidate_response_prediction
+loss:
+  config: configs/masked_regression_loss_v1.yaml
+  target_name: xct_derived_continuous_quality_response
+  response_direction: unresolved
+optimizer:
+  name: AdamW
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+training:
+  epochs: 8
+  seed: 20260827
+  device: auto
+  select_best_by: validation_supported_pixel_mean_smooth_l1
+  skip_optimizer_step_when_batch_has_no_support: true
+evaluation:
+  top_k_candidates_per_endpoint: 5
+  local_maximum_kernel_size: 7
+  spatial_plateau_range_atol: 0.000001
+  top_score_tie_atol: 0.000001
+  top_score_tie_fraction_max: 0.001
+  temporal_map_mae_atol: 0.000001
+  temporal_map_max_abs_atol: 0.000001
+  provisional_part_geometry_gate:
+    enabled: false
+    policy: filter_local_maxima_to_known_part_rectangles
+    status: disabled_for_raw_camera_controlled_comparison
+  spatial_plateau_policy: >
+    Keep flat-map, top-score-tie, temporal-invariance, and local-maximum safety
+    gates. No XCT support mask or provisional machine geometry is decoder input.
+  score_semantics: >
+    Sigmoid-scaled XCT-derived continuous quality response; not a defect/anomaly
+    probability while response direction remains unresolved.
+storage:
+  output_directory: outputs/a_only_temporal_difference_v1
+  overwrite_output_directory: false
+  checkpoint_name: best_validation_supported_loss.pt
+  history_name: training_history.json
+  test_metrics_name: test_metrics.json
+  test_candidates_name: test_coordinate_candidates.json
+  persist_dense_heatmaps: false
+provenance:
+  causal_manifest: manifests/causal_sequence_manifest.csv
+  normalization_config: configs/normalization_v1.yaml
+  calibration_config: configs/calibration_v1.yaml
+  weak_target_config: configs/weak_target_v1.yaml
+  loss_config: configs/masked_regression_loss_v1.yaml
