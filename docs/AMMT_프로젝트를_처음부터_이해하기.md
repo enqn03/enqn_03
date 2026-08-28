@@ -852,3 +852,22 @@ C32 residual model은 예전 temporal collapse보다 좋아 보였다. z=203, z=
 따라서 이 모델을 “temporal model”이라고 부르는 것은 아직 정확하지 않다. 코드 구조에는 causal Conv3D가 있지만, 학습된 weight가 현재 endpoint에만 반응하는 방식일 수 있다. residual connection은 map이 모두 동일해지는 현상을 막았지만, 과거 information을 쓰게 만들었다는 증거는 아니다.
 
 이 결과 뒤의 **다음 작업**은 training epoch를 무작정 늘리는 것이 아니다. 먼저 temporal Conv3D weight를 time lag별로 검사하고, decoder input에서 `encoded_endpoint`와 `temporal_update`가 각각 얼마나 기여하는지 보는 **temporal-path mechanism audit**을 해야 한다. 그 결과로 과거 lag weight가 사실상 0인지, temporal update가 endpoint만 보고 있는지, 또는 residual branch가 너무 약한지를 구분한 뒤에만 새 architecture를 제안한다. 여전히 output의 정확한 이름은 raw-camera **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.
+
+
+---
+
+## 24. 중간에 나오는 그림은 무엇이고, 왜 Git에 따로 보관하는가
+
+이 프로젝트에서 그림은 두 종류로 나뉜다. 원본 camera TIFF 자체는 매우 크고, 앞으로도 바뀌지 않는 관측 자료다. 반면 QC PNG는 원본을 저장한 것이 아니라, 특정 script가 정해진 input과 frozen checkpoint로 내부 계산한 작은 확인 그림이다. 예를 들어 candidate stability 그림은 `256×256` response map을 다섯 개 나란히 보여 준다. 원래 causal K=4 input, endpoint를 네 번 반복한 input, 그리고 과거 frame 하나를 endpoint로 바꾼 세 input의 결과다.
+
+| 그림에서 보는 대상 | 왜 필요한가 | 보면 안 되는 방식 |
+|---|---|---|
+| 다섯 response panel의 모양 차이 | model이 이전 layer를 실제로 쓰는지 빠르게 확인 | 원본 camera 사진처럼 해석하지 않기 |
+| 같은 endpoint에서 공통 color scale | variant 간 상대적인 map 차이 확인 | 다른 endpoint 그림의 색과 숫자를 직접 비교하지 않기 |
+| CSV의 MAE/max difference | 그림이 보여 주는 차이를 수치로 확인 | 그림만 보고 defect나 quality 방향을 판단하지 않기 |
+
+z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재 model이 map 모양을 만들 수는 있어도, tested prior history를 바꿨을 때 map이 변하지 않았다는 뜻이다. 원본 TIFF, XCT target, raw coordinate, physical part location을 뜻하는 그림은 아니다.
+
+보통 `outputs/`는 다시 만들 수 있는 파일이 많으므로 Git에 넣지 않는다. 하지만 이 세 그림처럼 작고, deterministic하며, CSV/JSON 수치와 해석이 함께 검토된 QC 그림은 포트폴리오와 재현성 기록에 도움이 된다. 그래서 `docs/qc/a_only_candidate_stability_v1/`에 별도로 보관한다. 이 원칙은 raw TIFF·dense map·dense target/support·checkpoint·대량 결과를 Git에 저장하자는 뜻이 아니다.
+
+**다음 작업:** temporal-path mechanism audit를 실행하면 endpoint feature branch, temporal-update branch, 그리고 두 branch 차이를 보여 주는 새 QC 그림이 나온다. 그 그림도 먼저 무엇을 계산했는지와 한계를 설명한 뒤, compact reviewed evidence인 것만 Git에 보관한다.
