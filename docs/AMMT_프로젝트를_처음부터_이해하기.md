@@ -493,7 +493,23 @@ cd ~/ammt_project
   --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v3
 ```
 
-`status=fail_closed_before_heldout_validation`이면 graph/component diagnostics만 해석하고 transform을 만들지 않는다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+V3는 정상 완료했다. 15개 graph component 중 가장 큰 component가 candidate 1,523개(전체 1,616개 중 94.25%)와 edge 2,812개(전체 2,860개 중 98.32%)를 담고 있어, V1의 작은 component seed 문제가 실제로 해소됐음을 확인했다. BFS label conflict도 0개였다.
+
+가장 중요한 변화는 **미리 고정한 held-out test**다. V1에서 RMSE는 dot pitch의 0.41125, p95는 0.67037이었지만, V3에서 313 held-out cell을 사용한 RMSE는 0.06728 pitch, p95는 0.11472 pitch가 됐다. 각각 기준 `0.25`, `0.50`보다 작으므로 residual gate는 통과했다. 마지막 overlay의 yellow held-out dot과 magenta residual arrow도 panel 여러 위치에 분포하고 화살표가 작아, 수치가 특정 한 구역만 잘 맞춘 결과가 아니라는 점을 visual cross-check했다.
+
+하지만 모든 gate가 통과한 것은 아니다.
+
+| Gate | V3 수치 | 왜 중요한가 | 현재 판정 |
+|---|---:|---|---|
+| Unique cells | 1,554 ≥ 1,200 | 충분한 수의 cell에서 검증했는지 | 통과 |
+| Image-lattice columns | 50 ≥ 40 | panel 가로 방향이 넓게 포함됐는지 | 통과 |
+| Image-lattice rows | **39 < 40** | 세로 방향도 사전에 정한 최소 coverage를 충족하는지 | 보류 |
+| Held-out RMSE | 0.06728 pitch ≤ 0.25 | average correspondence generalization | 통과 |
+| Held-out p95 | 0.11472 pitch ≤ 0.50 | 큰 local mismatch가 제한되는지 | 통과 |
+
+39 row는 기준보다 단 한 row 부족하지만, 결과를 본 뒤 “39도 충분하다”고 기준을 낮추면 validation의 신뢰성이 사라진다. 더구나 NIST source note에는 50×50 dot grid가 문서화되어 있으므로, **visible field-of-view인지, target-count convention인지, detector/reassignment boundary인지**를 먼저 따로 확인해야 한다. 현재 low residual은 2D correspondence algorithm이 좋아졌다는 strong evidence지만, published D coordinate 또는 machine calibration config를 적용할 충분한 evidence는 아니다.
+
+따라서 다음 작업은 gate를 낮추는 것이 아니라 separate read-only coverage-definition audit이다. It will measure the printed/visible grid extent and indexing convention before any grid-size or coverage assumption is changed. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
 
