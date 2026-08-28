@@ -438,6 +438,17 @@ cd ~/ammt_project
   --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v1
 ```
 
+첫 실행은 `Dense 50x50 provisional lattice window contains too few graph labels`에서 의도적으로 중단됐다. 이 오류는 raw TIFF나 calibration/model data가 바뀌었다는 뜻이 아니며, CSV·JSON·overlay·held-out residual도 만들기 전 단계에서 fail-closed한 것이다. 원인은 graph BFS가 가장 강한 dark-response 점 하나에서만 시작되어, 큰 DotGrid component 대신 작은 disconnected component를 seed로 선택할 수 있었기 때문이다. 즉 DotGrid pattern이 사라진 것이 아니라 **graph seed policy가 panel-wide correspondence에 충분히 안정적이지 않았다**는 뜻이다.
+
+| 지금의 처리 | 이유 |
+|---|---|
+| 현재 output directory를 `--overwrite`로 덮어쓰지 않음 | 실패한 실행 기록을 숨기지 않고, 다음 code patch와 결과를 분리하기 위해서 |
+| RMSE/p95 값을 새로 해석하지 않음 | held-out validation 전에 멈췄으므로 새 residual evidence가 없음 |
+| V1 method-#2 transform hold 유지 | 새 correspondence가 아직 검증되지 않았음 |
+| 다음 patch를 별도 승인으로 분리 | graph component 선택 방식도 correspondence algorithm 변경이기 때문 |
+
+가장 작은 보완은 모든 edge-connected component의 size를 세고, **candidate 수가 가장 큰 component**를 BFS seed로 고르는 것이다. size가 같을 때만 aggregate response와 deterministic spatial order로 tie-break한다. detector threshold, fixed 5×5 held-out rule, RMSE/p95 gate, calibration config, model/XCT data는 그대로 유지한다.
+
 refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
 
 ---
