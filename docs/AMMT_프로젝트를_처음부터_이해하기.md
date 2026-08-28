@@ -937,3 +937,20 @@ z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재
 하지만 이때 나온 loss `0.12180285`는 random initialization model의 값이다. 이미 학습된 C32 residual checkpoint의 loss와 비교해서 새 model이 더 좋다거나 나쁘다고 말할 수 없다. Dry run은 “배선 검사”이지 성능 시험이 아니다.
 
 이 단계에서는 output folder, checkpoint, QC PNG가 새로 만들어지지 않았고 raw TIFF/XCT/config/calibration도 바뀌지 않았다. **다음 작업은 단 하나다:** 이전과 같은 fixed setting으로 8 epoch만 학습하여 `outputs/a_only_temporal_difference_v1/`에 결과를 만든다. Training이 끝나면 validation/test 수치와 candidate safety status를 먼저 확인하고, 그 다음에만 과거 frame replacement counterfactual audit를 실행한다. 한 결과를 보기 전에 epoch나 architecture를 또 바꾸지 않는 이유는 성능 차이의 원인을 분명히 하기 위해서다.
+
+
+---
+
+## 28. Validation이 좋아도 test가 좋아졌다고 말할 수 없는 이유
+
+새 temporal-difference model은 8 epoch을 학습했고 epoch 7이 validation에서 가장 좋았다. Validation loss는 기존 residual model보다 약 4.1% 낮았다. 하지만 미리 손대지 않은 held-out test loss는 기존 residual보다 약 0.41% 높았다. 즉 validation에서는 좋아 보였지만 test에서는 개선되지 않았다.
+
+| 비교 | 기존 C32 residual | 새 temporal-difference | 올바른 결론 |
+|---|---:|---:|---|
+| Best validation loss | 0.05643 | 0.05411 | validation minimum은 새 model이 낮음 |
+| Held-out test loss | 0.06992 | 0.07020 | 한 seed에서 held-out improvement는 확인되지 않음 |
+| Test candidate | 기존 decoder | 48 endpoint 모두 5개, 총 240개 | map을 decode할 수 있음; quality truth는 아님 |
+
+이 차이가 나는 이유는 validation만 보고 architecture를 계속 바꾸면 test에 우연히 맞지 않는 model을 선택할 수 있기 때문이다. 그래서 지금은 “새 model이 더 좋다”라고 결론 내리지 않는다. 또한 240 candidate가 나왔다는 것은 flat map 때문에 decoder가 막히지 않았다는 뜻이지, 실제 이상 위치나 score 방향을 확인했다는 뜻이 아니다.
+
+다음에는 이 model이 과거 image를 정말 쓰는지 확인한다. z=203, 227, 250에서 normal causal history를 endpoint image 반복으로 바꾸고, t0/t1/t2를 한 장씩 바꾼 뒤 map이 material하게 달라지는지를 본다. 그 결과가 history use의 증거다. history-sensitive이고 raw-camera candidate가 안정적일 때만 여러 random seed에서 test 성능을 비교한다. 여전히 무반응이면 학습을 더 길게 하는 것이 아니라 prior feature average/difference/fusion의 어느 부분에서 time information이 사라지는지 진단해야 한다.
