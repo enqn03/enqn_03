@@ -263,3 +263,21 @@ The user completed `audit_visible_dotgrid_extent_controls.py` with the V2 contro
 The controls are sensor-contained and form a strictly convex ordered `TL→TR→BR→BL` quadrilateral (all cross-products positive). However, the fixed click-to-fresh-candidate snap test fails: only TL is within the frozen `8.73835 px` bound (`3.47989 px`); TR, BR, and BL are respectively `170.41794 px` (13.070 pitches), `87.56457 px` (6.716 pitches), and `16.03069 px` (1.229 pitches) from their nearest fresh detector candidate. The minimum per-edge support count is 5≥3, but the right edge alone has only 5 candidates versus 38/43/51 on the top/bottom/left. Therefore `all_control_validity_checks_pass=false` and the correct result is `hold_extent_interpretation`, not a panel-extent pass.
 
 The overlays nevertheless supply narrow diagnostic evidence: V3 assigned cells are 1,539/1,554 (99.0347%) inside the human quadrilateral, fresh candidates are 1,554/1,616 (96.1634%) inside, and nominal 50×50 predictions are 1,900/2,500 inside with 600 outside. Visually, the selected quad covers the central detector-supported lattice, while a right-side nominal region extends beyond it and two V3 assigned points lie left of the quad. Because three outer clicks failed fresh-dot snap and the right edge has sparse support, these counts cannot resolve whether the shortfall is visible physical extent, detector footprint, click placement, or nominal-window convention. No grid/gate/config/calibration decision follows from this run.
+
+
+#### Visible DotGrid outer-boundary diagnostic — implementation ready
+
+`src/audit_visible_dotgrid_outer_boundary_diagnostic.py` is the separately approved read-only follow-up to the V2 strict snap hold. It preserves the existing V2 controls and V3 outputs, reconstructs the same frozen refined detector/ROI and V3 nominal 50×50 image-space predictions, and adds a fixed local four-pitch patch around each click. Within each patch it recomputes the same dark-dot response, applies deterministic q=0.990/NMS=8 px candidate extraction, and requires a near-click candidate plus at least two camera-pitch-band neighbors with an approximately orthogonal pair before supporting `printed_dot_visible_but_current_detector_missed`.
+
+Each control is classified only as `current_detector_supported`, `printed_dot_visible_but_current_detector_missed`, `click_outside_printed_dot`, or `ambiguous`. The result is diagnostic evidence, not an automatic reclick, detector replacement, tolerance change, grid/gate decision, homography fit, calibration/rank/origin claim, or model/target change. The script writes one compact per-control CSV, one JSON summary, four local patch QC PNGs, and one full-panel QC PNG under a new ignored output directory; it persists no dense crop, response, mask, rectification, target, or model output. Static `py_compile`, fixed-constant/source-contract inspection, and whitespace validation passed. The assistant did not run the diagnostic.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_visible_dotgrid_outer_boundary_diagnostic.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --controls-json processed/calibration/visible_dotgrid_extent_controls_v2.json \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --output-dir processed/calibration/visible_dotgrid_outer_boundary_diagnostic_v1
+```
+
+If the output directory already exists, it must be listed and reviewed; `--overwrite` is not recommended automatically. The script never changes the frozen V2 snap result, `GRID_SIZE=50`, rows≥40 gate, V3 39-row hold, `calibration_v1.yaml`, transform/rank/orientation, machine origin, A/B/XCT/weak-target/model/checkpoint/decoder, or raw-camera-primary XCT-derived continuous quality candidate reporting.

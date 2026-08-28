@@ -686,3 +686,32 @@ V2 selector는 정상적으로 창을 열었고 네 점을 저장했다. 이어 
 > 결론은 **`hold_extent_interpretation`**이다. 자료가 삭제되거나 실패한 것이 아니라, “현재 네 click만으로는 visible outer boundary를 충분히 정확하게 증명하지 못했다”는 안전한 결과다. `GRID_SIZE=50`, 40-row rule, V3 39-row hold, rank/orientation, machine origin, `calibration_v1.yaml`, target projection, model 또는 raw-camera-primary `XCT-derived continuous quality candidate` 표현은 그대로 유지한다.
 
 따라서 지금 V2 selector/validator를 `--overwrite`로 다시 실행하거나 JSON 숫자를 손으로 고치지 않는다. 기존 control JSON과 validation outputs는 evidence로 보존한다. 이후 click placement 또는 fresh-detector outer-boundary 방법을 바꿀 필요가 있다면, 왜 현재 strict snap check가 충분하지 않은지부터 별도 설계로 검토하고 승인받아야 한다.
+
+
+---
+
+## 21.3 왜 바로 다시 찍지 않고 outer-boundary diagnostic을 먼저 하는가
+
+V2에서 TR/BR/BL click가 fresh detector candidate와 멀었다고 해서 곧바로 “사용자가 잘못 찍었다”고 결론 내릴 수는 없다. 화면에는 점처럼 보이지만 current automatic detector의 ROI 또는 response threshold가 바깥 열·행을 놓쳤을 수도 있기 때문이다. 반대로 detector만 탓하고 human click를 그대로 인정하면, plate border·shadow·희미한 background texture를 physical outer dot로 잘못 사용할 수 있다. 그래서 같은 자료를 overwrite하지 않고 두 설명을 분리하는 새 read-only diagnostic이 필요하다.
+
+`src/audit_visible_dotgrid_outer_boundary_diagnostic.py`는 각 human click 주변을 camera-dot pitch의 네 배 반경으로 잘라 **메모리에서만** 살펴본다. 그 local patch에 기존과 같은 dark-dot response를 다시 계산하되, local q=0.990 threshold와 8 px NMS로 후보를 찾는다. Click 근처에 어두운 점 하나가 있다는 것만으로는 충분하지 않다. 그 후보 주변에 정상 pitch 범위의 이웃이 두 개 이상 있고 서로 대략 직각인 이웃 방향이 있어야 “DotGrid lattice의 일부처럼 보이는 local evidence”로 인정한다.
+
+| 결과 이름 | 쉬운 뜻 | 다음에 바로 할 수 없는 것 |
+|---|---|---|
+| `current_detector_supported` | 기존 detector도 이미 그 click 근처 dot를 찾았다 | physical index/origin 확정 |
+| `printed_dot_visible_but_current_detector_missed` | local lattice evidence는 있지만 기존 frozen detector가 놓쳤다 | detector threshold·ROI 자동 변경 |
+| `click_outside_printed_dot` | local/frozen/V3/nominal reference가 모두 충분히 멀다 | 기존 JSON을 자동 수정하거나 재클릭 |
+| `ambiguous` | 서로 다른 reference가 섞여 원인을 정할 수 없다 | 가장 편한 설명을 임의 선택 |
+
+이 diagnostic은 “다음에 무엇을 검토해야 할지”를 결정하는 도구이지, 39 rows를 40 rows로 바꾸는 도구가 아니다. 실행 전의 V2 controls와 validation hold를 그대로 보존하고, 결과는 per-control CSV·summary JSON·네 local patch PNG·한 full-panel PNG만 생성한다. Raw TIFF, detector threshold/ROI, nominal 50×50 grid, rows≥40 gate, homography/rank/orientation, machine origin, calibration config, target/model/checkpoint/decoder에는 손대지 않는다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_visible_dotgrid_outer_boundary_diagnostic.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --controls-json processed/calibration/visible_dotgrid_extent_controls_v2.json \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --output-dir processed/calibration/visible_dotgrid_outer_boundary_diagnostic_v1
+```
+
+이 source는 syntax와 fixed constants, read-only/compact-output contract를 정적으로 점검했다. 실제 실행과 생성 PNG 검토는 사용자가 수행한다. 어떤 evidence class가 나와도 다음 correction은 별도 설계·승인이 필요하며, raw-camera-primary **XCT-derived continuous quality candidate** 표현과 provisional calibration 상태는 유지한다.
