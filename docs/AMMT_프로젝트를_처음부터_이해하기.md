@@ -715,3 +715,21 @@ cd ~/ammt_project
 ```
 
 이 source는 syntax와 fixed constants, read-only/compact-output contract를 정적으로 점검했다. 실제 실행과 생성 PNG 검토는 사용자가 수행한다. 어떤 evidence class가 나와도 다음 correction은 별도 설계·승인이 필요하며, raw-camera-primary **XCT-derived continuous quality candidate** 표현과 provisional calibration 상태는 유지한다.
+
+
+---
+
+## 21.4 Outer-boundary diagnostic 결과: detector와 human click 중 하나만 탓할 수 없는 상태
+
+새 diagnostic은 실제로 실행됐고, 네 click를 같은 기준으로 비교했다. 결과는 “사용자가 완전히 잘못 찍었다”도 아니고 “detector가 모든 outer dot를 놓쳤다”도 아니다. TL은 기존 detector가 이미 잘 찾았고, TR은 화면상 dense dark-dot lattice 안에 있지만 frozen detector ROI의 오른쪽 밖에 있어 기존 detector가 놓친 사례였다. 반면 BR과 BL은 click 아래쪽에 있고, local dot 및 V3 reference가 조금 위의 마지막 visible dot row를 가리켜 아직 하나의 설명으로 확정할 수 없었다.
+
+| Point | 결과 | 쉽게 말하면 |
+|---|---|---|
+| TL | `current_detector_supported` | 사람이 누른 위치와 기존 detector가 같은 dot를 가리킴 |
+| TR | `printed_dot_visible_but_current_detector_missed` | 사람 click 근처에 규칙적인 dot lattice가 있으나 current ROI가 그 오른쪽을 잘랐음 |
+| BR | `ambiguous` | click보다 위에 마지막 dot row가 보이지만, intent/outer-boundary convention을 단정할 근거 부족 |
+| BL | `ambiguous` | click보다 위에 detector/V3가 가리키는 dot row가 있으나, same reason으로 단정 불가 |
+
+TR 결과는 향후 “detector ROI가 printed outer-right dot를 놓칠 수 있다”는 별도 설계 검토 근거가 된다. 그러나 **그 즉시 ROI를 넓히면 안 된다.** ROI를 넓히면 text, plate texture, hardware까지 새 dot 후보로 섞일 수 있고, 이미 39 rows였던 V3 coverage를 결과를 본 뒤 유리하게 바꾸는 오류가 생길 수 있다. BR/BL이 ambiguous인 것도 같은 이유로 중요하다. 현재 prompt에서 가장 편한 해석 하나를 고르면 실제 outer edge를 잘못 정할 수 있다.
+
+따라서 이번 결과의 정식 결론은 `hold_outer_boundary_diagnosis; mixed_or_ambiguous_image_space_evidence`이다. 기존 V2 JSON, V2 validator output, 새 diagnostic output은 모두 보존한다. JSON 재클릭·수정, `--overwrite`, detector threshold/ROI 수정, 50×50/40-row gate 완화, homography/calibration/model 변경은 진행하지 않는다. 나중에 개선한다면 human outer-boundary의 뜻과 detector outer-boundary alternatives를 미리 고정한 새 design review가 필요하다. 그 review의 결과도 raw-camera-primary **XCT-derived continuous quality candidate**를 즉시 physical defect나 machine action으로 바꾸지 않는다.
