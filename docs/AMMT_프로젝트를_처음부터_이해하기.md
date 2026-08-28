@@ -799,3 +799,35 @@ NIST method #2의 원문도 red indicator가 `A(0,0)` origin relation에는 도�
 그래서 이 경로에서는 새 cross-camera homography 코드를 만들지 않았다. 지금 데이터로는 검증할 대응점이 없기 때문이다. 다음으로 할 수 있는 유효한 작업은 calibration을 억지로 확정하는 것이 아니라, machine-coordinate truth가 필요 없는 **raw-camera candidate model evaluation**이다. 예를 들어 같은 C32 residual model이 seed가 달라도 안정적인지, LED/channel 또는 temporal history가 실제로 map에 기여하는지, candidate가 같은 pixel에 고정되지 않는지를 검사할 수 있다. 이 모든 평가는 계속 raw-camera 좌표의 **XCT-derived continuous quality candidate**만 다루므로 current calibration hold를 침범하지 않는다.
 
 [1]: https://doi.org/10.6028/jres.125.027 "Lane & Yeung (2020), Process Monitoring Dataset from the AMMT: Overhang Part X4"
+
+
+---
+
+## 22. Calibration이 hold여도 다음으로 검증할 수 있는 것: 모델이 과거 layer를 실제로 쓰는가
+
+Machine 좌표의 방향이 아직 확정되지 않았다고 해서 모델 프로젝트 전체가 멈추는 것은 아니다. 모델이 만들어내는 primary output은 처음부터 raw camera pixel `(x_pixel,y_pixel,layer_z,score)`이므로, “현재 A image와 직전 A images를 함께 넣었을 때 모델 map이 실제로 달라지는가”는 machine coordinate 없이 확인할 수 있다.
+
+새 `audit_a_only_candidate_stability_v1.py`는 이미 학습된 C32 residual checkpoint를 다시 학습하지 않고 비교한다. 기준은 정상 causal K=4 history다. 그 뒤 두 종류의 가상 입력을 만든다. 첫째는 endpoint image 하나를 네 번 복사해서 이전 layer variation을 없앤 `endpoint_repeated_history`다. 둘째는 과거 세 frame 중 하나만 endpoint image로 바꾸는 `prior_t0`, `prior_t1`, `prior_t2` variant다. 이 variant들은 실제 실시간 data가 아니라, 모델이 어떤 과거 frame 정보에 반응하는지 보는 실험용 입력이다.
+
+| 확인하는 질문 | 보는 숫자 | 결과가 말해 주지 않는 것 |
+|---|---|---|
+| 과거 history가 map에 영향을 주는가 | causal map과 variant map의 MAE, max difference, correlation | XCT direction이나 physical defect truth |
+| 위치가 perturbation에 민감한가 | top raw-camera candidate의 pixel displacement | machine-coordinate accuracy |
+| decoder safety가 유지되는가 | plateau/tie/local-maximum status | defect probability |
+
+이 audit에서는 XCT support를 만들거나 읽지 않고, provisional machine/part geometry gate도 사용하지 않는다. 그러므로 calibration rank2나 outer-boundary hold가 결과에 섞이지 않는다. three endpoint QC PNG는 사람이 map 변화를 확인하기 위한 display-only 그림이며, dense prediction data를 저장하는 것이 아니다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_a_only_candidate_stability_v1.py \
+  --config configs/a_only_baseline_c32_temporal_residual_v1.yaml \
+  --checkpoint outputs/a_only_baseline_c32_temporal_residual_v1/best_validation_supported_loss.pt \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --split test \
+  --indices 0 24 47 \
+  --output-dir outputs/a_only_candidate_stability_v1
+```
+
+이 작업 뒤의 다음 갈림길도 미리 정해 둔다. Endpoint-repeat와 prior replacement가 map을 충분히 바꾸면서 top coordinate가 한 model pixel 안에서 안정적이면, 모델이 history를 무시하지 않는다는 근거가 되므로 다음은 multi-seed 또는 controlled capacity comparison이다. 반대로 map이 거의 변하지 않으면 training epoch를 늘리는 대신 temporal representation 자체를 다시 점검한다. 두 경우 모두 score는 계속 **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.

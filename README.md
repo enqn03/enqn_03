@@ -336,3 +336,27 @@ Consequently a new cross-camera homography/anchor audit is not implemented: any 
 
 [1]: https://doi.org/10.6028/jres.125.027 "Lane & Yeung (2020), Process Monitoring Dataset from the AMMT: Overhang Part X4"
 [2]: https://data.nist.gov/od/id/mds2-2233 "NIST Public Data Repository: AMMT Overhang Part X4"
+
+
+#### A-only causal-history candidate stability audit — implementation ready
+
+`src/audit_a_only_candidate_stability_v1.py` is the next model-side evaluation allowed while machine-coordinate calibration remains held. It opens only the A-stage causal Dataset (`AMMTCausalStageDataset`) through read-only TIFF memmap and does not instantiate weak target/XCT support. For each selected held-out endpoint, it compares the normal causal K=4 history against (a) all K frames replaced by the endpoint frame and (b) each of the three preceding frames individually replaced by that same endpoint frame. These are diagnostic counterfactuals, not permitted real-time inputs.
+
+The audit preserves the spatial-plateau, top-score-tie, and local-maximum decoder safeguards but intentionally passes no previous map to the decoder: selected endpoints such as z=203/227/250 are nonconsecutive, so treating them as an adjacent temporal pair would make `withheld_temporally_invariant_map` invalid. It also forces `geometry_gate=None`, so no provisional machine/part mapping affects raw-camera candidate comparison. It records map MAE/max-absolute/correlation, emitted/withheld status, top-score tie, top candidate raw-coordinate displacement, and coordinate stability within one model pixel. It writes one compact CSV, one JSON summary, and exactly three display-only deterministic QC PNGs—never dense prediction arrays.
+
+```bash
+cd ~/ammt_project
+ls -ld outputs/a_only_candidate_stability_v1
+
+/usr/local/bin/python3 src/audit_a_only_candidate_stability_v1.py \
+  --config configs/a_only_baseline_c32_temporal_residual_v1.yaml \
+  --checkpoint outputs/a_only_baseline_c32_temporal_residual_v1/best_validation_supported_loss.pt \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --split test \
+  --indices 0 24 47 \
+  --output-dir outputs/a_only_candidate_stability_v1
+```
+
+The new output directory must not exist on the first run. The audit does not train or change a checkpoint/config/manifest/TIFF/XCT CSV, does not read weak response/support, does not use provisional geometry/calibration, and does not change raw-camera-primary XCT-derived continuous quality candidate reporting. **Next task after this audit:** if endpoint-repeated and prior-frame counterfactuals change maps materially without unstable candidate coordinates, compare C32 residual seeds/capacity; if maps are insensitive, isolate the temporal architecture before any more training.
