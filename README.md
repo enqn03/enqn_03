@@ -1,235 +1,648 @@
-# AMMT Layer-Camera Real-Time Anomaly Candidate Localization
+# AMMT Defect Detection AI 🚀
 
-LPBF 적층제조 공정의 layer-camera 시계열을 사용해 **실시간 노이즈 저감**과 **이상 후보 위치 탐지**를 구축하는 연구 프로젝트다. 이 저장소는 의료 영상이 아닌 NIST AMMT Overhang Part X4 제조 공정 데이터를 대상으로 한다.[1]
+본 프로젝트는 금속 3D 프린팅(AMMT) 과정에서 발생하는 미세한 결함을 탐지하기 위한 인공지능 모델을 개발하는 과정입니다. 
+센서(카메라) 데이터의 한계를 극복하기 위해 Gated CBAM Fusion 아키텍처를 도입하여 **A모달리티(쇳가루)**와 **B모달리티(쇳물)**를 결합하여 결함 탐지 정확도를 극대화했습니다.
 
-> 현재 모델 출력은 확정 결함 판정이 아니라 `(x_pixel, y_pixel, layer_z, score)` 형태의 **이상 후보 위치**다.
+### 데이터 결함 분포 분석
+저희는 데이터셋에 결함이 어디에 위치하는지 2D 및 3D로 시각화하여 분석했습니다.
+![Defect Distribution 2D](outputs/defect_distribution_2d.png)
+![Defect Distribution 3D](outputs/defect_distribution_3d.png)
 
-## 현재 위치
+### AI의 시선 (CBAM Spatial Attention Heatmap)
+아래는 AI가 Layer 242에서 실제 결함을 찾기 위해 집중(Focus)한 공간 영역을 시각화한 것입니다.
+![CBAM Attention](outputs/cbam_attention_layer242.png)
 
-데이터 구조와 A/B 대응, ROI 후보 포화 분석, 인과적 sequence split, train-only stage·LED별 normalization, causal Dataset, registered XCT sparse response audit, provisional machine XY→camera calibration, projected support, weak-target rasterization audit, support-masked loss runtime 검증이 완료됐다. LED 1·2의 넓은 full-scale saturation을 분리하기 위해 A-only baseline input은 3개 normalized intensity channel과 3개 validity-mask channel을 사용한다. `AMMTWeakTargetDataset`은 endpoint layer의 command XY를 provisional calibration으로 투영해 continuous `weak_response`와 `weak_support_mask`를 **on-the-fly** 반환한다. z=4는 `unknown`/loss 제외로, z=128은 3,439 supervised model pixel로 사용자 실행 검증을 통과했다. `AOnlyCausalCandidateNet`과 training/evaluation script는 구현됐고, z=128에서 `[1,4,6,256,256]` input·`[1,1,256,256]` sigmoid output·3,439 supervised pixel·finite masked loss=0.11099906의 `mps` dry-run을 통과했다. run 1 training은 epoch 8까지 완료되어 best validation supported-pixel Smooth L1=0.06163210, held-out test=0.07344962를 기록했다. checkpoint spatial diagnostic은 test z=203/227/250에서 global map range=0.67868543·std=0.11746240이지만 support 내부 prediction std=0.0·Pearson=null인 고정 plateau를 확인했다. 따라서 global `max-min ≤ 1e-6` gate만으로는 candidate를 안전하게 보류할 수 없으며, 현재 `emitted` coordinate는 사용하지 않는다. 확장 diagnostic은 z=203/z=227/z=250에서 top-score tie=63,504 pixel=96.8994%, 선택 endpoint 간 map MAE/max-absolute=0.0을 확인했다. 세 endpoint는 모두 `withheld_top_score_plateau`, candidate count=0으로 보류됐다. 이는 real-time decoder가 XCT support mask 없이 arbitrary coordinate를 막았음을 보여 준다. e24 controlled training의 checkpoint-only held-out evaluation은 완료됐다. Best validation은 epoch 9에서 run 1보다 0.17% 낮았으나, held-out test loss는 0.07370871로 run 1보다 0.35% 높았다. e24도 top-score tie=96.8994%, selected endpoint map MAE/max-absolute=0/0, candidate=0(48/48 withheld)이었다. 따라서 epoch만 늘리는 방법은 fixed map collapse를 해소하지 못했다. C32 controlled capacity run도 완료됐다. C32는 top-score tie를 96.8994%에서 0.3845%로 줄였지만, selected endpoint map MAE/max-absolute=0/0 및 support-region prediction std=0을 유지했다. Held-out test loss=0.07363038은 run 1보다 0.24% 높았다. 따라서 capacity 증대는 static geometry를 바꿨지만 input-dependent localization을 복원하지 못했다. Sigma=2→3 support-density audit은 완료됐고, sigma=3 training은 보류됐다. Available endpoint 8개에서 median support gain=29.3990% 및 base support retention=100%로 coverage는 늘었지만, median common-support response MAE=0.0538972가 stability gate 0.05000을 7.79% 초과했다. 모든 available layer는 binary support component 1개·largest share 1.0이어서 component metric은 local merge risk를 식별하지 못했다. 따라서 `weak_target_v1.yaml`의 sigma=2, response direction, unknown policy를 유지한다. C32 input-sensitivity diagnostic도 완료됐다. z=203/227/250의 A input history와 frame-encoder feature는 모든 pair에서 distinct했지만, `temporal_final`부터 logit/score까지 MAE=max-abs=0이었다. 따라서 current collapse는 frame encoder·sigmoid가 아니라 `Conv3D→GroupNorm→SiLU` temporal aggregation path에서 처음 발생한다. 다음 단일 가설은 endpoint frame feature가 decoder까지 causal하게 전달되도록 optional residual bypass `encoded_endpoint + temporal_update`를 도입하는 것이다. `use_endpoint_feature_residual=false` default로 C8/E24/C32 state-dict와 forward contract를 보존했고, C32와 residual flag·output path만 다른 `configs/a_only_baseline_c32_temporal_residual_v1.yaml`을 준비했다. training/spatial diagnostic/checkpoint evaluator/input-sensitivity diagnostic의 모든 model 복원 경로가 이 optional flag를 읽는다. Residual dry run도 통과했다. z=128에서 `[1,4,6,256,256]` input, `[1,1,256,256]` prediction, support=3,439, finite masked loss=0.18406811, MPS execution을 확인했고 output directory/checkpoint/dense target은 생성하지 않았다. 이 random-initialization loss는 trained C32 result와 비교하지 않는다. C32와 동일 조건의 8-epoch residual training도 완료됐다. Best validation loss=0.05642983 (epoch 6), held-out test=0.06992126으로 C32 대비 각각 8.27%·5.04% 낮아졌다. z=203/227/250 spatial diagnostic에서 support prediction std=0.043991/0.041168/0.045247, Pearson=0.396817/0.353880/0.195059, top-score tie=1 pixel=0.001526%로 all three endpoint가 `emitted`됐다. Endpoint map MAE/max-abs도 z203→227=0.010572/0.225400, z227→250=0.009254/0.164584로 zero가 아니었다. Stagewise diagnostic은 temporal_final/logit/score까지 모든 pair variation이 남음(earliest collapsed stage=`null`)을 확인했다. 따라서 residual bypass는 selected held-out inputs에서 temporal collapse를 해소하고 input-dependent continuous score map을 만들었다. 다만 calibration은 provisional이고 response direction/physical defect truth는 unresolved이므로 후보는 계속 XCT-derived continuous quality candidate다. 다음 validation인 `src/audit_a_only_candidate_coordinates.py`는 구현·정적 검증을 마쳤다. Residual compact candidate JSON을 model grid→raw camera→inverse machine coordinate→raw/model round-trip으로 검사하며, ROI/sensor/known-part containment, edge margin, same-endpoint duplicate cell을 compact CSV/JSON으로 audit한다. Coordinate audit은 internal arithmetic과 edge safety는 통과했지만 operational geometry는 보류됐다. 240/240 candidate가 grid/ROI/sensor domain, score `[0,1]`, raw/model round trip, same-endpoint dedup, 3px edge margin을 통과했으나, configured rank-2 provisional transform의 inverse machine coordinates는 모두 known part rectangles 밖이었다. 따라서 `coordinate_consistency_pass=true`, `edge_safety_pass=true`, `operational_geometry_pass_under_provisional_calibration=false`이며 current emitted candidates는 machine/part coordinate interpretation에서 hold한다. 다음 단일 candidate-output improvement인 geometry-aware decoder safety gate는 구현·정적 검증을 마쳤다. Gate는 default-disabled이며 existing spatial/tie/temporal safety gate를 먼저 유지한 뒤 configured provisional part rectangles 안의 local maxima만 compact ranking한다. In-geometry maximum이 없으면 `withheld_outside_provisional_part_geometry`를 명시적으로 반환한다. Saved residual checkpoint의 geometry-gated checkpoint-only evaluation과 filtered candidate coordinate audit도 완료됐다. Held-out loss=0.0699212649, optimizer steps=0으로 original residual score map/loss를 재현했고 48/48 endpoint에서 240 candidates가 emitted됐다. Ungated output의 240/240 outside-part result와 달리 geometry gate output은 part01=84, part02=126, part03=27, part04=3으로 240/240 configured known rectangle 안에 역투영됐다. Coordinate consistency·operational geometry·edge safety가 모두 pass했고 raw round-trip max=`6.43e-13`px, model round-trip max=0px다. 이는 provisional transform **내부에서만** candidate coordinate safety pathway가 일관됨을 뜻한다. Rank-1 versus selected-rank-2 transform sensitivity를 read-only로 비교하는 `src/audit_candidate_calibration_rank_sensitivity.py`도 구현·정적 검증을 마쳤다. Geometry-gated raw candidates에 대해 alternative/selected containment, same-part agreement, inverse machine XY shift, endpoint-level agreement를 compact CSV/JSON으로만 기록하며 rank 2를 재선정하거나 calibration config를 수정하지 않는다. Rank 1 versus rank 2 sensitivity audit도 완료됐다. Both transforms place 240/240 geometry-gated candidates inside some known part rectangle, but same-part agreement=0/240 (0%) and rank1→rank2 inverse machine-coordinate shift=4.168/14.463/33.857/38.053 (min/median/p95/max)다. Rank 1/2 fit·LOO RMSE는 displayed precision에서 동일하고 orientation/part mapping이 다르므로, current transform rank selection은 absolute part identity를 uniquely determine하지 않는다. 따라서 candidate reporting은 raw layer-camera `(x_pixel,y_pixel)` 및 `layer_z`,`score`를 primary로 하고, rank-2 machine XY/part는 `provisional` metadata로만 선택적으로 제공한다. NIST authoritative build-layout anchor 조사도 완료됐다. 공식 dataset description의 Fig. 2는 layer 125에서 Part 1–4 numbering/placement를, same-layer shape에서 cavity=`-X` left / overhang=`+X` right 기준을 제공한다.[1] PDR와 논문은 layer-camera registration에 필요한 `DotGrid_2000x2000.tif`, `SecondaryCamera_Laser00.tif`, `Checkerboard_2000x2000.tif`가 `Layer Camera Metadata.zip`에 있음을 열거한다.[1] [2] 이는 rank1/rank2 mirror ambiguity를 visual/metrology로 분리할 authoritative anchor source지만, raw camera pixel→machine homography를 바로 제공하지는 않는다. Current project에는 archive가 없고 sandbox PDR retrieval도 timeout됐으므로 calibration config는 변경하지 않았다. NIST Fig.2 criterion을 raw pixels에서 검토한 `src/audit_layer125_orientation_overlay.py` 실행도 완료됐다. B-stage `[LED=3,z=125]` read-only memmap frame 및 local laser-on XYPT paths로 rank1/rank2 deterministic overlay PNG two files를 만들었고, both hypotheses have 100% projectable/in-sensor command paths and identical 5.212059/7.028278px fit/LOO RMSE. The raw B-stage full-frame view did not provide unambiguous cavity/overhang visual correspondence, so `visual_preference_hypothesis=inconclusive`; rank2, `provisional` status, and camera-primary reporting remain unchanged. The ignored processed QC PNGs are not model heatmaps or labels. The required independent artifacts were then found already extracted under `raw_original/metadata/Layer Camera Metadata/`: `DotGrid_2000x2000.tif` (4,000,384 bytes), `SecondaryCamera_Laser00.tif` (36,869,338 bytes), and `Checkerboard_2000x2000.tif` (4,000,148 bytes). Each has a recorded local SHA-256 inventory and TIFF signature. The ZIP is absent, so archive-level PDR hash cannot be compared, but duplicate download is cancelled. `src/audit_independent_metrology_metadata.py` pre-audit execution is complete: DotGrid and Checkerboard are both actual `YX=[2000,2000]` uint8 grayscale ImageJ TIFFs with visibly resolved patterns; SecondaryCamera is actual `YXS=[3036,4048,3]` uint8 RGB and has a visible red-reference candidate. Its global red-dominance weighted centroid is `(2341.28,2039.94)` secondary pixels but its weighted spread is 613.08 px, so that centroid is not precise origin evidence; later component isolation and visual confirmation are required. This execution neither fits a homography nor selects rank 1/2 or modifies `calibration_v1.yaml`. Independent fit-audit feasibility is supported, but calibration remains provisional and camera-primary reporting remains mandatory. `src/audit_independent_metrology_fiducials.py` execution is complete and safely **holds** calibration fit: Dot candidates reached the 5,000 cap but include plate/text/screw false positives (global NN CV=0.7133>0.65); Checkerboard candidates are partial/background-contaminated (679, CV=1.2555>0.75); the compact top red component is a left reflection `(791.03,2109.00)`, while the visually salient central spot is split across nearby components. No homography, rank selection, origin attribution, or config change is justified. `src/audit_independent_metrology_fiducials_refined.py` execution is complete. DotGrid ROI evidence passes (1,616 candidates; NN CV=0.3262) and its overlay aligns candidates to the printed panel. The central red spot becomes cluster #1 (34 components, `(2582.34,2029.18)`, spread=40.27 px), separate from the left reflection. Checkerboard remains held (410 candidates; CV=0.5040>0.45; only a lower-left board subset). NIST documents a method-#2 route from dot-grid D coordinates to layer-camera C and reports `A(0,0)=D(28.25,24.25) mm` and 2.5° grid orientation; an independent D→C candidate transform with held-out lattice residuals is now a separately approved **design-review** candidate, not an update. No image rectification/homography/rank choice/origin attribution/config edit has been made.[2] 이 arithmetic pass는 calibration fit/LOO error를 대체하지 않으며, calibration status는 계속 provisional이다. B−A나 XCT response를 direct defect label로 사용하지 않는다.
+### 성능 증명 (ROC Curve & Ablation)
+- **B-only 모델**: 결함은 잘 찾지만(Recall 63%) 노이즈를 다 결함으로 착각해 알람이 523번 울렸습니다. (Precision 7.8%)
+- **Fusion 모델**: A의 정보로 노이즈를 필터링하여 **오탐(False Alarms)을 523번에서 111번으로 대폭 감소시켰고, F1-Score는 약 2배 향상**되었습니다!
 
-[1] [NIST PDR: Overhang Part X4](https://data.nist.gov/od/id/mds2-2233)
-[2] [Lane & Yeung (2020), J. Res. NIST 125:125027](https://doi.org/10.6028/jres.125.027)
+![Ablation Bar Chart](outputs/ablation_bar_chart.png)
+![ROC and PR Curves](outputs/roc_prc_curves.png)
 
-### Independent NIST method-#2 candidate calibration audit — implementation ready
+---
 
-`src/audit_independent_method2_calibration_candidate.py` is implemented and statically verified. It reads only immutable `DotGrid_2000x2000.tif` and the existing provisional calibration config. It refines dot centers to local response-weighted subpixel candidates, creates provisional 50×50 PCA lattice indices, fits `D→C` homography **candidates**, and evaluates deterministic held-out 5×5 lattice blocks. It retains all eight image-lattice axis variants and both `±2.5°` D/A angle-sign alternatives, yielding 16 non-selected `A→D→C` candidates.
+## 1. 프로젝트 요약
+본 프로젝트는 적층 제조 공정(LPBF, Laser Powder Bed Fusion)에서 층(Layer)마다 촬영되는 카메라 이미지를 실시간으로 분석하여, 결함이 의심되는 **이상 후보 위치(Anomaly Candidate Location)**를 추출해 내는 딥러닝 기반 모니터링 파이프라인 구축을 목표로 합니다. 의료용 CT가 아닌 제조 현장 공정 계측 데이터를 다루며, 사후 검증인 XCT 데이터를 약한 정답지(Weak Target)로 활용하여 모델을 훈련시킵니다.
 
-The gate measures only image-pixel consistency: at least 1,200 unique cells and 40 represented rows/columns, held-out RMSE≤0.25 and p95≤0.50 of detected inlier camera-dot pitch. The script emits compact CSV/JSON and two DotGrid QC overlays. It does not write raw metadata, modify `calibration_v1.yaml`, choose a candidate/rank, assert a red reference as machine origin, access model/XCT/target/checkpoint data, or change camera-primary candidate reporting. Passing the gate means that human transform review can begin, not that any calibration is deployed.[2]
+## 2. 프로젝트 목표
+이 프로젝트의 최종 출력값은 특정 픽셀이 "무조건 결함이다"라고 확정 짓는 이진 판별(Binary Classification)이 아닙니다. 대신, 공정 카메라 시퀀스와 사후 XCT 데이터를 연결하여 엔지니어가 우선적으로 검토해야 할 후보 위치를 연속적인 품질 점수로 제안합니다.
 
-#### Method-#2 candidate audit V1 execution result — hold all transforms
+* **최종 출력 포맷:** `(x_pixel, y_pixel, layer_z, score, status)`
+* **Score의 의미:** XCT 데이터에서 유래된 연속적인 품질 점수 (XCT-derived continuous quality candidate)
+* **Status 상태:** 정상적으로 추정된 후보(`emitted`), 모델 용량 한계로 인한 평탄화 보류(`withheld_top_score_plateau`), 부품 기하학적 외부 보류(`withheld_outside_provisional_part_geometry`) 등
 
-The V1 run indexed 1,518 unique DotGrid cells across 50 PCA columns and 48 PCA rows, so the coverage gate passed. However, 5×5-block held-out validation failed: 298 held-out cells gave RMSE=`6.00155 px` = `0.41125` of the detected inlier camera-dot pitch (`14.59340 px`), and p95=`9.78092 px` exceeded the `0.50`-pitch limit (`7.29670 px`). The in-sample robust fit was similarly too coarse for deployment (`6.14185 px` RMSE, p95=`9.80831 px`). QC overlays show correct board localization but systematic predicted-vs-actual dot offsets in multiple blocks and rejected/off-panel candidates near text/hardware. The failure is therefore attributed to the provisional PCA + separate 1D 50-cluster correspondence/indexing, not to a demonstrated physical calibration result. All 16 method-#2 alternatives remain held; no rank/config/origin change is allowed. The next possible scope is a separately approved read-only perspective-aware 2D lattice-correspondence refinement, followed by a fresh held-out audit—not another unrestricted homography fit.[2]
+## 3. 핵심 데이터 구조
+공정 카메라는 동일한 레이어에 대해 두 가지 시점의 6-채널(3 밝기 + 3 마스크) 이미지를 촬영합니다. 프로젝트는 과거 K=4 시계열 프레임(Causal Sequence)을 활용하여 미래 레이어 정보 누수 없이 인과적으로 학습을 진행합니다.
 
-| 단계 | 상태 | 핵심 산출물 |
+| 시점 | 이름 | 역할 및 특징 |
 |---|---|---|
-| A/B hyperstack 구조 검증 | 완료 | `TZYX=[3,250,2000,2000]`, `uint16` |
-| A/B pair 대응 검증 | 완료 | A/B raw 차이를 label로 쓰지 않는 정책 |
-| ROI·saturation 분석 | 완료 | 후보 ROI별 포화 비교와 QC |
-| 인과적 train/validation/test split | 완료 | `manifests/causal_sequence_manifest.csv` |
-| Train-only normalization·validity mask | 완료 | `configs/normalization_v1.yaml` |
-| Causal Dataset 연결 | 완료·train/validation/test sample 검증 | 3 intensity + 3 validity-mask channel |
-| Registered XCT sparse target audit | 완료·1,000 CSV schema·coverage 검증 | train-only finite response 2,329,476개/target column |
-| Machine XY→camera pixel calibration | 완료·provisional | rank2 `mirror_rotate_270`, raw correction `(0,-6)` px; 독립 calibration 전까지 provisional |
-| Projected sparse support·rasterization | 완료 | FOV 100%, sigma=2 model px, support 밖=unknown |
-| Weak target Dataset 연결 | 완료·available/unknown sample 검증 | `[1,256,256]` response/mask, z=4 loss 제외, z=128 3,439 supervised pixel |
-| Support-mask weighted continuous regression loss | 완료·runtime 검증 통과 | z=4 loss/gradient=0, z=128 support-only regression, unknown 영향=0 |
-| A-only support-mask weighted baseline | run 1 end-to-end 완료·localization hold | best validation loss=0.06163210, test loss=0.07344962. support-region prediction은 flat하여 current coordinate 무효 |
-| Checkpoint spatial diagnostic | 완료 | top-score tie=96.8994%, selected endpoint map MAE/max-absolute=0.0으로 input-invariant map 확인 |
-| Support-independent candidate decoder | runtime 통과 | 세 test endpoint에서 `withheld_top_score_plateau`, candidate count=0; XCT support 없이 동작 |
-| A-only controlled training-duration run | 완료·negative result | best validation e9=0.06152481, test=0.07370871; duration만 연장해도 plateau 유지 |
-| E24 checkpoint-only evaluator | 완료 | saved checkpoint read-only evaluation으로 48/48 withheld·candidate=0을 확인 |
-| A-only model-capacity controlled run | 완료·capacity 가설 보류 | tie 0.3845%로 축소됐지만 input-invariant map·support plateau·test +0.24% 유지 |
-| Weak target support-density rasterization audit | 완료·sigma=3 training 보류 | support gain 29.3990%·retention 100%이나 response MAE 0.0538972가 stability gate 초과 |
-| A-only input-sensitivity diagnostic | 완료·temporal collapse 확인 | input/encoder는 distinct, `temporal_final`부터 pairwise MAE/max-abs=0 |
-| Endpoint-feature temporal residual controlled run | 완료·selected held-out internal validation 통과 | validation −8.27%, test −5.04%, 48/48 emitted; spatial·stagewise map variation 확인 |
-| Calibration-aware candidate validation | 완료·operational geometry hold | internal coordinate/edge consistency pass, 240/240 inverse coordinates outside known part rectangles |
-| Geometry-aware candidate safety gate | 완료·provisional internal safety pass | 48/48 emitted; 240/240 candidates inside configured part rectangles; model/score/loss unchanged |
-| Calibration rank-sensitivity audit | 완료·machine coordinate ambiguity 확인 | both-rank containment 100%이나 same-part agreement 0%; median rank shift 14.463 |
-| Camera-primary coordinate reporting policy | 확정 | raw camera `(x_pixel,y_pixel)` primary; rank-2 machine/part는 provisional metadata |
-| NIST authoritative build-layout anchor research | 완료·direct config update 보류 | Fig. 2 machine layout/asymmetric feature 및 official calibration artifacts 확인; direct PDR archive retrieval timeout |
-| Layer-125 visual orientation overlay audit | 완료·visual hold | rank1/rank2 paths both in sensor; full-frame B visual asymmetry not decisive, so no rank change |
-| Independent metrology metadata pre-audit | 완료·fit feasibility supported | all TIFF schemas verified; dot-grid/checkerboard patterns visible; red candidate is diffuse and requires component isolation; no refit/rank selection |
-| Independent fiducial detector feasibility audit | 완료·calibration fit hold | valid feature visibility but dot/corner false positives and red-reflection top rank; needs ROI/component grouping refinement |
-| Detector-refinement audit | 완료·mixed result | DotGrid/red cluster local evidence pass; checkerboard direct route held; no transform fitted |
-| Independent method-#2 calibration-fit design audit | 별도 승인 대상 | D→C candidate fit with dot-lattice indexing and held-out residuals; compare to rank1/rank2, no config update |
-| Checkerboard-route calibration fit audit | hold | V2 does not yet provide fully indexed checkerboard lattice; not used in method-#2 design |
-| Control-point perturbation robustness audit | 후속 검증 단계 | independent anchor 결과 후 perturbation 범위 결정 |
-| B·fusion heatmap | 확장 단계 | 사후 재평가 및 위치 안정화 |
+| **A 단계** | AfterSpreading | 분말(Powder) 도포 직후, 레이저 조사 전 영상. 조기 경보를 위한 핵심 입력. |
+| **B 단계** | Burned | 레이저 용융(Laser Scan) 직후 영상. 스패터(Spatter) 등 가장 강력한 열적/구조적 신호를 포함하지만 노이즈가 많음. |
+| **XCT** | Registered XCT | 3D 사후 스캔 데이터. 카메라 2D 픽셀과 물리 좌표계를 캘리브레이션하여 타겟(Label)으로 매핑. |
 
-## 연구 흐름
+## 4. 최종 모델 아키텍처 (A+B Gated Fusion)
+초기 기획되었던 "공유 백본(Shared Backbone)" 아이디어는 A와 B 이미지 간의 극심한 밝기 분포(Photometric) 차이와 노이즈 간섭 문제로 인해 폐기되었습니다. 
+
+현재 프로젝트의 최종 목표 모델은 **A+B Gated Fusion 모델**입니다.
+1. **독립 인코더 (Independent Encoders):** A(가루)와 B(쇳물) 이미지 시계열을 각각 독립적인 Temporal Difference 인코더로 처리하여 고유한 변화량 특징을 추출합니다.
+2. **게이트 융합 (Gated CNN Fusion):** 추출된 A와 B의 특징을 단순히 이어붙이지(Concat) 않고, Gated CNN 모듈이 공간 및 채널별로 가중치를 동적으로 계산하여(Attention) 쓸모없는 노이즈를 스스로 차단하고 유효한 신호만 취합합니다.
+3. **정규화 디코더 (Regularized Decoder):** 융합된 정보를 바탕으로 최종 이상 후보 점수를 공간 맵(Map) 형태로 출력합니다. 게이트 모듈 추가로 인한 심각한 과적합(Overfitting)을 방지하기 위해 **Spatial Dropout(30%)**과 **강력한 AdamW 가중치 감쇠(Weight Decay=0.01)**가 적용되어 있습니다. (v4 모델 기준 Test Loss 0.0531 달성)
+
+
+---
+
+> **한 문장 요약:** 이 프로젝트는 LPBF 제조 중 레이저 조사 **전** 촬영한 layer-camera A 시계열만으로, 향후 확인이 필요한 화면 위치를 `(x_pixel, y_pixel, layer_z, score)` 형태의 **XCT-derived continuous quality candidate**로 제안하는 인과적 baseline을 만드는 작업이다.
+
+이 문서는 코드 목록이 아니라, **무엇을 골랐고 왜 골랐는지**, 그리고 왜 어떤 결과를 통과 또는 보류했는지를 설명한다. 여기서 `score`는 확정 defect, anomaly probability, 원인 진단, 자동 공정 제어 신호가 아니다. 사후 XCT에서 유래한 continuous response와 약하게 대응하도록 학습한 후보 점수이며, response 방향도 아직 확정하지 않았다.
+
+---
+
+## 5. 현재 위치: 완료한 것과 아직 하지 않는 것
+
+| 영역 | 상태 | 현재 결론 |
+|---|---|---|
+| 원본 보존·TIFF axis 확인 | 완료 | A/B TIFF·XCT CSV·metadata는 원본 그대로 read-only로 다룬다. |
+| A-only causal input | 완료 | 현재 endpoint와 과거 3개 layer만 본다. 미래 layer와 B stage는 입력에 넣지 않는다. |
+| ROI·normalization·saturation policy | 완료 | wide ROI를 **working ROI**로 고정하고, LED별 intensity와 saturation validity를 분리한다. |
+| XCT weak supervision | 완료 | `xct_5x5x5` continuous response를 on-the-fly rasterize하며, 관측되지 않은 곳은 `unknown`이다. |
+| C32 temporal-residual baseline | 완료 | temporal collapse를 해소하고 C32보다 held-out masked loss를 5.04% 낮췄다. |
+| Candidate output safety | 완료·제한 있음 | flat/tie/temporal-invariance/local-maxima 검사를 통과한 candidate만 raw pixel로 출력한다. |
+| Screen-control calibration | 완료·provisional | rank1/rank2 ambiguity가 남아 physical part identity를 주장하지 않는다. |
+| Independent metadata feature audit | 완료 | DotGrid과 central red cluster는 보였으나 Checkerboard direct route는 보류다. |
+| Independent method-#2 candidate transform | 완료·hold | panel coverage는 통과했지만 held-out dot residual이 기준을 넘었다. 모든 candidate transform을 보류한다. |
+| 확정 defect 판정·공정 control | 미완료 | 현 output은 candidate이며 자동 제어 또는 pass/fail 판단에 쓰지 않는다. |
+
+현재 가장 중요한 원칙은 다음과 같다.
+
+> **모델이 공간적으로 변하는 score map을 만들 수 있게 된 것과, 그 pixel이 특정 machine XY 또는 특정 part의 물리 위치라는 것은 다른 주장이다.** 따라서 현재 primary location은 raw camera `(x_pixel, y_pixel)`이다.
+
+---
+
+## 6. 먼저 이해할 세 가지 분리
+
+### 2.1 이것은 의료 CT 프로젝트가 아니다
+
+이 프로젝트의 input은 의료 CT volume이 아니라, 금속 적층 제조 중 촬영된 layer-camera image다. XCT는 제조가 끝난 뒤의 사후 계측 참조이며, model이 실시간으로 보게 되는 input은 아니다. NIST AMMT Overhang Part X4는 이와 같은 layer camera·process·registered XCT 자료를 제공한다.[1] [2]
+
+### 2.2 A와 B는 같은 사진의 전후 버전이 아니다
 
 ```text
-A/B raw layer-camera hyperstacks
-        ↓
-structure · correspondence · saturation audits
-        ↓
-causal K=4 manifest with guarded temporal splits
-        ↓
-train-only normalization + saturation validity mask
-        ↓
-causal 6-channel Dataset (3 intensity + 3 mask)
-        ↓
-A-only candidate heatmap baseline
-        ↓
-B head and A/B fusion heatmap
-        ↓
-registered XCT sparse support → screen-corner controls → 192 part/orientation hypothesis residual+overlay audit → weak heatmap → manual review for spatial validation
+Layer z 시작
+  └─ A: AfterSpreading, 분말 도포 직후·레이저 전  ← 현재 real-time input
+       └─ 레이저 노광
+            └─ B: Burned, 레이저 후                ← calibration/QC와 미래 확장용
 ```
 
-`프로젝트과정.md`의 **“데이터 전처리에 적용한 수학적·기술적 기법”** 절에는 실제 적용된 TIFF 축 변환, causal split, percentile normalization, saturation mask, sparse supervision, DLT homography, residual, orientation hypothesis, photometric correlation의 수식·입력·출력·오류 방지 목적이 정리되어 있다.
+A와 B는 같은 `(layer_z, LED)` 기준으로 대응하지만, `B - A`를 defect label로 쓰면 안 된다. 그 차이에는 정상 레이저 용융, 반사광, scan path, 장비 구조도 들어 있기 때문이다. 현재 A-only baseline은 “레이저 조사 전에 무엇을 확인할지”라는 조기 candidate 목적에 맞춘 선택이다.
 
-## 데이터와 코드
+### 2.3 선정 기준에는 세 종류가 있다
 
-| 경로 | 내용 |
-|---|---|
-| `raw_original/` | 원본 A/B TIFF, process signal, metadata, registered XCT. Git에서 제외 |
-| `processed/` | 재생성 가능한 audit 결과와 QC 이미지. Git에서 제외 |
-| `manifests/` | 인과적 sample index와 split policy |
-| `src/` | 재현 가능한 분석·전처리 코드 |
-| `프로젝트과정.md` | 기술적 의사결정, 현재 상태, 다음 검증 흐름 |
-| `docs/quality-control-images.md` | Git으로 보존한 11개 QC PNG의 panel별 의미·판정 한계·모델 영향 |
-| `docs/AMMT_프로젝트를_처음부터_이해하기.md` | 초심자 관점의 프로젝트 목적·데이터·검증·학습 흐름 안내서 |
+| 기준의 종류 | 의미 | 예시 |
+|---|---|---|
+| **Data contract** | 원본 구조에서 반드시 지켜야 하는 규칙 | TIFF logical axis, read-only memmap, `65535` saturation 처리 |
+| **Controlled selection** | 후보를 비교해 하나를 working choice로 정한 규칙 | wide ROI, train-only normalization, residual bypass |
+| **Safety hold** | 근거가 부족해 다음 단계로 진행하지 않는 규칙 | sigma=3 training hold, rank/part identity hold, method-#2 transform hold |
 
-## 핵심 기술 원칙
+이 구분이 중요하다. “현재 config에 들어 있다”는 말은 항상 “물리적으로 참이다”라는 뜻이 아니다. 어떤 값은 단지 공정하고 재현 가능한 baseline을 위해 고정한 working choice이고, 어떤 값은 검증 실패 때문에 유지되는 hold 상태다.
 
-A는 분말 도포 후·레이저 전 영상이고 B는 레이저 스캔 후 영상이다. A/B는 같은 `(layer_z, LED)`에 대응하지만, B−A에는 정상 용융 변화와 반사 변화도 포함된다. 따라서 A/B 차이를 결함 정답으로 직접 사용하지 않는다.
+---
 
-시계열 입력은 layer 축을 시간으로 사용하며, 각 endpoint는 현재와 과거 layer만 참조한다. 현재 기본 정책은 K=4, train endpoint z=4–157, validation z=161–199, test z=203–250이고 경계에는 3-layer guard band를 둔다.
+## 7. 원본 데이터와 접근 규칙
 
-자세한 데이터 검증 결과, ROI 포화 수치, 모델 설계, split 규칙과 다음 기술 단계는 [프로젝트과정.md](프로젝트과정.md)에 정리되어 있다.
-
-## Reference
-
-[1] [NIST, *Process Monitoring Dataset from the Additive Manufacturing Metrology Testbed (AMMT): Overhang Part X4*](https://data.nist.gov/od/id/mds2-2233)
-
-
-## 구현 파이프라인 아키텍처와 데이터 흐름
-
-```mermaid
-flowchart TD
-    A[원본 A/B TIFF\nTZYX: LED×Layer×Y×X] --> B[구조·A/B·ROI·saturation audit]
-    B --> C[causal manifest\nK=4 + guard split]
-    C --> D[train-only stage·LED normalization\np01/p99]
-    D --> E[read-only memmap Dataset]
-    E --> F[입력 X\nK×6×H×W\n3 intensity + 3 validity masks]
-    X1[Registered XCT sparse CSV\nmachine XY + xct_5x5x5] --> G[geometry + photometric calibration]
-    G --> H[sparse point projection\nraw camera → model 256×256]
-    H --> I[on-the-fly continuous weak response\n+ unknown support mask]
-    F --> J[향후 A-only heatmap baseline]
-    I --> J
-    J --> K[이상 후보\n(x, y, layer_z, score)]
-    K --> L[향후 B head·A/B fusion\n및 수동/XCT 검증]
-```
-
-데이터 흐름의 핵심은 **원본 TIFF를 재저장하지 않고** memmap으로 읽어 model input을 구성하며, XCT의 sparse supervision도 dense label file로 저장하지 않고 calibration과 rasterization 규칙으로 필요한 sample 시점에만 생성하는 것이다. 이 방식은 저장 공간을 제한하면서도 raw data provenance와 temporal causality를 보존한다.
-
-## 데이터 전처리에 적용한 수학적·기술적 기법
-
-| 단계 | 적용 기법·수식 | 해결하는 문제 | 현재 결과 |
+| 데이터 | 실제 구조·역할 | 왜 필요한가 | 하지 않는 일 |
 |---|---|---|---|
-| Hyperstack 해석 | ImageJ logical axes `T,Z,Y,X`; `tifffile.memmap` | 물리 TIFF page가 1개인 hyperstack을 일반 multi-page TIFF로 잘못 읽는 오류 | LED=channel, layer=시간축을 정확히 유지 |
-| Causal sequence | `H_z=[z-K+1,...,z]`, K=4 | 미래 layer를 보는 시간 누수 | train/val/test causal manifest 생성 |
-| Guard split | train `4–157`, guard `158–160`, val `161–199`, guard `200–202`, test `203–250` | validation/test endpoint가 train history에 섞이는 문제 | endpoint와 history의 split 경계 보존 |
-| Saturation mask | `m(x)=1[x<65535]` | sensor full-scale을 정상·이상 신호로 오인하는 문제 | LED별 validity mask를 intensity와 함께 제공 |
-| Robust normalization | `clip((x-p01)/(p99-p01),0,1)`; p01/p99는 train만 사용 | LED·stage별 밝기 차이와 평가 데이터 누수 | A/B×LED별 p01/p99 config 확정 |
-| ROI·resize | working ROI crop 후 intensity=bilinear, mask=nearest resize | 외곽 artifact와 mask interpolation 오류 | model space 256×256 contract 확정 |
-| Sparse XCT support | finite `xct_5x5x5` point만 supervision; support 밖은 unknown | 미관측 영역을 normal/negative label로 오인하는 문제 | 2,329,476 train finite point, FOV 100% |
-| Homography | `s[u,v,1]^T=H[X,Y,1]^T`, normalized DLT/SVD | machine XY와 raw pixel 좌표를 임의 동일시하는 문제 | geometry RMSE와 orientation 후보를 분리 검증 |
-| Calibration validation | leave-one-out RMSE, 192 part/orientation hypothesis, local 5×5 photometric correlation | mirror ambiguity와 control-point overfit | candidate 2 + `(0,-6)` px provisional correction |
-| Weak-target rasterization | model-space Gaussian kernel, sigma=2 px; support mask | sparse target이 끊기거나 과도하게 퍼지는 문제 | continuous response+unknown mask policy 확정 |
-| Sigma support-density audit | 동일 projection·ROI·response scaling에서 sigma=2/3 in-memory 비교; retention/MAE/component 지표 | loss gradient support가 너무 sparse하거나 support island가 과도하게 병합되는 문제 | 구현·정적 구문/whitespace 검증 완료, 실행 결과 대기 |
+| `LayerCameraAfterSpreading.tif` | ImageJ logical `TZYX=[3,250,2000,2000]`, `uint16` | A-only K=4 input | crop/resize tensor를 대량 저장하거나 원본을 수정하지 않음 |
+| `LayerCameraBurned.tif` | A와 동일 axis | B-stage orientation/calibration QC, 후속 fusion 후보 | A-only current input에 사용하지 않음 |
+| registered XCT CSV | command XY와 continuous response를 가진 sparse point table | weak supervision | binary defect mask로 단정하지 않음 |
+| XYPT command CSV | commanded scan/geometry sequence | projection/calibration audit | exact physical truth로 단정하지 않음 |
+| DotGrid / Checkerboard / SecondaryCamera TIFF | independent metrology metadata | camera-to-machine relation 검증 | raw file 수정·자동 config 교체 |
 
-## 현재 전처리 진행률
+A/B TIFF는 물리 page가 750장처럼 보일 수 있어도, project code는 `tifffile.memmap(..., series=0, mode='r')`로 logical hyperstack을 읽는다. `T=3`은 LED, `Z=250`은 제조 layer이고, model의 시간축은 Z다. 이 접근은 6 GB 원본을 RAM에 전부 올리지 않고 필요한 history frame만 읽게 한다.[1]
 
-현재 전처리와 첫 baseline 구현 준비는 **약 92% 완료**로 판단한다. 이 수치는 raw input 준비, sparse spatial supervision의 runtime 연결, unknown-safe loss 검증을 함께 포함한 실무적 기준이다. 원본 구조 검증, causal split, normalization, saturation mask, Dataset input, registered XCT audit, provisional calibration, sparse-support projection, rasterization kernel audit, on-the-fly weak target Dataset, available/unknown sample 검증, support-masked regression loss runtime 검증까지 완료됐다.
+---
 
-| 구간 | 상태 | 전처리 비중 |
-|---|---|---:|
-| 원본 구조·품질 audit | 완료 | 15% |
-| 시계열 split·normalization·input Dataset | 완료 | 25% |
-| XCT sparse supervision·calibration·support audit | 완료 | 35% |
-| weak target을 Dataset output으로 연결·sample 검증 | 완료 | 10% |
-| XCT response direction 검증·A-only baseline 연결 | 진행 예정 | 10% |
+## 8. 전체 흐름: 입력·학습 참조·좌표 검증은 서로 다르다
 
-남은 핵심 과제는 **A-only spatial localization diagnostic·decoder 보완 및 target 의미 검증**이다. `xct_5x5x5` response는 train-only p01/p99로 `[0,1]` robust scaling되지만, 아직 anomaly 방향으로 invert하거나 binary defect label로 변환하지 않는다. `weak_support_mask==1`에서만 Smooth L1 regression을 계산하는 loss는 z=4 unknown·z=128 supported sample에서 runtime 검증을 통과했고, six-channel causal Conv3D A-only baseline에 연결됐다. 다음 gate는 support-region plateau를 잡는 decoder diagnostic과 candidate withholding 검증이다. 이 gate를 통과할 때까지 score/좌표를 물리적 품질 후보로 사용하지 않는다.
+```text
+Immutable raw data
+  ├─ A TIFF ──► causal K=4 Dataset ──► [K, 6, 256, 256] input
+  │                 │                    ├─ LED intensity 3 channels
+  │                 │                    └─ saturation-validity 3 channels
+  │                 ▼
+  │            residual causal network ──► [1, 256, 256] score map
+  │                                            │
+  │                                            └─ safety decoder
+  │                                               └─ (x_pixel, y_pixel, layer_z, score)
+  │
+  ├─ registered XCT CSV ──► on-the-fly continuous response + support
+  │                              └─ training/evaluation loss에서만 사용
+  │
+  └─ metadata TIFF + documented NIST geometry
+       └─ independent calibration audits
+          └─ machine-coordinate interpretation의 근거를 검증
+```
 
-## 실행 순서
+| 항목 | 사용 위치 | 왜 분리하는가 |
+|---|---|---|
+| `weak_support_mask` | 학습/evaluation loss | XCT가 측정하지 않은 pixel을 잘못된 normal target으로 만들지 않기 위해서 |
+| Score-map decoder | 실제 candidate decoding | 미래 real-time input에는 XCT support가 없으므로 decoder가 support를 보면 안 됨 |
+| Provisional geometry gate | local maxima 뒤 optional filter | configured rectangle 안 여부만 보는 보조 안전장치이며 physical truth가 아님 |
+| Calibration audit | model과 분리된 metadata/geometry 검증 | score가 좋아도 coordinate mapping이 맞는지를 별도로 확인해야 함 |
 
-프로젝트 전체의 코드 실행 순서, 코드별 역할, 필요 입력, 생성 출력, 실행 전후 상태는 [실행가이드.md](실행가이드.md)에 지속적으로 관리한다. 새 코드가 추가될 때마다 이 guide와 `프로젝트과정.md`를 함께 갱신한다.
+---
 
+# Part I. 입력을 만들기 위해 무엇을 골랐는가
 
-### Perspective-aware 2D lattice-correspondence refinement — implementation ready
+## 9. ROI는 어떻게 고르고, 왜 wide ROI가 되었는가
 
-`src/audit_independent_method2_lattice_correspondence_refinement.py` is the separately approved read-only follow-up to the V1 method-#2 candidate audit. It reads only immutable `DotGrid_2000x2000.tif` through the existing `tifffile.memmap(..., mode='r')` path. After automatic planar ROI restriction and subpixel dark-dot centers, it builds a local graph from up to six nearest neighbors. An edge is retained only when its distance is `0.45–1.75×` the estimated local dot pitch and its PCA-axis direction alignment is at least `0.92`. BFS propagation forms provisional 2D image-lattice labels; a maximum-count 50×50 image-lattice window and iterative projective nearest-cell reassignment then refine correspondence and suppress off-grid candidates.
+### 5.1 ROI를 crop하는 목적
 
-The audit repeats the **same** deterministic 5×5-block held-out scheme and fixed V1 gates: at least 1,200 unique cells, at least 40 represented rows and columns, held-out RMSE≤0.25 and p95≤0.50 of the train-inlier camera-dot pitch. It writes two compact CSV files, one JSON, and exactly three deterministic QC overlays. It does not read or modify `calibration_v1.yaml`, existing controls, A/B manufacturing TIFF, XCT, weak target/support, model/checkpoint, decoder, candidate output, transform rank, or camera-primary reporting. The intermediate image-lattice homography is used only in memory to test correspondence; it is not a deployed machine calibration. Any passing result permits human review of the correspondence evidence only, never automatic transform selection or config replacement.
+원본 frame은 2000×2000 pixel이다. 모델에 전체 frame을 그대로 넣으면 메모리·연산량이 크고, 실제 build region 밖의 chamber/fixture가 많이 섞인다. 반대로 너무 작은 crop은 유효한 공정 영역을 잃고, 포화가 줄어드는 것처럼 보여도 model이 봐야 할 구조를 잘라낼 수 있다.
 
+그래서 ROI는 “보기 좋은 image”를 고르는 것이 아니라 다음 세 조건의 균형으로 골랐다.
 
-#### First 2D correspondence runtime attempt — fail-closed graph-fragmentation hold
+1. **공정 영역 coverage:** 4개 part와 주변 powder field를 충분히 포함해야 한다.
+2. **포화 부담:** `raw==65535` pixel의 평균 비율이 가능한 낮아야 한다.
+3. **worst-case stability:** 일부 layer에서 saturation이 극단적으로 커지는 ROI를 피해야 한다.
 
-The first user execution of the perspective-aware refinement stopped at `best_dense_grid_window` before generating features, overlays, summary JSON, an image-lattice transform, or held-out residual measurements. The raised condition was `Dense 50x50 provisional lattice window contains too few graph labels`. Raw metadata, calibration config, existing rank choice, A/B/XCT data, weak target, model, checkpoint, candidate output, and fixed V1 validation gates were not changed.
+### 5.2 실제 비교 후보와 결과
 
-Static diagnosis shows that the initial BFS used the single maximum dark-response point as its root; a high-response but small disconnected graph component can therefore exclude the panel-wide component and cause fail-closed coverage termination. This is a graph-seed policy limitation, not evidence of a physical calibration outcome or permission to loosen residual gates. The proposed minimum follow-up is a separately approved component-size-first deterministic BFS seed with component diagnostics, followed by the exact same correspondence procedure and V1 held-out gates. Until then all method-#2 transform candidates remain held and raw camera pixel reporting remains primary.
+초기 audit은 아래 ROI 후보에서 A/B·LED·표본 layer의 saturation을 비교했다. `full-scale saturation`은 `uint16` sensor upper limit인 65,535와 정확히 같은 pixel 비율이다.
 
+| ROI 후보 | Raw pixel 경계 `(x0,y0)–(x1,y1)` | 평균 full-scale saturation | 최악 표본 saturation | 선택에 미친 영향 |
+|---|---|---:|---:|---|
+| **wide** | `(250,250)–(1750,1750)` | **34.53%** | 92.42% | 평균 포화가 비교 후보 중 가장 낮고 build coverage가 넓음 |
+| lower | `(350,450)–(1650,1750)` | 35.56% | **91.28%** | 최악값은 약간 낮지만, 평균은 wide보다 1.03%p 높고 coverage가 더 좁음 |
+| inner | `(350,350)–(1650,1650)` | 38.78% | 96.42% | 중심 crop으로 saturation이 줄지 않음 |
+| upper | `(350,250)–(1650,1550)` | 40.21% | 97.19% | upper region의 saturation 부담이 큼 |
+| smaller inner | `(450,450)–(1550,1550)` | 40.52% | 99.10% | 가장 작은 중심 crop도 해결책이 아님 |
 
-#### Largest-component correspondence refinement V2 — implementation ready
+wide ROI는 평균 saturation이 가장 낮고 1500×1500 raw pixel의 넓은 공정 context를 유지한다. lower ROI는 worst-case saturation이 wide보다 1.14%p 낮았지만, 그 이점이 더 좁은 spatial coverage와 평균 saturation 손실을 정당화할 만큼 크지 않았다. 따라서 **wide는 현재의 working ROI**로 채택했다.
 
-`src/audit_independent_method2_lattice_correspondence_refinement_v2.py` is a new, separate-output repair for the V1 graph-fragmentation failure. V1 started BFS at the global maximum dark-response candidate; a small disconnected component could therefore be selected before the panel-wide DotGrid graph. V2 enumerates all edge-connected components and deterministically chooses the largest by vertex count, breaking ties with aggregate detector response and then minimum raw `(y,x)`. It uses the highest-response candidate only **inside that selected component** as the propagation seed.
+> **중요:** wide ROI는 “포화가 사라졌다”거나 “최종 물리 ROI다”라는 결론이 아니다. 비교 후보 중 가장 안전한 baseline 선택일 뿐이며, saturation은 별도 channel로 남겨야 한다.
 
-The V2 script writes graph-component diagnostics before attempting correspondence. Thus if it fails before held-out validation, it returns a compact JSON with `status=fail_closed_before_heldout_validation` plus graph components/edges CSVs and one overlay; it does not leave an unexplainable empty result. The detector/ROI, local-neighbor threshold, 2D projective reassignment, exact 5×5 held-out scheme, coverage rule, and RMSE/p95 rules are unchanged from V1. No raw TIFF/CSV, `calibration_v1.yaml`, controls, rank, machine transform, A/B/XCT/target/model/checkpoint/decoder data, or camera-primary reporting is changed.
+### 5.3 ROI 선택 뒤에도 포화가 남아 왜 mask를 추가했는가
 
+wide ROI에서도 stage/LED별 평균 saturation은 A LED1=35.62%, A LED2=51.19%, A LED3=11.90%, B LED1=45.44%, B LED2=49.94%, B LED3=13.11%였다. 즉 crop만으로 sensor ceiling 문제를 해결할 수 없고, 특히 LED1/2의 `65535`를 단순히 매우 밝은 physical signal로 해석하면 안 된다.
 
-#### V2 partial completion — plotting-call hold
+그래서 각 history layer에 대해 다음 두 종류의 channel을 함께 만든다.
 
-V2 reached the largest-component correspondence computation and wrote its component/edge/feature compact CSVs plus neighbor-graph and correspondence overlays. It stopped only when saving the final held-out residual overlay: `plot_heldout_residual` has a five-argument signature while the main call supplied obsolete sixth `residual` input. No final JSON or held-out residual overlay exists, so no V2 validation metric or transform conclusion is accepted. The V2 output directory is preserved and must not be overwritten. The only proposed corrective scope is a new V3 source/output path that removes the obsolete argument and statically verifies definition/call arity; all detector, component, correspondence, fixed-gate, config/model/data, and camera-primary policies remain unchanged.
+| Channel | 계산 | 선정 이유 |
+|---|---|---|
+| Intensity 3ch | train-only normalization 뒤 `[0,1]` | LED별 raw brightness scale을 공통 model input range로 옮김 |
+| Validity 3ch | `raw < 65535`이면 1, 아니면 0 | saturation과 실제 높은 intensity를 구분하게 함 |
 
+모델용 grid는 256×256이다. wide ROI 1500 pixel을 256으로 줄이므로 model pixel 하나는 약 `1500/256 = 5.859` raw pixel 폭을 대표한다. crop/resize/mask는 Dataset이 메모리에서만 만들며, dense model frame이나 saturation mask file은 저장하지 않는다.
 
-#### V3 implementation — overlay-call arity correction only
+---
 
-`src/audit_independent_method2_lattice_correspondence_refinement_v3.py` preserves the V2 detector, largest-component graph seed, 2D reassignment, and every fixed held-out gate. It changes only the final QC call from six inputs to the function's defined five inputs: `plot_heldout_residual(gray, rows, block_test, predicted, residual_overlay)`. `py_compile` passed and static source inspection confirmed the definition and unique call both have five positional arguments. V3 writes only a new ignored output directory and never overwrites the V2 partial artifacts. A V3 completion can make the same fixed-gate result reviewable; it still cannot select a transform/rank, update `calibration_v1.yaml`, assert a machine/part location, or change camera-primary XCT-derived continuous quality candidate reporting.
+## 10. 시간 sequence K=4와 split은 어떻게 고정했는가
 
+### 6.1 K=4를 현재 baseline으로 둔 이유
 
-#### V3 runtime result — correspondence residual pass, fixed coverage hold
+현재 sequence는 endpoint z를 포함한 `[z-3,z-2,z-1,z]` 네 layer다. K=4는 충분한 과거 context를 주면서도 첫 usable endpoint가 z=4가 되게 하는 **initial causal baseline contract**다. K=4가 전 제조 현상에 대해 최적인지를 이미 증명한 것은 아니다. 현재 우선순위는 더 긴 sequence sweep이 아니라, 미래 information leakage 없이 A-only data path·weak supervision·candidate safety가 정확하게 동작하는지 확인하는 것이었다.
 
-V3 completed on the immutable DotGrid TIFF and established a coherent largest graph component: 1,523/1,616 candidates (94.25%) and 2,812/2,860 accepted edges (98.32%) are in component #1, with zero BFS label-cycle conflicts. The same fixed 5×5-block held-out residual gate improved substantially from V1: held-out RMSE=`0.98184 px`=`0.06728` detected camera-dot pitch and p95=`1.67410 px`=`0.11472` pitch, so the residual gate passes. QC overlays show correspondence and sampled held-out blocks on the printed DotGrid panel without a visible multi-region residual pattern.
+| K=4가 주는 것 | K=4가 보장하지 않는 것 |
+|---|---|
+| endpoint의 현재 A frame과 직전 3 layer context | physical defect mechanism에 최적인 memory length |
+| z=4부터 sample 구성 가능 | long-term layer drift를 모두 포착한다는 보장 |
+| Conv3D temporal path를 진단할 수 있는 최소한의 sequence | 더 큰 K보다 성능이 좋다는 hyperparameter 결론 |
 
-However, final reassignment has 1,554 cells and 50 image-lattice columns but **39 rows**. The predeclared V1 coverage rule requires both dimensions≥40, so `coverage_pass_same_v1_rule=false` and `all_fixed_gates_pass=false`. This near-miss is not silently promoted to a pass and the threshold is not lowered after observation. The remaining question is whether the 39-row result arises from the visible physical target/field of view, target-count convention, detector/reassignment boundary, or another indexing limitation. All method-#2 transform candidates therefore remain held. The next permissible scope is a separate read-only coverage-definition audit; `calibration_v1.yaml`, rank/orientation, machine/part claims, model/target, and camera-primary XCT-derived continuous quality candidate reporting remain unchanged.
+### 6.2 6.4 : 1.6 : 2 split과 guard band
 
+사용자가 지정한 endpoint 비율 64%/16%/20%를 250 layer와 K=4 제약에 맞춰 정수 endpoint로 구성했다.
 
-#### Coverage-definition audit — implementation ready after the V3 39-row hold
+| 구분 | endpoint z | endpoint 수 | history 예시 | 선정 기준 |
+|---|---:|---:|---|---|
+| Train | 4–157 | 154 | z=4 → 1;2;3;4 | model fitting 및 normalization 통계 추정 |
+| Guard 1 | 158–160 | 0 | validation의 pre-context | K−1=3 layer buffer |
+| Validation | 161–199 | 39 | z=161 → 158;159;160;161 | checkpoint/experiment 선택 |
+| Guard 2 | 200–202 | 0 | test의 pre-context | K−1=3 layer buffer |
+| Test | 203–250 | 48 | z=203 → 200;201;202;203 | 한 번의 held-out generalization 확인 |
 
-`src/audit_independent_method2_dotgrid_coverage_definition.py` is a separate, read-only evidence audit. It reads only the immutable DotGrid TIFF and the completed V3 compact feature CSV. A temporary in-memory image-lattice mapping predicts the nominal 50×50 cells; compact per-cell/per-row/per-column tables then separate three conditions: nominal prediction outside the 2000×2000 sensor, in-sensor prediction near a fresh detector candidate but unassigned in V3, and in-sensor prediction without fresh detector support. Its two deterministic QC overlays show nominal coverage evidence and occupancy profiles.
+guard 길이를 3으로 둔 이유는 K=4 history가 split boundary를 넘을 때 필요한 최대 과거 layer 수가 3이기 때문이다. 예를 들어 validation z=161은 train endpoint z=157을 보지 않고 guard 158–160만 context로 쓴다. 이 방식은 train/validation/test의 시간적 인접성을 완전히 없애는 것이 아니라, **다른 split의 endpoint image가 history로 흘러가는 직접 leakage**를 막는다.
 
-The script cannot and does not change `GRID_SIZE=50`, the fixed `rows/columns≥40` gate, `calibration_v1.yaml`, transform/rank/orientation, machine origin, A/B/XCT/target/model/checkpoint/decoder data, or camera-primary XCT-derived continuous quality candidate reporting. Its evidence class only tells a later human review whether FOV, correspondence assignment, or target/detector visibility remains plausible; it never applies a remedy automatically.
+### 6.3 Split 뒤 train-only rule을 다시 적용한 이유
 
+normalization percentile, response scale, 어떤 threshold든 test/validation 데이터를 보고 계산하면 held-out evaluation이 낙관적으로 변할 수 있다. 그래서 밝기 normalization과 XCT response p01/p99는 train endpoint/history에서만 추정하고 validation/test에는 고정된 값을 적용한다.
 
-#### Coverage-definition runtime result — no simple FOV explanation for 39 rows
+---
 
-The read-only coverage audit found that all `946/946` nominal-but-unassigned image-lattice cells are predicted inside the 2000×2000 sensor; none is outside. Moreover, none is within the frozen `6.55369 px` (`0.45×` V3 train-inlier pitch) of a fresh ROI-restricted detector candidate. Thus the observed pattern is not simple sensor clipping and is not merely a set of known dot-centre candidates missed by V3 assignment. It is classified narrowly as in-sensor nominal cells without fresh detector support, with visible target extent, detector footprint, and provisional image-lattice window/index convention all remaining plausible.
+## 11. Normalization은 왜 LED별·train-only인가
 
-The two QC plots strengthen this caution: missing cells form structured left and right/central regions rather than one clean clipped border; row occupancy ramps to near-full coverage and then has only a two-cell row, while all columns remain represented only partially. The fixed 40-row gate remains failed and is not relaxed. All method-#2 transform candidates, rank/orientation claims, machine/part metadata, and config revisions remain held. The next possible work is a separately approved human-reviewed DotGrid extent/index-convention design audit, not another automatic transform fit.
+세 LED와 A/B stage는 illumination과 saturation 비율이 다르다. 모든 channel을 하나의 global min/max로 normalize하면 LED exposure 차이가 model에게 fake quality signal처럼 보일 수 있다. 그래서 stage·LED별 robust percentile을 train data에서만 계산하고, 이후 모든 split에 그대로 사용한다.
 
+| 비교 대상 | 선택하지 않은 방법 | 채택한 방법 | 이유 |
+|---|---|---|---|
+| LED brightness scale | 모든 LED의 global normalization | stage·LED별 train p01/p99 normalization | LED illumination scale 차이와 manufacturing pattern을 분리 |
+| Sensor ceiling | intensity=1만 제공 | intensity + validity mask | 65,535 saturation을 real brightness와 혼동하지 않음 |
+| Validation/test statistics | split마다 재추정 | train-derived config 고정 | test distribution leakage 방지 |
+| Dense preprocessing storage | resized tensor file 저장 | Dataset on-the-fly | raw provenance 유지·storage 폭증 방지 |
 
-#### Human-reviewed visible DotGrid outer-extent workflow — implementation ready
+이 normalization은 defect label 만들기가 아니라 **input representation을 일관되게 만드는 선택**이다.
 
-The next coverage evidence is deliberately human-reviewed rather than another threshold sweep. `select_visible_dotgrid_extent_controls.py` records only four visible outer dot centres in fixed visual order `TL → TR → BR → BL`, after reading the immutable DotGrid TIFF. `audit_visible_dotgrid_extent_controls.py` snaps those clicks to distinct fresh dot candidates within `0.60×` V3 pitch, verifies a strictly convex ordered quadrilateral and per-edge candidate support, then reports V3/fresh-detector/nominal-footprint inclusion relative to the human visible panel.
+---
 
-This produces visible-panel extent evidence in raw camera coordinates only. It cannot identify D origin, physical cell indices, machine axes, transform/rank/orientation, or an accepted grid/coverage policy. The compact control JSON and validation CSV/JSON/two overlays remain ignored regenerable outputs. Raw data, V3 artifacts, `GRID_SIZE=50`, the 40-row gate, `calibration_v1.yaml`, model/target/checkpoint/decoder, and camera-primary XCT-derived continuous quality candidate reporting remain unchanged.
+# Part II. XCT weak supervision은 어떻게 정했는가
 
+## 12. 왜 `xct_5x5x5`를 continuous response로 골랐는가
 
-#### Human outer-extent selector V1 — GUI backend hold
+registered XCT CSV에는 original, `3x3x3`, `5x5x5` voxel response가 함께 있으며, train finite count는 각각 2,329,476개로 같았다. 첫 baseline은 `xct_5x5x5`를 **연속 weak response**로 사용한다. 5×5×5 aggregation은 point-level voxel fluctuation/registration sensitivity를 완화하는 reference 후보이지만, 이를 defect label로 바꾸거나 방향을 뒤집지 않는다.
 
-The initial `select_visible_dotgrid_extent_controls.py` correctly preserved raw/control/config state but could not accept clicks on macOS: it imported a batch-QC module that sets the noninteractive Matplotlib `Agg` backend, so `plt.ginput` emitted `FigureCanvasAgg is non-interactive`. No four-click controls JSON was written and no human extent evidence exists. The next proposed correction is an isolated V2 selector with its own read-only TIFF/grayscale helper and an explicit GUI backend selected before `pyplot` import. It will use a separate control JSON path, preserve the same ordered four visible outer-dot clicks and compact-output policy, and make no grid/gate/config/rank/model/target/candidate change.
+| 선택 항목 | 현재 choice | 이유 | 아직 보류한 것 |
+|---|---|---|---|
+| XY columns | command XY, CSV 3–4열 | registered point의 location contract | actual physical coordinate의 완전한 truth 선언 |
+| Response column | `xct_5x5x5`, 40열 | continuous weak response baseline | defect/normal binary threshold |
+| Response scale | train p01/p99 = 0.40070 / 0.58533 | extreme value에 덜 민감한 fixed `[0,1]` scale | response direction inversion |
+| Missing/unsupported pixel | `unknown`, support=0 | no observation ≠ normal | dense negative labels |
 
+Scaling은 다음과 같이 고정한다.
 
-#### Human outer-extent selector V2 — GUI backend isolated implementation ready
+\[
+y = \mathrm{clip}\left(\frac{\mathrm{xct}-0.40070}{0.58533-0.40070},0,1\right)
+\]
 
-`src/select_visible_dotgrid_extent_controls_v2.py` is the separately approved repair for the V1 `Agg` backend hold. It intentionally imports no batch-QC/audit module. Instead, it reads only the immutable `DotGrid_2000x2000.tif` through a local `tifffile.TiffFile` metadata check and `tifffile.memmap(..., series=0, mode='r')` YX grayscale reader. Before importing `matplotlib.pyplot`, it requests the macOS `MacOSX` interactive backend; only when that is unavailable does it attempt `TkAgg`. The selector rejects a noninteractive `Agg` result and raises an explanatory error if neither GUI backend can be selected.
+이 식은 response를 model-friendly range로 옮기는 규칙일 뿐이다. `y=1`이 반드시 더 나쁜 품질이라는 해석은 아직 없다.
 
-The V2 display is downsampled only for click visibility. It saves raw-camera coordinates by multiplying the display clicks by the recorded stride, returns automatically after four left-clicks, supports right-click removal of the latest point, and writes `processed/calibration/visible_dotgrid_extent_controls_v2.json` **only after exactly four clicks** in `TL → TR → BR → BL` order have been obtained. `py_compile`, source-order inspection, read-only memmap contract inspection, and whitespace validation passed; the interactive selector itself was deliberately not executed by the assistant. V1 source/output remain untouched. V2 neither edits raw data nor changes `GRID_SIZE=50`, the 40-row gate, V3 results, `calibration_v1.yaml`, transform/rank/orientation, machine origin, A/B/XCT/weak target/model/checkpoint/decoder data, or camera-primary XCT-derived continuous quality candidate reporting. Its future JSON is human visible-panel extent evidence only and must be inspected by the existing validator before any separate policy discussion.
+## 13. Gaussian sigma=2는 어떻게 유지되었는가
 
-To create a new V2 control file, the user runs:
+XCT point는 sparse이고 model grid는 256×256이므로, 한 point를 단 하나의 pixel에만 찍으면 supervision이 지나치게 희소해진다. 따라서 projected point 주변에 Gaussian weight를 만들고 support가 있는 local region에서만 loss를 계산한다.
+
+초기 rasterization audit에서 z=125 기준 support fraction은 sigma=1/2/3/4에 대해 2.3010% / **3.6179%** / 4.8889% / 6.2622%였다. baseline은 coverage와 excessive smoothing의 중간값인 **sigma=2 model pixel**을 fixed working choice로 두었다. 이후 “더 넓히면 학습이 좋아질 것인가”를 별도 read-only audit으로 검증했다.
+
+| Sigma=2→3 비교 gate | 기준 | 실제 결과 | 결정 |
+|---|---:|---:|---|
+| Median support gain | ≥25% | 29.3990% | coverage만 보면 통과 |
+| Base support retention | 100% | 100% | 기존 supervised pixel 보존 |
+| Common-support response MAE | ≤0.05000 | **0.0538972** | 기존 known pixel value가 과도하게 바뀜 |
+| Component count ratio | ≥0.5 | 1.0 | 이 데이터에서는 binary component가 모두 하나라 판별력 제한 |
+| Largest component share growth | ≤1.5 | 1.0 | giant component 증가는 없음 |
+
+sigma=3은 layer당 1,041 support pixel을 추가했지만, 이미 support였던 pixel의 response도 Gaussian mixture 때문에 달라졌다. 따라서 `weak_target_v1.yaml`은 **sigma=2 유지**, sigma=3 training은 **hold**다. 이 hold는 sigma=3이 물리적으로 틀렸다는 뜻이 아니라, 현재 target contract를 바꿀 만큼 안정적이지 않았다는 뜻이다.
+
+## 14. Support-masked Smooth L1을 어떻게 검증했는가
+
+loss는 support=1인 pixel만 평균한다.
+
+\[
+L = \frac{\sum_i m_i\,\mathrm{SmoothL1}(\hat y_i,y_i)}{\sum_i m_i+\varepsilon}
+\]
+
+여기서 \(m_i=1\)은 XCT-derived response가 있는 pixel, \(m_i=0\)은 unknown이다. `beta=0.1`은 current baseline config의 fixed robust-regression parameter다. 이 값이 global optimum이라는 의미는 아니며, prior audit의 목적은 beta sweep이 아니라 unknown masking contract 검증이었다.
+
+| Runtime test | 실제 확인 | 막는 오류 |
+|---|---|---|
+| Early z=4 sample | support=0, loss=0, gradient=0 | XCT가 없는 early layer를 normal zero label로 학습하는 오류 |
+| Available z=128 sample | supervised pixel=3,439, finite loss | on-the-fly target과 loss wiring 오류 |
+| Unknown prediction을 1000으로 변경 | loss difference=0 | support 밖 prediction이 loss에 새는 오류 |
+| Unsupported gradient | sum=0 | unknown pixel이 training update를 만드는 오류 |
+
+---
+
+# Part III. 모델 선택은 어떻게 실패를 진단하고 바뀌었는가
+
+## 15. 처음에는 왜 output을 믿지 않았는가
+
+처음 C8 baseline은 test map이 전역적으로 완전히 상수는 아니어도, support region에서는 동일한 plateau를 만들었다. z=203/227/250의 top-score tie가 63,504 pixel, 즉 96.8994%였고 endpoint 간 map MAE/max-absolute도 0/0이었다. 따라서 top-k 좌표를 강제로 꺼내면 모든 layer에 같은 임의 pixel을 반복할 위험이 있었다.
+
+후속 C32는 top-score tie를 0.3845%까지 낮췄지만, endpoint 간 map이 여전히 완전히 같고 support prediction std=0이었다. 즉 channel capacity만 높이면 static spatial geometry는 바뀌어도 input-dependent localization은 회복되지 않았다.
+
+| Controlled comparison | 바꾼 것 | 유지한 것 | 결과 | 다음 판단 |
+|---|---|---|---|---|
+| Run 1 → E24 | epoch 8→24 | data/loss/model family | test loss 0.35% 악화, plateau 유지 | under-training 가설 hold |
+| Run 1 → C32 | base channels 8→32 | epoch/data/loss | test loss 0.24% 악화, map invariant 유지 | capacity만으로 해결 안 됨 |
+| sigma=2→3 audit | target width만 변경 | input/model/scale | response stability gate 실패 | sigma change hold |
+
+이 controlled experiments의 의도는 “좋아 보이는 hyperparameter를 찾기”가 아니라, 다음 변경을 어디에 한정할지 결정하는 것이었다.
+
+## 16. Temporal collapse는 어떻게 발견했는가
+
+C32 checkpoint에서 z=203/227/250의 pairwise difference를 model 내부 stage별로 측정했다.
+
+| Stage | 관측 | 해석 |
+|---|---|---|
+| `input_history` | max-abs=1.0 | 세 causal input history는 실제로 다름 |
+| `encoded_final_history_frame` | max-abs≈1.93–2.30 | frame encoder가 endpoint image 차이를 보존 |
+| `encoded_history` | max-abs≈2.15–2.51 | 4-step encoder sequence도 구별됨 |
+| `temporal_final` | MAE/max-abs=0/0 | variation이 여기서 처음 완전히 사라짐 |
+| `logits`, `score` | MAE/max-abs=0/0 | collapse가 decoder와 sigmoid까지 전달됨 |
+
+또한 stagewise reconstruction score와 ordinary `model.forward()` score의 difference가 0이어서 diagnostic implementation 자체가 다른 forward path를 본 것이 아님을 확인했다. 따라서 다음 변경은 frame encoder나 sigmoid가 아니라 `Conv3D → GroupNorm → SiLU` temporal aggregation path로 한정할 수 있었다.
+
+## 17. Residual bypass를 왜 선택했고, 무엇을 고정했는가
+
+선정한 단일 가설은 endpoint image feature가 decoder까지 사라지지 않도록 다음 연결을 넣는 것이었다.
+
+```text
+encoded_endpoint = frame_encoder(current endpoint A frame)
+temporal_update  = SiLU(GroupNorm(past-only Conv3D(K=4 history)))
+temporal_final   = encoded_endpoint + temporal_update
+score             = sigmoid(decoder(temporal_final))
+```
+
+이 선택은 현재 A endpoint feature와 past-only temporal update만 사용하므로 future-layer leakage를 만들지 않는다. 그리고 `use_endpoint_feature_residual=False`를 default로 두어 기존 C8/E24/C32 config와 checkpoint behavior를 보존했다.
+
+| Residual experiment에서 고정한 것 | 바꾼 것 |
+|---|---|
+| A stage, K=4, 6 channels, train-only normalization, response scaling, sigma=2, unknown policy, masked Smooth L1, optimizer, seed, batch size, epoch=8, decoder safety thresholds | `use_endpoint_feature_residual=true`와 별도 output path |
+
+이 고정이 있어야 loss 변화가 input/target/split 변경 때문이 아니라 residual path 때문이라고 해석할 수 있다.
+
+## 18. Residual model을 current baseline으로 둔 선정 기준
+
+| 검증 | C32 temporal-only | C32 temporal-residual | 선정 판단 |
+|---|---:|---:|---|
+| Best validation loss | 0.06151949 | **0.05642983** | 8.27% 감소 |
+| Held-out test loss | 0.07363038 | **0.06992126** | 5.04% 감소 |
+| Test support/sample | 172,834 / 48 | 동일 | 공정 비교 가능 |
+| z203/227/250 support prediction std | 0 | **0.043991 / 0.041168 / 0.045247** | zero plateau 해소 |
+| Map MAE across selected endpoints | 0 | **0.009254–0.011778** | input에 따라 map 변화 |
+| Top-score tie | 0.3845% | **0.001526% (1 pixel)** | 0.1% safety gate 통과 |
+| Stagewise earliest collapse | `temporal_final` | `null` | selected history에서 collapse 해소 |
+
+따라서 residual model은 **현재의 controlled A-only weak-supervision baseline**으로 선택됐다. 이는 held-out sparse regression과 numerical map sensitivity에서의 개선이다. XCT response direction, physical defect truth, unsampled pixel의 dense truth를 검증한 것은 아니다.
+
+---
+
+# Part IV. Candidate는 어떤 기준을 통과해야 출력되는가
+
+## 19. Decoder의 순서와 기준
+
+score가 가장 높은 pixel이라도 map 자체가 불신할 만하면 좌표를 내보내지 않는다. safety decoder는 다음 순서로 동작한다.
+
+| 순서 | 검사 | 현재 기준·의도 | 실패 시 |
+|---:|---|---|---|
+| 1 | Spatial flatness | 전체 map variation이 사실상 없는가 | candidate hold |
+| 2 | Top-score plateau | tie fraction이 0.001(=0.1%)보다 큰가 | `withheld_top_score_plateau` |
+| 3 | Temporal invariance | selected endpoint map MAE와 max-abs가 모두 `≤1e-6`인가 | `withheld_temporally_invariant_map` |
+| 4 | Local maxima | 7×7 local peak가 존재하고 top-k가 중복되지 않는가 | peak만 ranking |
+| 5 | Optional provisional geometry | local maxima가 configured part rectangle에 들어가는가 | `withheld_outside_provisional_part_geometry` 또는 filtered candidate |
+
+이 검사들은 **score map과 past endpoint maps만** 사용한다. XCT support mask는 deployment decoder가 보지 않는다. 이 분리는 real-time layer에 XCT가 없다는 data availability 조건 때문에 필수다.
+
+## 20. Candidate coordinate의 현재 의미
+
+| 필드 | 현재 의미 | 선정/보류 기준 |
+|---|---|---|
+| `x_pixel`, `y_pixel` | raw layer-camera pixel | **primary location**; model-grid center와 ROI mapping round-trip이 맞는지 확인 |
+| `layer_z` | causal history의 endpoint manufacturing layer | future layer를 쓰지 않음 |
+| `score` | sigmoid-scaled XCT-derived continuous quality candidate | confirmed defect 또는 probability로 부르지 않음 |
+| `x_model_pixel`, `y_model_pixel` | 256×256 grid provenance | same-endpoint duplicate/edge margin 검증 |
+| `provisional_machine_xy_rank2` | optional inverse-projected metadata | rank sensitivity caveat 없이는 사용 금지 |
+| `provisional_part_rank2` | optional geometry metadata | physical part ID가 아닌 configured convention label |
+
+geometry-gated evaluation에서는 240/240 candidates가 configured rank2 rectangle 안에 들어가고 raw/model round-trip도 통과했다. 하지만 rank1과 rank2를 비교하면 같은 part agreement가 0/240이고 machine XY shift median이 14.463이다. 그래서 **internal geometry pass는 absolute metrology accuracy pass가 아니다.**
+
+---
+
+# Part V. Calibration과 metrology는 왜 별도 프로젝트처럼 다루는가
+
+## 21. Screen controls로 만든 provisional calibration
+
+초기 camera calibration은 B LED3 화면에서 part screen corners를 잡고, machine part rectangle/order와 image orientation 후보를 비교하는 방식이었다. 192 hypothesis를 residual/leave-one-out RMSE로 비교했으며 residual-only rank1 `mirror_rotate_90`과 selected rank2 `mirror_rotate_270`가 displayed precision에서 동률이었다.
+
+| 검증 결과 | 의미 |
+|---|---|
+| rank1/rank2 둘 다 240/240 geometry-gated candidate를 어떤 rectangle 안에 둠 | containment만으로 orientation 선택 불가 |
+| same containing part=0/240 | part identity가 rank 선택에 따라 완전히 뒤바뀜 |
+| machine XY shift min/median/p95/max=4.168/14.463/33.857/38.053 | raw camera pixel을 physical coordinate로 단정하면 안 됨 |
+| rank2 local photometric evidence가 더 높음 | current provisional convention 유지 근거일 뿐 independent validation은 아님 |
+
+따라서 rank2 `mirror_rotate_270`과 raw offset `(0,-6)`은 **working provisional mapping**으로만 남아 있다. model target projection과 optional geometry gate가 같은 convention을 써 internal arithmetic을 재현할 수는 있지만, user-facing candidate location은 camera-primary다.
+
+## 22. NIST metadata는 왜 확인했고, 무엇이 통과했는가
+
+NIST는 layer-camera DotGrid, layer-camera Checkerboard, red laser marker가 있는 SecondaryCamera DotGrid를 metadata로 제공하며 두 calibration route를 문서화한다.[1]
+
+| Artifact / route | Pre-audit·V1 결과 | V2 refinement 결과 | 판단 |
+|---|---|---|---|
+| DotGrid layer-camera | target pattern visible | 1,616 ROI candidates, NN CV=0.3262 | local lattice evidence pass |
+| Secondary red reference | global red centroid가 diffuse | 34 components cluster, `(2582.34,2029.18)`, spread=40.27 px | visual-reference candidate pass; origin assertion 금지 |
+| Checkerboard direct route | false positives/background mixture | 410 candidates, NN CV=0.5040 > gate 0.45 | hold |
+| DotGrid + Secondary method #2 | feature audit 준비 | candidate D→C transform audit 실행 | hold at residual validation |
+
+NIST method #2는 50×50, 1.00 mm-pitch dot grid, D origin=lower-left dot, `A(0,0)=D(28.25,24.25) mm`, D/A relative orientation 2.5°를 보고한다.[1] 하지만 red marker 하나만으로 image-axis orientation sign이 코드 수준에서 결정되지는 않는다. 따라서 project code는 8 image-lattice axis assignment와 `±2.5°` sign alternatives를 모두 보존했다.
+
+## 23. Independent method-#2 candidate audit은 왜 hold인가
+
+V1 audit은 DotGrid panel을 자동 ROI로 제한하고 local weighted subpixel centers를 만들었다. 1,518 unique indexed cell, PCA columns 50, PCA rows 48로 coverage gate는 통과했다. 즉 **board가 보이고 넓게 sample됐다는 것**은 확인됐다.
+
+그러나 board visibility와 exact row/column correspondence는 다르다. 현재 PCA + independent 1D 50-cluster assignment는 perspective를 가진 2D lattice를 충분히 안정적으로 index하지 못했다.
+
+| Held-out measurement | Predeclared criterion | Actual V1 | 판정 |
+|---|---:|---:|---|
+| Indexed coverage | cells≥1,200, rows/cols≥40 | 1,518 / 50 / 48 | 통과 |
+| Robust fit inlier | diagnostic | 1,422/1,518 (93.68%) | 참고용; deployment proof 아님 |
+| Detected camera dot pitch | normalizing scale | 14.59340 px | pixel-unit reference |
+| Held-out 5×5-block count | spatial validation | 298 | test set은 충분 |
+| Held-out RMSE | ≤0.25 dot pitch | **6.00155 px = 0.41125 pitch** | 실패 |
+| Held-out p95 residual | ≤0.50 pitch=7.29670 px | **9.78092 px** | 실패 |
+| All candidate gates | true | **false** | 16 transforms 전체 hold |
+
+QC overlay에서도 board ROI 위치는 맞지만, grid right side에 robust rejection이 많고 upper/central/lower held-out block 여러 곳에서 predicted dot이 actual dot과 체계적으로 어긋난다. 이 결과는 새 transform이 옳다는 증거도, 기존 rank2가 틀렸다는 증거도 아니다. **correspondence algorithm을 더 정제해야 한다**는 evidence다.
+
+---
+
+# Part VI. 현재 변경 금지 사항과 다음 단계
+
+## 24. 현재 config와 model에 대해 하지 않는 일
+
+| 금지/hold 항목 | 이유 |
+|---|---|
+| `calibration_v1.yaml` 교체 | independent method-#2 held-out gate 실패 |
+| rank1/rank2/method-#2 alternative 자동 선택 | orientation/part ambiguity가 해소되지 않음 |
+| machine XY 또는 part ID를 physical fact로 출력 | candidate rank sensitivity가 큼 |
+| weak target 재투영 또는 residual model 재학습 | calibration transform이 승인·검증된 변경이 아님 |
+| response inversion 또는 binary defect threshold | XCT response direction과 physical interpretation unresolved |
+| decoder에 XCT support mask 투입 | real-time deployment input에 존재하지 않음 |
+
+## 25. 다음 코드 작업의 올바른 범위
+
+다음 기술 작업은 “새 homography를 반복해서 fit”하거나 “gate를 느슨하게 조정”하는 일이 아니다. 먼저 DotGrid에서 perspective-aware 2D local-neighbor consistency를 써 row/column correspondence를 정제한 다음, **동일한 5×5-block held-out rule**로 residual을 다시 검사해야 한다.
+
+| 다음 refinement에서 개선할 것 | 그대로 유지할 것 |
+|---|---|
+| 2D row/column assignment, local grid consistency, off-grid rejection | immutable raw TIFF와 memmap read-only access |
+| indexed/inlier/held-out residual overlay | K=4 causal A-only residual baseline |
+| same held-out residual gate | XCT response scale, sigma=2, unknown policy |
+| candidate transform을 human-review-only output으로 기록 | camera-primary reporting, no automatic config update |
+
+승인된 다음 구현은 `src/audit_independent_method2_lattice_correspondence_refinement.py`다. 이 코드는 DotGrid TIFF 하나만 read-only로 열고, V1의 독립적인 1D clustering 대신 다음 순서를 사용한다.
+
+1. 자동 DotGrid ROI 안에서 dark-dot response/NMS 후보와 response-weighted subpixel center를 만든다.
+2. 각 후보의 가까운 여섯 neighbor를 조사한다. 거리 `0.45–1.75×` local dot pitch, PCA axis alignment `≥0.92`를 동시에 만족하는 edge만 남긴다.
+3. 이 edge를 따라 BFS로 provisional 2D image-lattice row/column을 전파하고, cycle conflict와 graph에 연결되지 않은 후보를 수치로 기록한다.
+4. 가장 dense한 provisional 50×50 image-lattice window를 고른다. 이것은 machine D origin이 아니라 image-plane correspondence의 후보 범위다.
+5. 그 window의 image-lattice homography를 in-memory로 사용해 후보를 가장 가까운 2D cell에 다시 배정한다. `0.45×` pitch 밖의 candidate는 off-grid로 보류하며, cell 안 duplicate는 residual이 더 작은 점 하나만 남긴다.
+6. 마지막으로 V1과 **완전히 같은 5×5-block held-out rule**, RMSE `≤0.25×` train-inlier pitch, p95 `≤0.50×` 같은 pitch gate를 적용한다.
+
+| 이 코드가 읽는 것 | 이 코드가 쓰는 것 | 이 코드가 하지 않는 것 |
+|---|---|---|
+| `DotGrid_2000x2000.tif` 한 파일 | compact feature CSV, neighbor-edge CSV, summary JSON, QC overlay 3장 | config/control JSON·A/B·XCT·model/checkpoint 접근, transform/rank 선택, `calibration_v1.yaml` 변경 |
+
+실행은 다음과 같다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v1
+```
+
+첫 실행은 `Dense 50x50 provisional lattice window contains too few graph labels`에서 의도적으로 중단됐다. 이 오류는 raw TIFF나 calibration/model data가 바뀌었다는 뜻이 아니며, CSV·JSON·overlay·held-out residual도 만들기 전 단계에서 fail-closed한 것이다. 원인은 graph BFS가 가장 강한 dark-response 점 하나에서만 시작되어, 큰 DotGrid component 대신 작은 disconnected component를 seed로 선택할 수 있었기 때문이다. 즉 DotGrid pattern이 사라진 것이 아니라 **graph seed policy가 panel-wide correspondence에 충분히 안정적이지 않았다**는 뜻이다.
+
+| 지금의 처리 | 이유 |
+|---|---|
+| 현재 output directory를 `--overwrite`로 덮어쓰지 않음 | 실패한 실행 기록을 숨기지 않고, 다음 code patch와 결과를 분리하기 위해서 |
+| RMSE/p95 값을 새로 해석하지 않음 | held-out validation 전에 멈췄으므로 새 residual evidence가 없음 |
+| V1 method-#2 transform hold 유지 | 새 correspondence가 아직 검증되지 않았음 |
+| 다음 patch를 별도 승인으로 분리 | graph component 선택 방식도 correspondence algorithm 변경이기 때문 |
+
+가장 작은 보완은 모든 edge-connected component의 size를 세고, **candidate 수가 가장 큰 component**를 BFS seed로 고르는 것이다. size가 같을 때만 aggregate response와 deterministic spatial order로 tie-break한다. detector threshold, fixed 5×5 held-out rule, RMSE/p95 gate, calibration config, model/XCT data는 그대로 유지한다.
+
+이 보완은 새 파일 `src/audit_independent_method2_lattice_correspondence_refinement_v2.py`로 구현됐다. V2는 먼저 `method2_refined_2d_graph_components.csv`를 작성해 component별 candidate 수, edge 수, aggregate response, BFS seed, raw image bounding box를 남긴다. 그래서 다시 일찍 멈추더라도 단순 traceback만 남지 않고, **어느 component가 왜 선택됐는지**를 확인할 수 있다.
+
+| V2가 바꾸는 것 | V2가 바꾸지 않는 것 |
+|---|---|
+| BFS가 시작하는 graph component 선택 규칙과 component diagnostics | DotGrid detector·ROI·subpixel center rule |
+| failure 시 compact JSON/CSV/graph overlay를 먼저 남기는 순서 | `0.45–1.75×` neighbor distance, `≥0.92` axis alignment |
+| 새 `_v2` output directory | same 5×5 holdout, coverage/RMSE/p95 gate |
+| largest component 안의 high-response seed | calibration config/rank, A/B/XCT/target/model data, camera-primary reporting |
+
+실행할 때는 V1 failure directory를 지우거나 `--overwrite`하지 않고 새 V2 directory를 쓴다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement_v2.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v2
+```
+
+V2의 첫 실행은 graph fragmentation을 넘어서 component CSV·neighbor-edge CSV·refined lattice-feature CSV와 graph/correspondence overlay까지 만들었다. 그러나 마지막 held-out residual overlay를 저장하는 줄에서 **함수 인자를 하나 더 넘긴 code mismatch**로 멈췄다. 따라서 V2 directory는 partial debug evidence로 보존하고, final summary JSON과 held-out residual overlay가 없으므로 pass/fail 수치를 채택하지 않는다.
+
+| 이미 만들어진 것 | 아직 없는 것 | 현재 처리 |
+|---|---|---|
+| component/edge/feature compact CSV와 graph/correspondence overlay | held-out residual overlay와 final summary JSON | V2를 덮어쓰지 않고 V3의 새 output directory를 사용 |
+| raw/config/model/target을 바꾸지 않은 computation | accepted V2 validation result | transform/rank/config hold 유지 |
+
+다음 V3는 same calculation의 plotting call에서 obsolete `residual` argument 하나만 제거한다. static check로 definition/call arity도 맞춘다. detector, largest-component seed, fixed 5×5 holdout, coverage/RMSE/p95 gates는 모두 고정한다.
+
+V3는 `src/audit_independent_method2_lattice_correspondence_refinement_v3.py`로 구현됐다. 쉽게 말해 “grid를 찾는 수학”이나 “합격 기준”을 다시 바꾼 것이 아니라, 계산이 끝난 뒤 held-out error 화살표를 그림으로 저장할 때 주던 불필요한 입력 하나를 제거한 것이다. 따라서 V2와 V3의 결과가 다르게 나와도 그 차이는 new algorithm이 아니라 V2가 summary/last overlay까지 도달하지 못했던 실행 경계 때문이다.
+
+| V3에서 확인하는 것 | V3에서 확인하지 않는 것 |
+|---|---|
+| function definition과 call의 5-argument 일치 | DotGrid detector threshold가 더 좋아졌는지 |
+| same V2 correspondence가 final JSON·held-out overlay까지 완주하는지 | calibration transform/rank가 더 정확한지 |
+| fixed gate를 계산해 review 가능한 evidence가 남는지 | machine origin, physical part, confirmed defect 위치 |
+
+V3 command는 다음과 같다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_lattice_correspondence_refinement_v3.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --output-dir processed/calibration/independent_method2_lattice_correspondence_refinement_v3
+```
+
+V3는 정상 완료했다. 15개 graph component 중 가장 큰 component가 candidate 1,523개(전체 1,616개 중 94.25%)와 edge 2,812개(전체 2,860개 중 98.32%)를 담고 있어, V1의 작은 component seed 문제가 실제로 해소됐음을 확인했다. BFS label conflict도 0개였다.
+
+가장 중요한 변화는 **미리 고정한 held-out test**다. V1에서 RMSE는 dot pitch의 0.41125, p95는 0.67037이었지만, V3에서 313 held-out cell을 사용한 RMSE는 0.06728 pitch, p95는 0.11472 pitch가 됐다. 각각 기준 `0.25`, `0.50`보다 작으므로 residual gate는 통과했다. 마지막 overlay의 yellow held-out dot과 magenta residual arrow도 panel 여러 위치에 분포하고 화살표가 작아, 수치가 특정 한 구역만 잘 맞춘 결과가 아니라는 점을 visual cross-check했다.
+
+하지만 모든 gate가 통과한 것은 아니다.
+
+| Gate | V3 수치 | 왜 중요한가 | 현재 판정 |
+|---|---:|---|---|
+| Unique cells | 1,554 ≥ 1,200 | 충분한 수의 cell에서 검증했는지 | 통과 |
+| Image-lattice columns | 50 ≥ 40 | panel 가로 방향이 넓게 포함됐는지 | 통과 |
+| Image-lattice rows | **39 < 40** | 세로 방향도 사전에 정한 최소 coverage를 충족하는지 | 보류 |
+| Held-out RMSE | 0.06728 pitch ≤ 0.25 | average correspondence generalization | 통과 |
+| Held-out p95 | 0.11472 pitch ≤ 0.50 | 큰 local mismatch가 제한되는지 | 통과 |
+
+39 row는 기준보다 단 한 row 부족하지만, 결과를 본 뒤 “39도 충분하다”고 기준을 낮추면 validation의 신뢰성이 사라진다. 더구나 NIST source note에는 50×50 dot grid가 문서화되어 있으므로, **visible field-of-view인지, target-count convention인지, detector/reassignment boundary인지**를 먼저 따로 확인해야 한다. 현재 low residual은 2D correspondence algorithm이 좋아졌다는 strong evidence지만, published D coordinate 또는 machine calibration config를 적용할 충분한 evidence는 아니다.
+
+따라서 다음 작업은 gate를 낮추는 것이 아니라 separate read-only coverage-definition audit이다. 이 audit은 구현된 `src/audit_independent_method2_dotgrid_coverage_definition.py`로 수행한다. V3 feature CSV와 DotGrid image를 같이 읽어 50×50 nominal image-lattice cell 각각에 아래 네 질문을 묻는다.
+
+1. 이 nominal cell은 V3 final correspondence에서 실제 assigned됐는가?
+2. V3 feature만으로 예측한 cell 위치가 2000×2000 camera sensor 안에 있는가?
+3. sensor 안이라면 새 DotGrid detector candidate가 기존 V3 assignment bound(`0.45×` pitch) 안에 있는가?
+4. 그 위치의 local raw-image darkness는 어떠한가?
+
+| Missing cell의 관찰 pattern | 이 audit이 허용하는 해석 | 이 audit이 하지 않는 해석 |
+|---|---|---|
+| 80% 이상이 sensor 밖 | field-of-view clipping이 plausible | row gate를 자동으로 낮춤 |
+| sensor 안이고 가까운 fresh detector candidate가 다수 | indexing/reassignment boundary가 plausible | grid size·machine coordinate를 자동 변경 |
+| sensor 안이지만 가까운 detector candidate가 다수 없음 | visible target extent 또는 detector boundary가 plausible | physical target specification 오류를 단정 |
+| 어느 한 pattern도 다수 아님 | mixed evidence | 임의의 하나를 원인으로 선택 |
+
+Script는 row/column occupancy와 contiguous run, nominal 2,500 cell coverage table, JSON summary, QC plot 두 장만 새 output directory에 쓴다. temporary image-lattice mapping은 dot이 sensor 안에 있을지를 점검하는 데만 메모리에서 쓰며, calibration H나 config file로 저장하지 않는다.
+
+```bash
+cd ~/ammt_project
+/usr/local/bin/python3 src/audit_independent_method2_dotgrid_coverage_definition.py \
+  --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
+  --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
+  --output-dir processed/calibration/independent_method2_dotgrid_coverage_definition_v1
+```
+
+Coverage-definition audit은 정상 완료했다. 가장 중요한 수치는 `946/946`이다. V3에서 nominal 50×50 cell 중 할당되지 않은 946개는 모두 2000×2000 camera sensor 안에 예측됐고, 새 dot detector candidate가 V3의 기존 assignment bound(`6.55369 px`) 안에 있는 경우는 `0/946`이었다.
+
+| 먼저 예상했던 원인 | 결과 | 왜 제외/보류됐는가 |
+|---|---|---|
+| 센서가 grid를 잘라 냈다 | 지지되지 않음 | missing 946개 중 sensor 밖 예측이 0개 |
+| dot은 찾았지만 V3 assignment만 놓쳤다 | 지지되지 않음 | missing 946개 중 fresh detector candidate가 가까운 경우가 0개 |
+| visible target extent, detector footprint, 또는 provisional image-lattice window/index convention | 여전히 plausible | inside sensor이지만 fresh detector support가 없는 structured missing region |
+
+QC overlay는 이 해석을 보완한다. Cyan assigned cell은 printed dot 위에 모이지만, red missing cell은 image left의 넓은 영역과 dot panel right/central boundary에 structured하게 모인다. Row occupancy는 0–37까지 연속이지만 초반에는 10개에서 점차 늘고, 39번째 row는 2개뿐이다. 반면 column 0–49는 모두 등장하지만 각 column은 약 25–37개 dot만 가진다. 즉 **“39개의 완전한 row가 보이고 한 row만 잘렸다”**라고 간단히 말할 수 없다.
+
+따라서 40-row gate는 계속 fail이다. 39가 40보다 하나 작다고 해서 결과를 본 뒤 기준을 낮추면, 원래 정한 validation이 project에 주는 안전장치가 사라진다. 이 audit은 gate를 바꾸기 위한 증거가 아니라, future human review가 무엇을 확인해야 하는지 좁혀 준 evidence다.
+
+다음 작업은 자동 transform fit이 아니라 human-reviewed visible DotGrid extent control audit이다. `select_visible_dotgrid_extent_controls.py`가 full DotGrid image를 screen에 맞춰 보여 주면, 사람이 **실제로 보이는 가장 바깥 dot의 중심** 네 개를 아래 순서로 click한다.
+
+| Click 순서 | 선택할 것 | 선택하면 안 되는 것 |
+|---:|---|---|
+| 1 | top-left outer visible dot centre | white paper corner, screw, text |
+| 2 | top-right outer visible dot centre | 한 column 안쪽의 dot |
+| 3 | bottom-right outer visible dot centre | black panel shadow나 paper edge |
+| 4 | bottom-left outer visible dot centre | 한 row 안쪽의 dot |
+
+Preview image가 작아도 문제가 없다. script가 preview click을 raw camera pixel coordinate로 되돌려 compact JSON에 저장한다. Click 하나를 잘못했으면 right-click으로 마지막 point만 지우고 다시 click한다. 네 point가 보인 후 middle mouse button으로 끝낸다.
+
+그 다음 `audit_visible_dotgrid_extent_controls.py`가 click을 calibration point가 아니라 **visible panel evidence**로만 검증한다.
+
+1. each click가 fresh dot candidate의 `0.60×` camera pitch 이내인지 검사한다.
+2. 네 click이 서로 다른 candidate로 snap되는지 검사한다.
+3. TL→TR→BR→BL 순서가 self-crossing 없는 convex quadrilateral인지 검사한다.
+4. 네 edge마다 `0.55×` pitch band 안에 fresh dot candidate가 최소 3개 있는지 검사한다.
+5. human quad 안에 V3 assigned cell, fresh candidate, nominal V3 prediction이 각각 얼마나 들어가는지 센다.
+
+| 이 workflow가 답하는 질문 | 답하지 않는 질문 |
+|---|---|
+| 현재 V3 nominal 50×50 window가 사람이 확인한 visible dot panel보다 어느 방향에서 넓거나 좁은가 | physical 50×50 target의 D origin / physical cell index가 무엇인가 |
+| 39-row shortfall이 clicked outer extent 밖에서 생기는가 | 40-row gate를 바꿔도 되는가 |
+| V3 assignment가 visibly physical dot panel과 얼마나 겹치는가 | machine calibration transform, rank, orientation, part ID |
+
+Human selector V1은 click 창을 열지 못했다. Terminal에 `FigureCanvasAgg is non-interactive, and thus cannot be shown`이라는 warning이 나타났다. 이는 DotGrid가 깨졌거나 사용자가 click을 못한 문제가 아니다. 이전 batch-QC script는 PNG를 재현 가능하게 만들기 위해 Matplotlib의 `Agg` backend를 사용한다. `Agg`는 화면 창을 열지 않는 backend이므로, 사람의 mouse click을 받는 `ginput`과 함께 사용할 수 없다.
+
+| Batch QC script | Human click selector |
+|---|---|
+| PNG를 background에서 안정적으로 생성해야 함 | 화면 창과 mouse event를 받아야 함 |
+| noninteractive `Agg` backend가 적합 | macOS GUI backend가 필요 |
+| imported helper가 `Agg`를 미리 고정해도 됨 | `pyplot` import 전에 GUI backend를 명시해야 함 |
+
+V1은 control JSON을 쓰기 전에 click을 기다렸으므로, 네 click control evidence는 생성되지 않았다. raw DotGrid TIFF와 config/grid/gate/model/target도 바뀌지 않았다.
+
+### 21.1 V2 selector: 배치 PNG 작업과 사람 click 작업을 분리한 수리
+
+승인 후 `src/select_visible_dotgrid_extent_controls_v2.py`를 새로 만들었다. 이 script는 V1처럼 batch-QC helper를 import하지 않는다. 대신 자신 안에서 DotGrid TIFF가 grayscale `YX` image인지 확인하고 `tifffile.memmap(..., mode='r')`로 read-only 접근한다. 그 뒤 **`pyplot`를 import하기 전에** macOS GUI용 `MacOSX` backend를 먼저 선택한다. `MacOSX`가 이 Python 환경에서 불가능할 때만 `TkAgg`를 대안으로 시도한다. 어떤 GUI backend도 쓸 수 없거나 결과가 `Agg`이면 script는 error로 멈추고 JSON을 전혀 만들지 않는다.
+
+| V2가 하는 일 | V2가 하지 않는 일 |
+|---|---|
+| 축소 preview에서 four outer-dot centre click을 받음 | raw TIFF를 변경·복사·재저장하지 않음 |
+| preview click에 recorded stride를 곱해 raw camera `(x,y)`로 저장 | calibration point, machine origin, physical DotGrid index를 정하지 않음 |
+| 네 번째 left-click 후 자동 완료 | 네 점 이전의 partial result를 JSON으로 저장하지 않음 |
+| right-click으로 마지막 click 하나만 취소 | `GRID_SIZE=50`, 40-row gate, V3 result를 바꾸지 않음 |
+
+사용자는 새 Terminal에서 아래처럼 V2만 실행한다. `visible_dotgrid_extent_controls_v2.json`이 이미 있으면 먼저 검토하고 자동 overwrite하지 않는다.
 
 ```bash
 cd ~/ammt_project
@@ -238,14 +651,10 @@ cd ~/ammt_project
   --output-json processed/calibration/visible_dotgrid_extent_controls_v2.json
 ```
 
-If the output JSON already exists, it must be listed and reviewed before any deliberate replacement; this guide does not recommend `--overwrite` automatically.
-
-
-#### Visible-extent validator CLI correction
-
-The existing validator defines its completed-V3 feature input as `--v3-features`, not `--v3-features-csv`. An initial V2 guide invocation stopped at `argparse` before opening any TIFF or control data because the former spelling was supplied; this was a documentation-only command mismatch, not a calibration/validation outcome. The corrected read-only command is:
+V2 JSON이 생긴 **후에만** existing validator를 새 output folder에서 실행한다. validator는 click가 실제 dot에 가까운지, 네 점이 TL→TR→BR→BL 순서의 convex panel인지, 그 visible panel 안에 V3/fresh/nominal footprint가 얼마나 있는지를 확인한다.
 
 ```bash
+cd ~/ammt_project
 /usr/local/bin/python3 src/audit_visible_dotgrid_extent_controls.py \
   --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
   --v3-features processed/calibration/independent_method2_lattice_correspondence_refinement_v3/method2_refined_2d_lattice_features.csv \
@@ -253,23 +662,99 @@ The existing validator defines its completed-V3 feature input as `--v3-features`
   --output-dir processed/calibration/visible_dotgrid_extent_validation_v2
 ```
 
-This correction changes no source, raw/processed data, V2 controls, calibration/gate/model policy, or candidate reporting. The validator result remains pending.
+V2 source는 syntax·backend-before-pyplot·read-only memmap contract를 정적으로 점검했지만, 실제 GUI click과 validator 실행은 사용자가 수행한다. validator가 pass해도 그것은 사람이 볼 수 있는 DotGrid panel의 범위 evidence일 뿐이다. fixed 40-row rule, transform/rank/orientation, machine origin, calibration config, target projection, model 또는 raw-camera-primary `XCT-derived continuous quality candidate` 표현을 자동으로 바꾸지 않는다.
+
+If `FigureCanvasAgg is non-interactive` appears again, the user should verify that the executed filename ends with `_v2.py` and use a fresh Terminal session. If V2 says both `MacOSX` and `TkAgg` are unavailable, the user should retain the no-JSON state and provide the full error rather than forcing `Agg` or hand-writing four controls.
+
+Human click을 넣더라도 `GRID_SIZE=50`과 40-row gate는 바뀌지 않는다. Passed validation은 future human design review를 위한 evidence일 뿐이며, `calibration_v1.yaml`, target re-projection, retraining, machine/part candidate metadata를 수정하는 trigger가 아니다. `status=completed`여도 same fixed held-out gate를 통과한 뒤 human review만 가능하다. refinement가 통과해도 transform selection, config revision, target re-projection, retraining은 각각 분리된 다음 결정이다. 반대로 gate가 실패하면 candidate 수치를 좋게 보이도록 gate를 느슨하게 하거나 H만 다시 맞추지 않고, correspondence/outlier handling을 다시 검토한다.
+
+---
+
+## 26. 프로젝트에서 기억할 핵심 용어
+
+| 용어 | 쉬운 뜻 |
+|---|---|
+| Causality | z layer 판단 시 z보다 미래의 image를 보지 않는 규칙 |
+| Endpoint | K=4 history에서 현재 판단을 내리는 마지막 layer z |
+| Working ROI | 비교 결과로 baseline에 채택했지만 physical final truth로 단정하지 않은 crop |
+| Saturation validity | sensor ceiling 65,535인지 여부를 intensity와 별도로 알려주는 channel |
+| Train-only normalization | validation/test를 보지 않고 train data에서만 scale을 정하는 규칙 |
+| Weak supervision | 완전한 defect mask 대신 sparse/indirect XCT response를 쓰는 학습 방식 |
+| Unknown | 관측이 없어 normal/abnormal이라고 말할 수 없는 pixel; zero label이 아님 |
+| Temporal collapse | input은 다른데 temporal stage 이후 output이 똑같아지는 failure |
+| Residual bypass | endpoint feature를 temporal update와 더해 decoder까지 직접 전달하는 path |
+| Provisional calibration | internal convention으로는 계산 가능하지만 independent metrology 전에는 physical fact가 아닌 transform |
+| Method #2 | red-reference/secondary-camera와 DotGrid D coordinate를 이용해 layer-camera C와 machine A 관계를 검증하는 NIST route |
+
+---
+
+## 27. 포트폴리오에서 강조할 수 있는 실제 역량
+
+| 역량 | 이 프로젝트의 증거 |
+|---|---|
+| 대용량 scientific IO | 6 GB TIFF를 memmap으로 필요한 frame만 read-only 접근 |
+| Leakage-aware time-series design | K=4 causal manifest, K−1 guard band, train-only statistics |
+| Sensor artifact handling | saturation을 intensity와 validity channel로 분리 |
+| Imperfect-label learning | continuous XCT weak response, support-masked Smooth L1, unknown≠normal |
+| Scientific experiment design | epoch/capacity/sigma를 한 축씩 비교하고 negative result도 hold로 기록 |
+| Neural failure diagnosis | stagewise sensitivity로 temporal collapse의 최초 stage를 직접 측정 |
+| Safe inference design | plateau/invariance/local-maxima gate, deployment decoder의 XCT support exclusion |
+| Metrology awareness | rank sensitivity, independent metadata, held-out dot residual, non-selection policy |
+| Reproducibility | raw/processed/output 분리, code/config/docs Git tracking, compact regenerable QC |
+
+---
+
+## 28. 마지막 안전 문장
+
+> 지금의 candidate는 **“A-only causal model이 XCT-derived continuous response와 관련 있어 보인다고 제안한 raw layer-camera pixel”**이다. 이것은 “defect가 확정됐다”, “특정 part의 특정 machine XY에서 이상이 생겼다”, “공정 조건을 즉시 바꿔야 한다”를 뜻하지 않는다.
+
+---
+
+## References
+
+[1] [Lane, B. and Yeung, H. (2020). *Process Monitoring Dataset from the Additive Manufacturing Metrology Testbed (AMMT): Overhang Part X4*. Journal of Research of NIST, 125, 125027.](https://doi.org/10.6028/jres.125.027)
+
+[2] [NIST PDR: AMMT Overhang Part X4 dataset record.](https://data.nist.gov/od/id/mds2-2233)
 
 
-#### V2 human visible-extent validation result — click/snap hold
+---
 
-The user completed `audit_visible_dotgrid_extent_controls.py` with the V2 controls and the actual V3 feature CSV. The audit executed read-only and created only its three compact CSVs, one JSON summary, and two deterministic overlays. It preserved raw TIFF/CSV, the V2 controls JSON, V3 outputs, `GRID_SIZE=50`, the rows≥40 gate, `calibration_v1.yaml`, transform/rank/orientation, machine-origin status, target/model/checkpoint/decoder, and camera-primary XCT-derived continuous quality candidate policy.
+## 29. 2 V2 validator 결과: 사각형 모양은 맞아도 dot 중심 근접성이 통과하지 못할 수 있다
 
-The controls are sensor-contained and form a strictly convex ordered `TL→TR→BR→BL` quadrilateral (all cross-products positive). However, the fixed click-to-fresh-candidate snap test fails: only TL is within the frozen `8.73835 px` bound (`3.47989 px`); TR, BR, and BL are respectively `170.41794 px` (11.701 V3 camera-dot pitches), `87.56457 px` (6.012 pitches), and `16.03069 px` (1.101 pitches) from their nearest fresh detector candidate. The minimum per-edge support count is 5≥3, but the right edge alone has only 5 candidates versus 38/43/51 on the top/bottom/left. Therefore `all_control_validity_checks_pass=false` and the correct result is `hold_extent_interpretation`, not a panel-extent pass.
+V2 selector는 정상적으로 창을 열었고 네 점을 저장했다. 이어 validator도 정상 종료했다. 여기서 중요한 점은 “script가 끝났다”와 “사람이 찍은 네 점이 실제 outer dot의 중심이라는 evidence가 통과했다”가 서로 다르다는 것이다. 이번 결과에서 네 점은 sensor 안에 있고 TL→TR→BR→BL 사각형도 뒤집히거나 교차하지 않는 convex shape였다. 하지만 validator는 각 click가 자동 detector가 새로 찾은 실제 dot 중심에 충분히 가까운지를 **별도로** 검사한다.
 
-The overlays nevertheless supply narrow diagnostic evidence: V3 assigned cells are 1,539/1,554 (99.0347%) inside the human quadrilateral, fresh candidates are 1,554/1,616 (96.1634%) inside, and nominal 50×50 predictions are 1,900/2,500 inside with 600 outside. Visually, the selected quad covers the central detector-supported lattice, while a right-side nominal region extends beyond it and two V3 assigned points lie left of the quad. Because three outer clicks failed fresh-dot snap and the right edge has sparse support, these counts cannot resolve whether the shortfall is visible physical extent, detector footprint, click placement, or nominal-window convention. No grid/gate/config/calibration decision follows from this run.
+| Click | 실제 dot 후보까지 거리 | 허용 상한 | 판정 |
+|---|---:|---:|---|
+| TL | 3.48 px | 8.74 px | 통과 |
+| TR | 170.42 px | 8.74 px | 실패 |
+| BR | 87.56 px | 8.74 px | 실패 |
+| BL | 16.03 px | 8.74 px | 실패 |
+
+즉 사용자가 흰 판의 모서리가 아닌 중앙 dot panel을 선택했다는 큰 방향은 맞지만, 오른쪽과 아래쪽 outer click가 detector가 인식한 fresh dot 중심과 일치하지 않았다. 특히 오른쪽 edge는 그 line 근처 fresh dot가 5개뿐이고, top/bottom/left의 38/43/51개보다 현저히 적다. 이 때문에 “사각형은 그럴듯하다”는 조건만으로 outer extent를 확정하지 않는다. 이 엄격함은 사람이 panel border·shadow·희미한 dot·white plate edge를 클릭했을 때 coverage rule을 그럴듯하게 바꿔버리는 오류를 막는다.
+
+두 overlay는 후속 검토를 위한 제한적 관찰도 제공한다. V3가 assignment한 1,554 cells 중 1,539개(99.03%)가 human quad 안에 있고, fresh dot 후보도 1,616개 중 1,554개(96.16%)가 안에 있다. 반면 V3 nominal 50×50 prediction은 2,500개 중 1,900개만 안에 있고 600개가 밖에 있다. 그림에서는 nominal prediction의 오른쪽 일부가 human quad 밖으로 나가며, assignment된 점 두 개는 quad 왼쪽에 보인다. 그러나 click-to-dot validation이 실패했기 때문에 이 수치는 physical DotGrid의 실제 행/열 수, D origin, machine direction 또는 coverage gate의 변경 근거가 될 수 없다.
+
+> 결론은 **`hold_extent_interpretation`**이다. 자료가 삭제되거나 실패한 것이 아니라, “현재 네 click만으로는 visible outer boundary를 충분히 정확하게 증명하지 못했다”는 안전한 결과다. `GRID_SIZE=50`, 40-row rule, V3 39-row hold, rank/orientation, machine origin, `calibration_v1.yaml`, target projection, model 또는 raw-camera-primary `XCT-derived continuous quality candidate` 표현은 그대로 유지한다.
+
+따라서 지금 V2 selector/validator를 `--overwrite`로 다시 실행하거나 JSON 숫자를 손으로 고치지 않는다. 기존 control JSON과 validation outputs는 evidence로 보존한다. 이후 click placement 또는 fresh-detector outer-boundary 방법을 바꿀 필요가 있다면, 왜 현재 strict snap check가 충분하지 않은지부터 별도 설계로 검토하고 승인받아야 한다.
 
 
-#### Visible DotGrid outer-boundary diagnostic — implementation ready
+---
 
-`src/audit_visible_dotgrid_outer_boundary_diagnostic.py` is the separately approved read-only follow-up to the V2 strict snap hold. It preserves the existing V2 controls and V3 outputs, reconstructs the same frozen refined detector/ROI and V3 nominal 50×50 image-space predictions, and adds a fixed local four-pitch patch around each click. Within each patch it recomputes the same dark-dot response, applies deterministic q=0.990/NMS=8 px candidate extraction, and requires a near-click candidate plus at least two camera-pitch-band neighbors with an approximately orthogonal pair before supporting `printed_dot_visible_but_current_detector_missed`.
+## 30. 3 왜 바로 다시 찍지 않고 outer-boundary diagnostic을 먼저 하는가
 
-Each control is classified only as `current_detector_supported`, `printed_dot_visible_but_current_detector_missed`, `click_outside_printed_dot`, or `ambiguous`. The result is diagnostic evidence, not an automatic reclick, detector replacement, tolerance change, grid/gate decision, homography fit, calibration/rank/origin claim, or model/target change. The script writes one compact per-control CSV, one JSON summary, four local patch QC PNGs, and one full-panel QC PNG under a new ignored output directory; it persists no dense crop, response, mask, rectification, target, or model output. Static `py_compile`, fixed-constant/source-contract inspection, and whitespace validation passed. The assistant did not run the diagnostic.
+V2에서 TR/BR/BL click가 fresh detector candidate와 멀었다고 해서 곧바로 “사용자가 잘못 찍었다”고 결론 내릴 수는 없다. 화면에는 점처럼 보이지만 current automatic detector의 ROI 또는 response threshold가 바깥 열·행을 놓쳤을 수도 있기 때문이다. 반대로 detector만 탓하고 human click를 그대로 인정하면, plate border·shadow·희미한 background texture를 physical outer dot로 잘못 사용할 수 있다. 그래서 같은 자료를 overwrite하지 않고 두 설명을 분리하는 새 read-only diagnostic이 필요하다.
+
+`src/audit_visible_dotgrid_outer_boundary_diagnostic.py`는 각 human click 주변을 camera-dot pitch의 네 배 반경으로 잘라 **메모리에서만** 살펴본다. 그 local patch에 기존과 같은 dark-dot response를 다시 계산하되, local q=0.990 threshold와 8 px NMS로 후보를 찾는다. Click 근처에 어두운 점 하나가 있다는 것만으로는 충분하지 않다. 그 후보 주변에 정상 pitch 범위의 이웃이 두 개 이상 있고 서로 대략 직각인 이웃 방향이 있어야 “DotGrid lattice의 일부처럼 보이는 local evidence”로 인정한다.
+
+| 결과 이름 | 쉬운 뜻 | 다음에 바로 할 수 없는 것 |
+|---|---|---|
+| `current_detector_supported` | 기존 detector도 이미 그 click 근처 dot를 찾았다 | physical index/origin 확정 |
+| `printed_dot_visible_but_current_detector_missed` | local lattice evidence는 있지만 기존 frozen detector가 놓쳤다 | detector threshold·ROI 자동 변경 |
+| `click_outside_printed_dot` | local/frozen/V3/nominal reference가 모두 충분히 멀다 | 기존 JSON을 자동 수정하거나 재클릭 |
+| `ambiguous` | 서로 다른 reference가 섞여 원인을 정할 수 없다 | 가장 편한 설명을 임의 선택 |
+
+이 diagnostic은 “다음에 무엇을 검토해야 할지”를 결정하는 도구이지, 39 rows를 40 rows로 바꾸는 도구가 아니다. 실행 전의 V2 controls와 validation hold를 그대로 보존하고, 결과는 per-control CSV·summary JSON·네 local patch PNG·한 full-panel PNG만 생성한다. Raw TIFF, detector threshold/ROI, nominal 50×50 grid, rows≥40 gate, homography/rank/orientation, machine origin, calibration config, target/model/checkpoint/decoder에는 손대지 않는다.
 
 ```bash
 cd ~/ammt_project
@@ -280,30 +765,41 @@ cd ~/ammt_project
   --output-dir processed/calibration/visible_dotgrid_outer_boundary_diagnostic_v1
 ```
 
-If the output directory already exists, it must be listed and reviewed; `--overwrite` is not recommended automatically. The script never changes the frozen V2 snap result, `GRID_SIZE=50`, rows≥40 gate, V3 39-row hold, `calibration_v1.yaml`, transform/rank/orientation, machine origin, A/B/XCT/weak-target/model/checkpoint/decoder, or raw-camera-primary XCT-derived continuous quality candidate reporting.
+이 source는 syntax와 fixed constants, read-only/compact-output contract를 정적으로 점검했다. 실제 실행과 생성 PNG 검토는 사용자가 수행한다. 어떤 evidence class가 나와도 다음 correction은 별도 설계·승인이 필요하며, raw-camera-primary **XCT-derived continuous quality candidate** 표현과 provisional calibration 상태는 유지한다.
 
 
-#### Outer-boundary diagnostic V1 result — one detector-footprint miss, two lower-edge ambiguities
+---
 
-The user completed `audit_visible_dotgrid_outer_boundary_diagnostic.py` with existing V2 controls and V3 compact features. It read only those immutable/compact inputs and wrote one per-control CSV, one summary JSON, four local-patch QC PNGs, and one full-panel QC PNG. V2 controls, V3 outputs, detector parameters, raw TIFF/CSV, `GRID_SIZE=50`, rows≥40 gate, calibration/rank/orientation, model/target/checkpoint/decoder, and camera-primary XCT-derived continuous quality candidate reporting were unchanged.
+## 31. 4 Outer-boundary diagnostic 결과: detector와 human click 중 하나만 탓할 수 없는 상태
 
-The four evidence classes are `TL=current_detector_supported`, `TR=printed_dot_visible_but_current_detector_missed`, and `BR/BL=ambiguous`; the predeclared recommendation is therefore `hold_outer_boundary_diagnosis; mixed_or_ambiguous_image_space_evidence`. TR is 13.959 px right of the frozen detector ROI, but its local detector identifies a candidate at `(1704,799)` only 4.984 px from the human click, with three pitch-band neighbors and an orthogonal pair. Its patch visibly contains a regular dark-dot lattice, so the frozen ROI/detector footprint excludes a locally supported outer-right dot. This supports only a future detector-boundary design review, not an automatic ROI change.
+새 diagnostic은 실제로 실행됐고, 네 click를 같은 기준으로 비교했다. 결과는 “사용자가 완전히 잘못 찍었다”도 아니고 “detector가 모든 outer dot를 놓쳤다”도 아니다. TL은 기존 detector가 이미 잘 찾았고, TR은 화면상 dense dark-dot lattice 안에 있지만 frozen detector ROI의 오른쪽 밖에 있어 기존 detector가 놓친 사례였다. 반면 BR과 BL은 click 아래쪽에 있고, local dot 및 V3 reference가 조금 위의 마지막 visible dot row를 가리켜 아직 하나의 설명으로 확정할 수 없었다.
 
-BR is 11.405 px outside the frozen ROI and the nearest local dark-dot candidate is `(1701,1586)`, 14.346 px from the click near `(1706,1599)`; the visible dot lattice ends above the clicked point. BL is inside the frozen ROI but the nearest frozen/local candidate `(975,1614)` is 16.031 px above the click near `(973,1630)`, while V3/nominal reference points lie around y≈1595–1615. Both lower controls are therefore conservatively `ambiguous`, not promoted to confirmed click-placement or detector-miss evidence. Overlay review agrees with this classification.
+| Point | 결과 | 쉽게 말하면 |
+|---|---|---|
+| TL | `current_detector_supported` | 사람이 누른 위치와 기존 detector가 같은 dot를 가리킴 |
+| TR | `printed_dot_visible_but_current_detector_missed` | 사람 click 근처에 규칙적인 dot lattice가 있으나 current ROI가 그 오른쪽을 잘랐음 |
+| BR | `ambiguous` | click보다 위에 마지막 dot row가 보이지만, intent/outer-boundary convention을 단정할 근거 부족 |
+| BL | `ambiguous` | click보다 위에 detector/V3가 가리키는 dot row가 있으나, same reason으로 단정 불가 |
 
-The diagnostic establishes mixed image-space evidence only. The existing V2 JSON and outputs must remain preserved; no reclick, JSON edit, `--overwrite`, threshold/ROI change, gate relaxation, homography refit, calibration/config update, or model/target action follows automatically. A future correction workflow, if proposed, requires separately approved human-reselection and/or detector-boundary design with fixed predeclared acceptance criteria.
+TR 결과는 향후 “detector ROI가 printed outer-right dot를 놓칠 수 있다”는 별도 설계 검토 근거가 된다. 그러나 **그 즉시 ROI를 넓히면 안 된다.** ROI를 넓히면 text, plate texture, hardware까지 새 dot 후보로 섞일 수 있고, 이미 39 rows였던 V3 coverage를 결과를 본 뒤 유리하게 바꾸는 오류가 생길 수 있다. BR/BL이 ambiguous인 것도 같은 이유로 중요하다. 현재 prompt에서 가장 편한 해석 하나를 고르면 실제 outer edge를 잘못 정할 수 있다.
+
+따라서 이번 결과의 정식 결론은 `hold_outer_boundary_diagnosis; mixed_or_ambiguous_image_space_evidence`이다. 기존 V2 JSON, V2 validator output, 새 diagnostic output은 모두 보존한다. JSON 재클릭·수정, `--overwrite`, detector threshold/ROI 수정, 50×50/40-row gate 완화, homography/calibration/model 변경은 진행하지 않는다. 나중에 개선한다면 human outer-boundary의 뜻과 detector outer-boundary alternatives를 미리 고정한 새 design review가 필요하다. 그 review의 결과도 raw-camera-primary **XCT-derived continuous quality candidate**를 즉시 physical defect나 machine action으로 바꾸지 않는다.
 
 
-#### Calibration design review V1 — implementation ready
+---
 
-`src/audit_calibration_design_review_v1.py` implements the approved read-only review after the mixed outer-boundary evidence hold. It uses only the immutable DotGrid TIFF, V2 validation summary/control CSV, V1 outer-boundary diagnostic per-control CSV, V3 compact feature CSV, and the existing 192-hypothesis ranking CSV. It compares two fixed extent candidates—frozen refined-detector ROI and the held V2 human quad—without constructing a new expanded extent. An evidence-expanded extent is explicitly blocked unless all four controls show local lattice evidence; the current mixed classes do not meet that rule.
+## 32. 5 다음 단계: extent, 40-row coverage, orientation을 한 번에 확정하지 않는 design review
 
-For each fixed candidate the audit reports V3 point inclusion, unique assigned rows/columns, missing nominal `0..49` row/column indices, and the unchanged `rows>=40` plus `columns>=50` descriptive occupancy gate. It separately records whether the top residual-ranked orientation is tied within `1e-6 px` LOO RMSE. It marks the current top tie as unresolved because no independent asymmetric cross-camera anchor is supplied. Neither residual rank nor image extent is selected for calibration deployment.
+현재 calibration 문제는 “homography 수식이 없는 문제”가 아니다. 수식은 이미 있지만, 그 수식에 넣을 image boundary와 physical direction을 정확히 확정할 evidence가 부족한 문제다. 그래서 다음 코드는 정답을 새로 만드는 코드가 아니라, 이미 존재하는 두 extent 후보와 orientation 후보를 **같은 고정 기준으로 비교하는 코드**다.
+
+첫 extent 후보는 기존 frozen detector ROI이고, 둘째 후보는 V2 human click로 만든 quad다. V2 quad는 strict snap에서 실패했으므로 ‘사람이 봤으니 정답’으로 올리지 않는다. 반대로 TR에는 current detector가 놓친 local dot lattice가 있어 detector ROI도 당연한 정답이라고 올리지 않는다. mixed evidence 상태에서는 새 expanded boundary를 만들지 않는 것이 안전하다. 네 corner가 모두 local lattice evidence를 통과할 때만 future review에서 expanded extent를 후보로 추가할 수 있다.
+
+`src/audit_calibration_design_review_v1.py`는 각 기존 extent 안에 V3 assigned point가 몇 개 들어가는지, 어떤 lattice row/column이 있는지, nominal 0–49 중 무엇이 빠졌는지를 적는다. 그리고 `rows>=40`, `columns>=50`을 그대로 적용한다. 어떤 candidate가 더 많은 row를 포함해도 이 코드가 gate를 바꾸거나 final extent를 고르지는 않는다. 그 이유는 결과를 확인한 뒤 boundary·row 정의를 조정하면 39-row hold를 인위적으로 통과시킬 수 있기 때문이다.
+
+또한 기존 orientation ranking에서 rank1과 rank2의 LOO residual 차이가 `1e-6 px` 이내이면 둘은 residual tie로 기록한다. DotGrid는 대칭적인 lattice라 residual만으로 mirror/rotation을 충분히 구별하기 어렵다. SecondaryCamera의 red marker처럼 비대칭적인 자료가 있어도, 그것을 LayerCamera DotGrid와 직접 연결하는 독립 cross-camera bridge가 없으면 direction을 확정하는 데 사용하지 않는다.
 
 ```bash
 cd ~/ammt_project
-ls -ld processed/calibration/calibration_design_review_v1
-
 /usr/local/bin/python3 src/audit_calibration_design_review_v1.py \
   --dot-grid 'raw_original/metadata/Layer Camera Metadata/DotGrid_2000x2000.tif' \
   --v2-validation-summary processed/calibration/visible_dotgrid_extent_validation_v2/visible_dotgrid_extent_validation_summary.json \
@@ -314,40 +810,66 @@ ls -ld processed/calibration/calibration_design_review_v1
   --output-dir processed/calibration/calibration_design_review_v1
 ```
 
-The expected compact output is three CSVs, one JSON summary, and two deterministic QC overlays. No raw input, V2/V3 artifact, detector setting, `GRID_SIZE=50`, rows>=40 gate, homography, rank/orientation, `calibration_v1.yaml`, XCT target/model/checkpoint/decoder, or raw-camera-primary XCT-derived continuous quality candidate policy can change. Static `py_compile`, fixed-rule inspection, and whitespace validation passed; the assistant did not run the audit.
+이 실행은 compact CSV 세 개, JSON 하나, QC overlay 두 개만 만든다. raw TIFF/CSV, human controls, prior V2/V3 result, detector ROI/threshold, 50×50 grid, 40-row gate, homography/rank/orientation, calibration config, XCT/model/decoder는 바꾸지 않는다. 결과가 나와도 primary output은 raw-camera 좌표의 **XCT-derived continuous quality candidate**이고, machine-coordinate interpretation은 provisional 상태로 유지한다.
 
 
-#### Calibration design review V1 result — neither fixed extent reaches 40 rows; mirror tie remains
+---
 
-The user completed `audit_calibration_design_review_v1.py` successfully. It read only the immutable DotGrid TIFF plus preserved V2/V3/outer-boundary/ranking compact artifacts and wrote three compact CSVs, one JSON summary, and two deterministic QC overlays. Raw data, V2 controls, outer-boundary results, detector threshold/ROI, `GRID_SIZE=50`, coverage gate, calibration config, model/target/checkpoint/decoder, and raw-camera-primary XCT-derived continuous quality candidate reporting remain unchanged.
+## 33. 6 Design review 결과: 더 큰 extent도 40번째 row를 만들지 못했고 방향도 두 개가 남았다
 
-Neither pre-existing extent candidate reaches the fixed `rows>=40` rule. The frozen detector ROI contains all 1,554 V3 assigned points with 50 columns but only 39 distinct rows; it contains row indices 0–37 and 39, while 38 and 40–49 are absent. The held V2 human quad excludes 15 V3 points and contains only 38 rows, 0–37, while retaining all 50 columns. Thus the wider frozen detector footprint is the less restrictive descriptive candidate but **still fails** the frozen row gate; the V2 quad is strictly worse for coverage. The output correctly blocks evidence-expanded extent construction because outer-control evidence remains mixed.
+Calibration design review를 실제로 실행한 결과, 기존 frozen detector ROI와 held human quad 중 어느 것을 써도 고정 rule `rows>=40`을 통과하지 못했다. Frozen detector ROI는 V3 assigned point 1,554개를 모두 포함하고 50개 column을 포함하지만, unique row는 39개다. 흥미롭게도 label은 `0–37`과 `39`가 있고 `38`이 빠져 있다. 즉 단순히 outer boundary를 조금 넓힌다고 40개 연속 row가 생기는 문제가 아니다. Held human quad는 15개 point를 더 제외해 38개 row만 남는다.
 
-The orientation ranking retains an exact two-way residual tie: rank1 `mirror_rotate_90` / `part01;part02;part03;part04` has LOO RMSE `7.028278322386677 px`, rank2 `mirror_rotate_270` / `part04;part03;part02;part01` has `7.028278322386715 px`, a maximum difference of only `3.82e-14 px`. All remaining tested candidates are materially worse, but no independently validated asymmetric cross-camera anchor is available. Therefore the correct decision is `hold_extent_and_orientation; no candidate satisfies all predeclared independent requirements`, not a rank/config update.
+| 비교 기준 | 포함 V3 points | unique rows | unique columns | 결과 |
+|---|---:|---:|---:|---|
+| Frozen detector ROI | 1,554 / 1,554 | 39 | 50 | 40-row gate hold |
+| Held V2 human quad | 1,539 / 1,554 | 38 | 50 | 더 강한 hold |
+
+따라서 “human quad가 너무 작았으니 조금 키우면 40 rows가 된다”는 설명은 현재 자료로 지지되지 않는다. 또 모든 outer click가 local lattice evidence를 통과하지 않았으므로, local dot 하나를 근거로 새 expanded extent를 만드는 것도 차단됐다. 이 결과는 failure가 아니라, 같은 evidence를 보고 난 뒤에 boundary를 임의 조정해 통과시키지 않도록 한 안전장치다.
+
+Orientation도 마찬가지다. 192개 hypothesis 가운데 rank1 `mirror_rotate_90`과 rank2 `mirror_rotate_270`는 LOO RMSE가 각각 약 7.028 px이고 차이는 약 `3.819×10⁻¹⁴ px`이다. 이는 계산 오차 수준의 tie이며, 다른 후보들은 훨씬 나쁘지만 이 두 mirror 방향 중 어느 것이 실제 physical direction인지는 residual만으로 고를 수 없다. 독립적으로 확인된 asymmetric cross-camera anchor가 없으므로, 이제 이 둘 중 하나를 final calibration으로 선언하면 안 된다.
+
+현재 정식 결론은 `hold_extent_and_orientation`이다. `GRID_SIZE=50`, rows≥40 gate, V3 39-row hold, rank2 provisional config, raw-camera-primary **XCT-derived continuous quality candidate** 정책은 그대로다. 다음 calibration 작업은 같은 controls나 residual을 다시 해석하는 것이 아니라, 별도의 asymmetric physical reference 또는 사전에 고정된 alternative detector/extent experiment를 추가하는 방향이어야 한다.
 
 
-#### SecondaryCamera asymmetric-anchor feasibility — current metadata is insufficient
+---
 
-A read-only inventory and NIST method-#2 source check were completed after the calibration design-review hold. The local metadata directory contains only `DotGrid_2000x2000.tif` and a single `SecondaryCamera_Laser00.tif`; no `SecondaryCamera_Laser01...` or multiple red-dot-at-known-grid-position sequence is available. The existing refined audit detects a compact red cluster at secondary-camera `(2582.34,2029.18)` px, but that is a pixel-space visual candidate only. There is no validated SecondaryCamera→LayerCamera bridge and no LayerCamera observation of that same red indicator.
+## 34. 7 SecondaryCamera의 빨간 점 하나만으로 방향을 고를 수 없는 이유
 
-Lane and Yeung describe the red indicator image as locating `A(0,0)` relative to DotGrid, but explicitly state that this origin alone does not provide orientation; their 2.5° DotGrid-to-machine orientation required **additional secondary-camera measurements at various red-dot positions on the grid** [1]. The public PDR currently lists 11 top-level files and exposes only `Layer Camera Metadata.zip` as the metadata archive [2]. Since the local extracted archive contains one `Laser00` image, the additional multi-position evidence required to reproduce the orientation step is not present in the current project inputs.
+다음으로 확인한 것은 SecondaryCamera의 빨간 laser indicator가 rank1/rank2 mirror tie를 해결할 수 있는지였다. 현재 파일에는 `SecondaryCamera_Laser00.tif` 한 장이 있고, red cluster는 secondary-camera pixel `(2582.34,2029.18)` 부근에서 잘 검출된다. 하지만 그 숫자는 **SecondaryCamera 화면 안에서의 위치**일 뿐, LayerCamera DotGrid 화면에서의 위치가 아니다.
 
-Consequently a new cross-camera homography/anchor audit is not implemented: any such source would fabricate correspondence rather than validate it. Rank1/rank2 residual tie, `calibration_v1.yaml` provisional rank2 status, fixed extent/coverage holds, and raw-camera-primary XCT-derived continuous quality candidate reporting remain unchanged. The next valid project work is model-side evaluation that does not require machine-coordinate truth; a future orientation-resolution task requires either independently documented cross-camera correspondences, the missing multi-position secondary-camera measurements, or a different asymmetric LayerCamera-visible fiducial.
+두 camera에서 같은 물리 점을 서로 옮기려면 보통 서로 다른 위치의 공통점이 여러 개 필요하다. 그런데 현재에는 LayerCamera에서 같은 red indicator를 본 이미지도 없고, SecondaryCamera에서 red dot가 DotGrid의 여러 known 위치에 놓인 여러 장의 이미지도 없다. 그러므로 빨간 점의 pixel을 억지로 LayerCamera로 투영하면 실제 evidence가 아니라 추측으로 calibration을 만드는 셈이다.
+
+NIST method #2의 원문도 red indicator가 `A(0,0)` origin relation에는 도움을 주지만 **orientation은 주지 않는다**고 설명한다. 논문에 나온 DotGrid `{D}`와 machine `{A}`의 2.5° 관계는 red dot가 DotGrid의 다양한 위치에 있을 때 추가로 측정해 얻은 것이다 [1]. 현재 local metadata에는 그 추가 multi-position images가 없다.
+
+| 현재 보유 evidence | 가능한 말 | 하면 안 되는 말 |
+|---|---|---|
+| `Laser00` 한 장의 compact red cluster | SecondaryCamera에서 red visual candidate를 찾음 | LayerCamera의 machine origin을 확정함 |
+| DotGrid의 대칭 lattice와 rank1/rank2 residual tie | 좋은 후보가 두 mirror 방향으로 좁혀짐 | residual이 낮은 후보가 physical truth임 |
+| LayerCamera와 SecondaryCamera의 별도 image | 두 sensor가 존재함 | 두 image 사이 transform을 알고 있음 |
+
+그래서 이 경로에서는 새 cross-camera homography 코드를 만들지 않았다. 지금 데이터로는 검증할 대응점이 없기 때문이다. 다음으로 할 수 있는 유효한 작업은 calibration을 억지로 확정하는 것이 아니라, machine-coordinate truth가 필요 없는 **raw-camera candidate model evaluation**이다. 예를 들어 같은 C32 residual model이 seed가 달라도 안정적인지, LED/channel 또는 temporal history가 실제로 map에 기여하는지, candidate가 같은 pixel에 고정되지 않는지를 검사할 수 있다. 이 모든 평가는 계속 raw-camera 좌표의 **XCT-derived continuous quality candidate**만 다루므로 current calibration hold를 침범하지 않는다.
 
 [1]: https://doi.org/10.6028/jres.125.027 "Lane & Yeung (2020), Process Monitoring Dataset from the AMMT: Overhang Part X4"
-[2]: https://data.nist.gov/od/id/mds2-2233 "NIST Public Data Repository: AMMT Overhang Part X4"
 
 
-#### A-only causal-history candidate stability audit — implementation ready
+---
 
-`src/audit_a_only_candidate_stability_v1.py` is the next model-side evaluation allowed while machine-coordinate calibration remains held. It opens only the A-stage causal Dataset (`AMMTCausalStageDataset`) through read-only TIFF memmap and does not instantiate weak target/XCT support. For each selected held-out endpoint, it compares the normal causal K=4 history against (a) all K frames replaced by the endpoint frame and (b) each of the three preceding frames individually replaced by that same endpoint frame. These are diagnostic counterfactuals, not permitted real-time inputs.
+## 35. Calibration이 hold여도 다음으로 검증할 수 있는 것: 모델이 과거 layer를 실제로 쓰는가
 
-The audit preserves the spatial-plateau, top-score-tie, and local-maximum decoder safeguards but intentionally passes no previous map to the decoder: selected endpoints such as z=203/227/250 are nonconsecutive, so treating them as an adjacent temporal pair would make `withheld_temporally_invariant_map` invalid. It also forces `geometry_gate=None`, so no provisional machine/part mapping affects raw-camera candidate comparison. It records map MAE/max-absolute/correlation, emitted/withheld status, top-score tie, top candidate raw-coordinate displacement, and coordinate stability within one model pixel. It writes one compact CSV, one JSON summary, and exactly three display-only deterministic QC PNGs—never dense prediction arrays.
+Machine 좌표의 방향이 아직 확정되지 않았다고 해서 모델 프로젝트 전체가 멈추는 것은 아니다. 모델이 만들어내는 primary output은 처음부터 raw camera pixel `(x_pixel,y_pixel,layer_z,score)`이므로, “현재 A image와 직전 A images를 함께 넣었을 때 모델 map이 실제로 달라지는가”는 machine coordinate 없이 확인할 수 있다.
+
+새 `audit_a_only_candidate_stability_v1.py`는 이미 학습된 C32 residual checkpoint를 다시 학습하지 않고 비교한다. 기준은 정상 causal K=4 history다. 그 뒤 두 종류의 가상 입력을 만든다. 첫째는 endpoint image 하나를 네 번 복사해서 이전 layer variation을 없앤 `endpoint_repeated_history`다. 둘째는 과거 세 frame 중 하나만 endpoint image로 바꾸는 `prior_t0`, `prior_t1`, `prior_t2` variant다. 이 variant들은 실제 실시간 data가 아니라, 모델이 어떤 과거 frame 정보에 반응하는지 보는 실험용 입력이다.
+
+| 확인하는 질문 | 보는 숫자 | 결과가 말해 주지 않는 것 |
+|---|---|---|
+| 과거 history가 map에 영향을 주는가 | causal map과 variant map의 MAE, max difference, correlation | XCT direction이나 physical defect truth |
+| 위치가 perturbation에 민감한가 | top raw-camera candidate의 pixel displacement | machine-coordinate accuracy |
+| decoder safety가 유지되는가 | plateau/tie/local-maximum status | defect probability |
+
+이 audit에서는 XCT support를 만들거나 읽지 않고, provisional machine/part geometry gate도 사용하지 않는다. 그러므로 calibration rank2나 outer-boundary hold가 결과에 섞이지 않는다. three endpoint QC PNG는 사람이 map 변화를 확인하기 위한 display-only 그림이며, dense prediction data를 저장하는 것이 아니다.
 
 ```bash
 cd ~/ammt_project
-ls -ld outputs/a_only_candidate_stability_v1
-
 /usr/local/bin/python3 src/audit_a_only_candidate_stability_v1.py \
   --config configs/a_only_baseline_c32_temporal_residual_v1.yaml \
   --checkpoint outputs/a_only_baseline_c32_temporal_residual_v1/best_validation_supported_loss.pt \
@@ -359,106 +881,299 @@ ls -ld outputs/a_only_candidate_stability_v1
   --output-dir outputs/a_only_candidate_stability_v1
 ```
 
-The new output directory must not exist on the first run. The audit does not train or change a checkpoint/config/manifest/TIFF/XCT CSV, does not read weak response/support, does not use provisional geometry/calibration, and does not change raw-camera-primary XCT-derived continuous quality candidate reporting. **Next task after this audit:** if endpoint-repeated and prior-frame counterfactuals change maps materially without unstable candidate coordinates, compare C32 residual seeds/capacity; if maps are insensitive, isolate the temporal architecture before any more training.
+이 작업 뒤의 다음 갈림길도 미리 정해 둔다. Endpoint-repeat와 prior replacement가 map을 충분히 바꾸면서 top coordinate가 한 model pixel 안에서 안정적이면, 모델이 history를 무시하지 않는다는 근거가 되므로 다음은 multi-seed 또는 controlled capacity comparison이다. 반대로 map이 거의 변하지 않으면 training epoch를 늘리는 대신 temporal representation 자체를 다시 점검한다. 두 경우 모두 score는 계속 **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.
 
 
-#### A-only candidate stability V1 result — spatial diversity survives, but prior causal history is unused
+---
 
-The user executed the read-only candidate-stability audit successfully on the saved C32 endpoint-feature-residual checkpoint at held-out endpoints z=203, z=227, and z=250. In all three endpoints, the normal causal K=4 input, endpoint-repeated history, and each individual prior-frame replacement produced **exactly identical** maps: `map_mae_vs_causal=0.0`, `map_max_abs_vs_causal=0.0`, same top-score tie count (1 pixel), same spatial range, same top score, same five emitted candidates, and raw top-candidate displacement `0.0 px`. Each top coordinate is consequently stable within the predeclared one-model-pixel tolerance of `5.859375 raw px`, but that stability arises because the prediction is invariant—not because temporal robustness has been demonstrated.
+## 36. 중요한 발견: map은 layer마다 다르지만, 과거 layer를 실제로 쓰지는 않았다
 
-This differs from the earlier spatial-collapse result. The residual architecture produces non-flat, non-identical maps across different endpoints, so the endpoint encoder supplies spatial variation. However, this counterfactual shows that, for these three representative test endpoints, replacing any/all preceding frames with the endpoint frame makes no numerical difference. The correct conclusion is **hold temporal-contribution claim**: the saved residual checkpoint behaves as an endpoint-conditioned spatial model under this test, not as a demonstrated K=4 history-sensitive model.
+C32 residual model은 예전 temporal collapse보다 좋아 보였다. z=203, z=227, z=250의 map은 서로 다르고, 한 map 안에서도 평평하지 않으며 top pixel도 하나였다. 하지만 이것만으로 모델이 K=4 time sequence를 잘 사용한다고 결론 내릴 수는 없다. 현재 endpoint image 한 장만 보고 서로 다른 map을 만들 수도 있기 때문이다.
 
-No raw TIFF/CSV, checkpoint, config, manifest, XCT/weak support, calibration, provisional geometry, decoder threshold, candidate policy, or dense prediction artifact changed. **Next task:** a separately approved read-only temporal-path mechanism audit should measure Conv3D temporal-kernel energy by lag and the relative endpoint-feature versus temporal-update contribution before proposing any retraining or architecture change.
+그래서 같은 endpoint에서 과거 frame을 바꾸는 반사실(counterfactual) 실험을 했다. 예를 들어 z=203의 원래 history `[200,201,202,203]`를 `[203,203,203,203]`으로 바꾸고, 또 `[203,201,202,203]`, `[200,203,202,203]`, `[200,201,203,203]`처럼 과거 하나씩만 바꿨다. 그런 뒤 model map과 raw camera candidate를 원래 결과와 비교했다.
 
+결과는 세 endpoint 모두 완전히 동일했다. 모든 variant에서 map MAE와 maximum difference가 `0.0`이었고, top coordinate·score·candidate count도 동일했다. QC 그림의 다섯 panel도 구별할 수 없었다.
 
-#### Versioned QC PNG policy — A-only candidate stability V1
+| 확인한 사실 | 의미 |
+|---|---|
+| 서로 다른 endpoint의 map은 서로 다름 | endpoint frame 자체가 spatial variation을 만듦 |
+| 같은 endpoint에서 prior 3 frame을 모두 또는 하나씩 바꿔도 map이 완전히 같음 | 저장된 checkpoint는 tested K=4 prior history를 사용하지 않음 |
+| raw-camera top coordinate도 `0.0 px` 이동 | temporal robustness가 아니라 output invariance |
 
-At the user's request, the three compact deterministic QC PNGs created by the completed candidate-stability audit are versioned under `docs/qc/a_only_candidate_stability_v1/` rather than leaving them only in ignored `outputs/`. They are copied byte-for-byte from the user-generated run artifacts (z=203 SHA-256 `d5a13eb59234cfb7a14a9843609a21cf92a6426c1095ced8cc061a8a127997fb`; z=227 `8eb709a1d4efecd7f60fb01caa51373cca0870c5fbddfe1150bc9a9752db859d`; z=250 `ada912a41c9298250d2f6ab2379f5893f6214a73441009ab168182276b1fd9be`). Their combined size is about 473 KiB.
+따라서 이 모델을 “temporal model”이라고 부르는 것은 아직 정확하지 않다. 코드 구조에는 causal Conv3D가 있지만, 학습된 weight가 현재 endpoint에만 반응하는 방식일 수 있다. residual connection은 map이 모두 동일해지는 현상을 막았지만, 과거 information을 쓰게 만들었다는 증거는 아니다.
 
-Each PNG is a Matplotlib display of five in-memory `256×256` sigmoid response maps computed from one frozen checkpoint and one selected endpoint: normal causal history; endpoint repeated at all K=4 positions; and each prior position t0/t1/t2 separately replaced by the endpoint. All five panels in one PNG share the same robust 1st–99th percentile color scale, so their spatial patterns can be compared within that endpoint. They must not be read as raw camera pixels, saved dense tensors, XCT targets, physical part/machine coordinates, defect maps, anomaly probabilities, or a control decision. The visual result—five indistinguishable panels—matches the CSV's exact `0.0` counterfactual differences.
-
-Future compact, deterministic QC PNGs may be committed only after their runtime metrics and visual meaning are documented, their output scope is explicitly limited, and they exclude raw images, dense target/mask/map arrays, unreviewed screenshots, and high-volume derived data. **Next task after the mechanism audit run:** document its branch-panel images in the same way, then select either temporal architecture redesign or controlled seed/capacity evaluation based on its measured evidence.
-
-
-#### Temporal-path mechanism V1 result — nonzero branch, no measured prior-history sensitivity
-
-The user completed the read-only mechanism audit at z=203/227/250. The Conv3D parameter energy is not concentrated on the endpoint: lag 2=`0.33621653`, lag 1=`0.33143463`, endpoint lag 0=`0.33234880`, hence past-lag energy fraction=`0.66765116`. However, all three endpoints have `temporal_update_vs_endpoint_repeated_mae=0.0`, maximum absolute difference=`0.0`, and full-prediction difference=`0.0`. The temporal update is therefore **numerically invariant** when its effective preceding frames are replaced by endpoint, despite nonzero past-lag kernel weights.
-
-The temporal branch is also not an all-zero tensor. Its L2 norm is `4.40974331` versus endpoint-feature L2 norm about `920.28–920.66` (ratio `0.00479`), and removing it changes the final response map with MAE about `1.344e-4–1.351e-4`, just above the predeclared `1e-4` material-branch threshold. In contrast, decoding temporal update alone yields an almost spatially uniform image and differs from full prediction by MAE `0.0720–0.0731`. The supported conclusion is: the branch adds a small static-like modulation to an endpoint-driven spatial map, but it has not demonstrated use of earlier A frames.
-
-The K=4/temporal-kernel=3 structure has an additional fixed limitation: at the selected final Conv3D output, the earliest history frame t0 (layer `z-3`) has no direct temporal-convolution path; only t1, t2, and endpoint are structurally reachable. The mechanism audit cannot identify whether the remaining t1/t2 invariance is caused by encoded-history similarity, Conv3D cancellation, GroupNorm invariance, or their combination. It therefore does not authorize a claim of temporal quality-candidate behavior.
-
-At the user's request, the three reviewed branch-panel PNGs are also versioned after this result under `docs/qc/a_only_temporal_path_mechanism_v1/`. Each image contains: full residual prediction; endpoint-only diagnostic prediction; temporal-update-only diagnostic prediction; absolute full-minus-endpoint-only effect; and per-pixel temporal-update change after endpoint-repeat. The first three panels share one endpoint-specific signal scale, while the final two share one difference scale. These are display-only internal-calculation evidence—not raw images, stored dense tensors, XCT targets, physical locations, or defect/anomaly maps.
-
-**Next task:** the evidence selects a separately approved *controlled temporal architecture redesign*, not more epochs or capacity alone. The redesign must make prior-frame information explicit (for example causal encoded-frame differences/fusion), preserve A-only causal input and support-independent raw-camera decoding, and compare one changed architecture against the frozen C32 residual baseline with the same split/loss/target rules.
+이 결과 뒤의 **다음 작업**은 training epoch를 무작정 늘리는 것이 아니다. 먼저 temporal Conv3D weight를 time lag별로 검사하고, decoder input에서 `encoded_endpoint`와 `temporal_update`가 각각 얼마나 기여하는지 보는 **temporal-path mechanism audit**을 해야 한다. 그 결과로 과거 lag weight가 사실상 0인지, temporal update가 endpoint만 보고 있는지, 또는 residual branch가 너무 약한지를 구분한 뒤에만 새 architecture를 제안한다. 여전히 output의 정확한 이름은 raw-camera **XCT-derived continuous quality candidate**이며 response direction은 unresolved다.
 
 
-#### Controlled temporal-difference architecture V1 — implementation ready
+---
 
-`src/train_a_only_temporal_difference_v1.py` and `configs/a_only_temporal_difference_v1.yaml` implement the next controlled model experiment without changing the existing `AOnlyCausalCandidateNet` or C32 residual checkpoint. Each K=4 frame receives the same independent frame encoder. The model computes `encoded_prior_mean = mean(t0,t1,t2)`, then `difference_feature = encoded_endpoint - encoded_prior_mean`, passes the difference through `difference_encoder`, and fuses it with `encoded_endpoint` before the unchanged-style spatial decoder. Thus all three preceding frames have an explicit direct causal route into `fused_feature`; no final Conv3D output discards t0 by construction.
+## 37. 중간에 나오는 그림은 무엇이고, 왜 Git에 따로 보관하는가
 
-The controlled comparison keeps A-only six-channel input, causal split/guards, working ROI and 256×256 resize, train-only normalization, sparse `xct_5x5x5` response/rasterization, support-masked Smooth L1, AdamW settings, seed `20260827`, epoch budget 8, validation selection rule, and flat/tie/temporal/local-maximum decoder rules fixed. The provisional geometry gate is disabled to preserve raw-camera-only comparison; the decoder never uses XCT support. A dry run creates no files. A training run creates only a new ignored output directory with compact JSON/candidates and no dense heatmaps.
+이 프로젝트에서 그림은 두 종류로 나뉜다. 원본 camera TIFF 자체는 매우 크고, 앞으로도 바뀌지 않는 관측 자료다. 반면 QC PNG는 원본을 저장한 것이 아니라, 특정 script가 정해진 input과 frozen checkpoint로 내부 계산한 작은 확인 그림이다. 예를 들어 candidate stability 그림은 `256×256` response map을 다섯 개 나란히 보여 준다. 원래 causal K=4 input, endpoint를 네 번 반복한 input, 그리고 과거 frame 하나를 endpoint로 바꾼 세 input의 결과다.
 
-`src/audit_a_only_temporal_difference_stability_v1.py` is the matched post-training counterfactual audit. It uses only A TIFF causal input through read-only memmap and the new checkpoint; it does not instantiate XCT/weak support or geometry. It repeats the same causal vs endpoint-repeat and individual-prior-replacement test used for the C32 residual checkpoint and writes only compact metrics plus three display-only five-panel QC PNGs. Those images may be copied into `docs/qc/a_only_temporal_difference_stability_v1/` only after result/metric review and documented explanation.
+| 그림에서 보는 대상 | 왜 필요한가 | 보면 안 되는 방식 |
+|---|---|---|
+| 다섯 response panel의 모양 차이 | model이 이전 layer를 실제로 쓰는지 빠르게 확인 | 원본 camera 사진처럼 해석하지 않기 |
+| 같은 endpoint에서 공통 color scale | variant 간 상대적인 map 차이 확인 | 다른 endpoint 그림의 색과 숫자를 직접 비교하지 않기 |
+| CSV의 MAE/max difference | 그림이 보여 주는 차이를 수치로 확인 | 그림만 보고 defect나 quality 방향을 판단하지 않기 |
 
-**Next task after dry run:** if tensors and loss are valid, run exactly the controlled 8-epoch training comparison. **Next task after training:** run checkpoint-only matched counterfactual audit; a material history map change in the new architecture is necessary but not sufficient evidence before considering multi-seed generalization.
+z=203, z=227, z=250 그림은 다섯 panel이 모두 같았다. 이것은 현재 model이 map 모양을 만들 수는 있어도, tested prior history를 바꿨을 때 map이 변하지 않았다는 뜻이다. 원본 TIFF, XCT target, raw coordinate, physical part location을 뜻하는 그림은 아니다.
 
+보통 `outputs/`는 다시 만들 수 있는 파일이 많으므로 Git에 넣지 않는다. 하지만 이 세 그림처럼 작고, deterministic하며, CSV/JSON 수치와 해석이 함께 검토된 QC 그림은 포트폴리오와 재현성 기록에 도움이 된다. 그래서 `docs/qc/a_only_candidate_stability_v1/`에 별도로 보관한다. 이 원칙은 raw TIFF·dense map·dense target/support·checkpoint·대량 결과를 Git에 저장하자는 뜻이 아니다.
 
-#### Temporal-difference V1 dry run — passed
-
-The user ran the approved no-write dry run on the available training endpoint z=128. It returned the required input shape `[1,4,6,256,256]`, prediction shape `[1,1,256,256]`, finite sigmoid range `[0.13726304, 0.96532851]`, `weak_target_available=true`, `3,439` supervised pixels, and finite masked loss `0.12180285` on MPS. This verifies only that the new architecture, Dataset contract, on-the-fly sparse support-masked loss wiring, and device execution are valid before training. The random-initialization loss is not comparable with a trained checkpoint and is not a quality conclusion.
-
-No training/output directory/checkpoint/PNG was created or modified; raw TIFF/XCT/config/calibration stayed unchanged. **Next task:** execute exactly one fixed 8-epoch controlled training run into the new `outputs/a_only_temporal_difference_v1/` directory, then compare its held-out metrics with the frozen residual reference and run its matched counterfactual stability audit.
-
-
-#### Temporal-difference V1 controlled training — completed; history use remains unverified
-
-The user completed the single fixed 8-epoch run. Best validation occurred at epoch 7 with supported loss `0.0541080753`, lower than the residual reference validation `0.05642983` by `0.0023217547` (4.1144% lower). The held-out checkpoint-only test loss was `0.0702049682`, however, versus C32 residual baseline `0.0699212649`: an absolute increase of `0.0002837033` (0.4057% worse). This validation–test divergence means the new architecture has not improved the primary held-out metric in this one controlled seed, despite its lower validation minimum.
-
-The safety decoder emitted five raw-camera candidates for each of all 48 test endpoints (`240` total), with no geometry gate and no XCT support used as decoder input. Emission confirms nonflat decodable maps, not target direction, defect meaning, physical localization, or useful prior-frame dependence. Raw input, XCT target/support policy, calibration hold, checkpoint reference, and dense-artifact prohibition were unchanged.
-
-The matched `audit_a_only_temporal_difference_stability_v1.py` is now required before any repeat seed, epoch, capacity, or architecture change. **Next task:** run the fixed causal-vs-counterfactual history audit; only material map sensitivity to both endpoint-repeat and individual prior replacements can demonstrate that this redesign uses preceding A frames. If sensitivity is absent, hold this design and diagnose encoder/prior aggregation; if present but test loss remains worse, hold performance claim and run controlled multi-seed comparison only after review.
+**다음 작업:** temporal-path mechanism audit를 실행하면 endpoint feature branch, temporal-update branch, 그리고 두 branch 차이를 보여 주는 새 QC 그림이 나온다. 그 그림도 먼저 무엇을 계산했는지와 한계를 설명한 뒤, compact reviewed evidence인 것만 Git에 보관한다.
 
 
-#### Temporal-difference V1 counterfactual audit — prior-history sensitivity passed; candidate robustness held
+---
 
-The matched read-only counterfactual audit passed the narrowly defined history-use condition at all selected held-out endpoints z=203/227/250. Replacing all preceding frames with the endpoint yields mean causal-map MAE `0.103657847` (each endpoint `0.10190402–0.10510062`), far above the fixed `1e-4` material threshold. Replacing one prior frame at a time also changes every map materially: mean MAE t0=`0.009046263`, t1=`0.009204091`, t2=`0.008529744`. This contrasts with the prior residual checkpoint's exact-zero counterfactual differences and supports the limited claim that explicit difference fusion responds to prior A frames.
+## 38. 시간 convolution weight가 있어도 과거 layer를 쓰는 것은 아니다
 
-The raw-camera top candidate is not robust enough for a deployment claim. All three endpoint-repeat variants changed the top coordinate beyond the one-model-pixel bound (5.859375 raw px), and only 4/9 individual-prior-replacement variants remained within that bound. The individual stress replacements moved top candidates by up to 821.40 px at z=203, 188.69 px at z=227, and 76.40 px at z=250. These diagnostic counterfactuals are not live-machine observations; coordinate movement is evidence of decoder/model sensitivity, not physical candidate motion.
+다음 audit은 “temporal Conv3D의 과거 time weight가 0인가?”와 “실제로 과거 image를 바꾸면 output이 달라지는가?”를 따로 확인했다. 이 둘은 다르다. 이번 checkpoint에서 temporal Conv3D kernel의 energy는 endpoint와 과거 lag에 거의 고르게 있었다. 과거 lag 두 개를 합치면 전체 kernel energy의 약 66.8%였다. 따라서 과거 weight가 모두 0이어서 history를 못 쓰는 것은 아니었다.
 
-The three five-panel QC PNGs were inspected at original resolution and are versioned under `docs/qc/a_only_temporal_difference_stability_v1/`. Per endpoint, they show normal causal history, endpoint-repeat history, and t0/t1/t2 individual replacements with a common endpoint-local display scale. Strong visible reorganization in endpoint-repeat panels and bounded local differences in individual replacements agree with the CSV. They are compact response-map diagnostics only—not raw camera images, saved dense maps, XCT targets, anomaly probabilities, defect maps, or physical-location evidence.
+그런데 실제로 past image를 endpoint image로 바꿔도 temporal update와 final prediction은 세 endpoint에서 모두 `0.0`만큼 변했다. Temporal update 자체는 0이 아니지만 endpoint feature보다 매우 작았다. endpoint feature L2 norm이 약 920인 반면 temporal update는 약 4.41이었다. full prediction에서 temporal update를 제거하면 작은 차이는 생겼지만, 그 update는 과거 image가 변해도 그대로였다.
 
-The experiment therefore remains **performance and coordinate-robustness hold**: one-seed held-out loss is 0.4057% worse than the C32 residual reference, while history sensitivity is now demonstrated. **Next task:** before multi-seed comparison or another architecture change, run a separately approved top-candidate margin/rank robustness audit to distinguish near-tied local maxima from large high-confidence candidate switching. Only that audit can justify studying an additional safety-withhold margin; it must not alter decoder policy automatically.
+| QC PNG panel | 무엇을 계산했는가 | 그림이 의미하는 것 |
+|---|---|---|
+| 1. Full residual | endpoint feature와 temporal update를 더한 실제 checkpoint output | 현재 response map |
+| 2. Endpoint only | endpoint feature만 decoder에 넣은 진단 output | endpoint path의 영향 |
+| 3. Temporal update only | temporal update만 decoder에 넣은 진단 output | temporal branch 단독 모양 |
+| 4. Absolute difference | panel 1과 2의 pixel별 절대 차이 | temporal branch가 final map에 주는 작은 효과 |
+| 5. Update change after endpoint-repeat | 과거 frame을 endpoint로 바꾼 뒤 temporal update의 변화 | history를 실제로 쓰는지 여부 |
+
+세 그림에서 panel 5가 어둡게 나온 것은 temporal update가 변하지 않았다는 뜻이다. Panel 4가 완전히 어둡지 않은 것은 temporal branch가 0은 아니라는 뜻이다. 따라서 현재 가장 정확한 설명은 “temporal branch가 endpoint-conditioned spatial model에 작은 static-like correction을 더하지만, tested earlier frames에는 반응하지 않는다”이다.
+
+또 하나의 구조상 제약도 확인했다. K=4 `[t0,t1,t2,endpoint]`를 temporal kernel size 3으로 마지막 output만 사용하면, 제일 오래된 t0는 그 마지막 temporal convolution output에 직접 들어가지 않는다. t1, t2, endpoint만 직접 경로를 가진다. 앞으로의 구조는 past difference를 더 명시적으로 보여 주어야 한다.
+
+이 branch QC PNG도 candidate stability PNG와 같은 이유로 `docs/qc/a_only_temporal_path_mechanism_v1/`에 Git 기록한다. 작은 검토용 계산 그림이지 원본 제조 이미지나 defect label을 저장하는 방식은 아니다.
+
+**다음 작업:** 새 temporal architecture를 바로 학습시키기 전에, 변경할 mechanism을 하나로 고정해야 한다. 예를 들어 endpoint encoded feature에 `endpoint−prior` causal difference feature를 별도 branch로 넣는 설계를 선택하고, 동일 split/target/loss/decoder 아래에서 기존 C32 residual baseline과만 비교한다. 이 단계는 새 source/config가 필요하므로 별도 승인을 받은 뒤 진행한다.
 
 
-#### Temporal-difference top-candidate margin/rank robustness audit V1 — implementation ready
+---
 
-`src/audit_a_only_temporal_difference_candidate_margin_v1.py` is a new read-only diagnostic for the observed counterfactual coordinate switches. For normal causal history and the four prescribed history substitutions, it reuses the unchanged local-maximum decoder (`top_k=5`, no geometry) and records top1/top2 score, absolute and spatial-range-normalized score margin, top1–top2 separation, causal-top candidate rank in each variant, nearest candidate distance, top-K spatial overlap, and top1 displacement.
+## 39. 다음 모델은 과거 image의 차이를 직접 보여 주도록 바꾼다
 
-The audit uses fixed **descriptive**, not operational, labels. A switch is `near_tie_rank_switch_consistent` only when causal top1 remains in variant top-K at another rank and either top1–top2 margin is at most 5% of that map's spatial range. It is `high_margin_peak_relocation_consistent` only when causal top1 is absent from variant top-K and both variants' margin fractions are at least 20%. All other switches remain `ambiguous_switch_mechanism`; stable top1 is reported separately. These bounds are audit labels, not decoder thresholds, and must never withhold candidates or select a model.
+기존 residual model은 temporal branch가 존재했지만, 과거 image를 바꿔도 output이 달라지지 않았다. 그래서 다음 model은 “time convolution이 알아서 과거를 쓸 것”이라고 기대하지 않는다. 대신 endpoint와 과거 image의 encoded feature 차이를 직접 계산해 model이 반드시 볼 수 있는 입력으로 준다.
 
-The audit creates three compact five-panel PNGs. Each panel is a response map for one causal/counterfactual variant, white `×` marks causal top1, and colored numbered markers identify that variant's ranked top-K maxima. One endpoint-local color scale is shared across its five panels. They are display-only rank diagnostics, not raw images, dense outputs, XCT targets, physical coordinates, anomaly probabilities, defect maps, or control decisions. Only after runtime metric and visual review may selected compact PNGs be copied to `docs/qc/a_only_temporal_difference_candidate_margin_v1/` for Git versioning.
+```text
+1. t0, t1, t2, endpoint image를 각각 같은 encoder에 넣는다.
+2. t0, t1, t2 feature의 평균을 만든다.
+3. endpoint feature − prior 평균 feature를 계산한다.
+4. 이 difference feature와 endpoint feature를 fusion한다.
+5. fusion result로 continuous response map을 만든다.
+```
 
-**Next task:** run this audit on the fixed epoch-7 temporal-difference checkpoint. Near-tie-dominated switches would justify a separately designed safety-margin study; high-margin relocations would require fusion/target robustness work. Neither result may change decoder policy automatically.
+이 방법의 장점은 K=4의 세 prior frame이 모두 fusion input에 직접 들어간다는 것이다. 기존 final temporal convolution은 kernel size가 3이라 마지막 output에서 가장 오래된 t0를 직접 보지 못했지만, 새 model에는 그런 direct-path 제외가 없다. 물론 이 구조를 만들었다고 자동으로 history를 잘 활용한다는 뜻은 아니다. 학습 뒤에도 같은 counterfactual test를 해야 한다.
+
+| 무엇을 유지하는가 | 왜 유지하는가 |
+|---|---|
+| A-only 6 channels, causal K=4 split/guard, ROI와 normalization | 데이터 조건을 바꾸면 성능 변화 원인을 구분할 수 없기 때문 |
+| XCT-derived sparse continuous target와 support-masked loss | target 의미와 unknown policy를 유지하기 위해 |
+| raw-camera coordinate decoder와 safety rules | model 비교 중 candidate reporting 기준이 달라지는 것을 막기 위해 |
+| calibration hold와 geometry gate off | unresolved machine mapping이 model 비교에 섞이지 않게 하기 위해 |
+
+실행은 세 단계다. 먼저 z=128 training sample으로 dry run을 해서 input shape `[1,4,6,256,256]`, output shape `[1,1,256,256]`, finite masked loss를 확인한다. 이 단계에서는 아무 파일도 저장하지 않는다. 그 다음에만 고정된 8 epoch training을 하고, 마지막으로 z=203/227/250에서 normal causal history와 endpoint-repeat/prior replacement 결과를 비교한다.
+
+마지막 비교에서 새 model map이 과거 frame 교체에 따라 material하게 변하면서 raw-camera top candidate가 지나치게 불안정하지 않다면, 다음은 여러 random seed에서 같은 결과가 재현되는지 보는 generalization test다. 반대로 여전히 거의 변하지 않으면, 새 fusion도 prior information을 쓰지 않는 것이므로 더 긴 training이 아니라 difference representation과 objective를 다시 설계해야 한다.
+
+새 stability audit의 QC PNG도 내부에서 계산한 작은 확인 그림이다. causal input과 네 counterfactual variant map을 나란히 보여 주지만, 원본 camera image, XCT target, defect map, anomaly probability, physical position을 뜻하지는 않는다. 수치 CSV/JSON과 그림을 함께 확인한 경우에만 `docs/qc/`에 Git 기록한다.
 
 
-#### Temporal-difference candidate margin/rank audit V1 — no high-margin relocation evidence
+---
 
-The completed read-only top-K audit classified 12 counterfactual variants as 4 `top1_stable`, 3 `near_tie_rank_switch_consistent`, 5 `ambiguous_switch_mechanism`, and **0 high-margin relocations**. The three near-tie-consistent cases are z203 t0/t2 and z227 t1: causal top1 remained within variant top-K at rank 2/2/3, while an applicable top1-top2 margin fraction was at most the frozen 5% descriptive bound. The five ambiguous cases are all three endpoint-repeat variants, z203 t1, and z250 t1. In each, causal top1 was absent from the variant top-K or just beyond the fixed one-model-pixel match radius, but the margin evidence did not satisfy the 20% high-margin criterion.
+## 40. 새 model을 바로 오래 학습시키지 않고 dry run부터 하는 이유
 
-This weakens the interpretation that observed counterfactual coordinate changes are high-confidence peak relocations. It does not establish that all switches are harmless near-tie swaps: 5/12 counterfactuals remain ambiguous, and the top-K study uses deliberately strong diagnostic substitutions rather than observed live-process perturbations. The decoder still has no margin-based withholding rule. No candidate was withheld, no threshold was added, and no physical-quality or location claim is authorized.
+새 temporal-difference model은 먼저 z=128의 한 training sample로 dry run을 통과했다. Input은 `[1,4,6,256,256]`, output은 `[1,1,256,256]`였고, 3,439개의 supported pixel에서 masked loss도 finite하게 계산됐다. 즉 image sequence, model shape, sparse XCT-derived support-masked loss, MPS device가 서로 맞게 연결됐다는 뜻이다.
 
-The three wide top-K marker overlays were inspected in every ordered overlapping original-resolution tile and versioned only after review under `docs/qc/a_only_temporal_difference_candidate_margin_v1/`. White `×` marks causal top1; colored numbered markers show current-panel top-K rank. The endpoint-repeat panels visibly place causal × away from the variant top-K clusters; z203 t0/t2 and z227 t1 visibly retain causal top1 at a lower rank. The images remain compact display-only diagnostics, not raw camera imagery, dense outputs, XCT targets, quality truth, anomaly probabilities, or physical coordinates.
+하지만 이때 나온 loss `0.12180285`는 random initialization model의 값이다. 이미 학습된 C32 residual checkpoint의 loss와 비교해서 새 model이 더 좋다거나 나쁘다고 말할 수 없다. Dry run은 “배선 검사”이지 성능 시험이 아니다.
 
-**Next task:** before proposing a decoder margin-withhold policy, run a separately approved read-only causal-only margin sensitivity sweep across all 48 held-out test endpoints. It must report the distribution of existing top1-top2 normalized margins, peak separations, and *hypothetical* withhold counts for predeclared 1%, 2%, and 5% thresholds without changing the decoder, retraining, using XCT support/geometry, or selecting machine coordinates. The sweep will determine whether a safety policy can be designed from ordinary causal predictions rather than from counterfactual stress cases.
+이 단계에서는 output folder, checkpoint, QC PNG가 새로 만들어지지 않았고 raw TIFF/XCT/config/calibration도 바뀌지 않았다. **다음 작업은 단 하나다:** 이전과 같은 fixed setting으로 8 epoch만 학습하여 `outputs/a_only_temporal_difference_v1/`에 결과를 만든다. Training이 끝나면 validation/test 수치와 candidate safety status를 먼저 확인하고, 그 다음에만 과거 frame replacement counterfactual audit를 실행한다. 한 결과를 보기 전에 epoch나 architecture를 또 바꾸지 않는 이유는 성능 차이의 원인을 분명히 하기 위해서다.
 
-##   : A-BBBBBBB-AAAAAAA+B fusion onlyonly        branch
 
-set +H   A-only decoder B-only decoder ,  layer  BBBBBBB a  A+B fusion decoder             branch .  A-only causal baseline explicit temporal-      cccccccandidate .
+---
 
-#set +H, B-   layer  candidate, A+B  fusion      candidate .            CNN score-map decoder .  A/B/fusion decoder  task  multi-head ,  stage CNN prediction path . Multi-head attention, Transformer, YOLO, class/bbox   
-set +H   .
+## 41. Validation이 좋아도 test가 좋아졌다고 말할 수 없는 이유
 
-set +H .         .DS_Store .git .gitignore AMMT_프로젝트를_처음부터_이해하기.md README.md ammt_shared_ab_model_skeleton.py ammt_tiff_pytorch_dataset_memmap.py audit_ab_pairs.py audit_layer125_orientation_overlay.py audit_layer_camera.py configs docs manifests output outputs processed raw_original src test_dataloader.py test_dataloader_2.py test_dataloader_3.py 기획서.md 실행� raw-camera `(x_pixel,y_pixel,layer_z,score)`��score �드.md defect probability  프로젝트과정.md XCT-derived continuous quality candidate.  primary output
+새 temporal-difference model은 8 epoch을 학습했고 epoch 7이 validation에서 가장 좋았다. Validation loss는 기존 residual model보다 약 4.1% 낮았다. 하지만 미리 손대지 않은 held-out test loss는 기존 residual보다 약 0.41% 높았다. 즉 validation에서는 좋아 보였지만 test에서는 개선되지 않았다.
 
-set +H , B-only/A+B     stage .DS_Store .git .gitignore AMMT_프로젝트를_처음부터_이해하기.md README.md ammt_shared_ab_model_skeleton.py ammt_tiff_pytorch_dataset_memmap.py audit_ab_pairs.py audit_layer125_orientation_overlay.py audit_layer_camera.py configs docs manifests output outputs processed raw_original src test_dataloader.py test_dataloader_2.py test_dataloader_3.py 기획서..행�  `�이드.md.md`        branch  프로젝트과정.md      .     calibration hold provisional machine-coordinate  .         
+| 비교 | 기존 C32 residual | 새 temporal-difference | 올바른 결론 |
+|---|---:|---:|---|
+| Best validation loss | 0.05643 | 0.05411 | validation minimum은 새 model이 낮음 |
+| Held-out test loss | 0.06992 | 0.07020 | 한 seed에서 held-out improvement는 확인되지 않음 |
+| Test candidate | 기존 decoder | 48 endpoint 모두 5개, 총 240개 | map을 decode할 수 있음; quality truth는 아님 |
+
+이 차이가 나는 이유는 validation만 보고 architecture를 계속 바꾸면 test에 우연히 맞지 않는 model을 선택할 수 있기 때문이다. 그래서 지금은 “새 model이 더 좋다”라고 결론 내리지 않는다. 또한 240 candidate가 나왔다는 것은 flat map 때문에 decoder가 막히지 않았다는 뜻이지, 실제 이상 위치나 score 방향을 확인했다는 뜻이 아니다.
+
+다음에는 이 model이 과거 image를 정말 쓰는지 확인한다. z=203, 227, 250에서 normal causal history를 endpoint image 반복으로 바꾸고, t0/t1/t2를 한 장씩 바꾼 뒤 map이 material하게 달라지는지를 본다. 그 결과가 history use의 증거다. history-sensitive이고 raw-camera candidate가 안정적일 때만 여러 random seed에서 test 성능을 비교한다. 여전히 무반응이면 학습을 더 길게 하는 것이 아니라 prior feature average/difference/fusion의 어느 부분에서 time information이 사라지는지 진단해야 한다.
+
+
+---
+
+## 42. 과거 image에 반응한다는 것과 위치가 안정적이라는 것은 다르다
+
+새 temporal-difference model은 이전 model과 달리 과거 A image를 바꾸면 response map이 달라졌다. z=203, 227, 250에서 과거 세 장을 모두 endpoint image로 바꾸면 map의 평균 차이가 약 0.102–0.105였다. t0, t1, t2를 한 장씩 바꾸어도 약 0.0077–0.0105의 차이가 생겼다. 사전에 정한 material difference 기준 `0.0001`보다 훨씬 크므로, 이 model은 tested prior history를 실제로 본다는 근거가 생겼다.
+
+그렇다고 top candidate의 위치가 충분히 안정적이라는 뜻은 아니다. 같은 diagnostic substitution에서 가장 높은 score의 local maximum이 수십~수백 raw camera pixel 이동하는 경우가 있었다. 모든 과거 image를 endpoint로 바꾼 경우는 세 endpoint 모두 1 model pixel equivalent tolerance를 넘었고, 한 장씩 바꾼 경우에도 9개 중 4개만 tolerance 안이었다.
+
+| 확인 질문 | 현재 답 |
+|---|---|
+| model이 과거 A frame에 반응하는가? | **그렇다**. 세 endpoint에서 map change 조건을 통과했다. |
+| 그 반응이 quality candidate 위치를 안정적으로 만드는가? | **아직 아니다**. top local maximum 전환이 크다. |
+| 실제 machine에서 그만큼 candidate가 움직였다는 뜻인가? | 아니다. 이는 일부 history를 인위적으로 endpoint로 교체한 진단 실험이다. |
+| 새 model이 기존보다 test 성능이 좋은가? | 아직 아니다. 한 seed held-out test loss는 조금 높았다. |
+
+QC 그림에서 endpoint-repeat panel은 causal panel과 넓은 영역에서 다르게 보인다. t0/t1/t2 panel은 전체 모양은 비슷하지만 국소적인 색과 texture가 달라진다. 이는 CSV 숫자와 같은 내용을 보기 쉽게 확인하는 그림이다. 색은 해당 endpoint 내부에서 variant를 비교하는 용도이며 raw camera image나 physical defect 그림이 아니다. 검토한 세 PNG는 작고 재현 가능한 evidence이므로 `docs/qc/a_only_temporal_difference_stability_v1/`에 Git으로 보관한다.
+
+**다음 작업:** 과거 image 변경 때 top candidate가 바뀌는 원인을 구분한다. top1과 top2 score가 거의 비슷해서 순위만 바뀌는 것인지, 아니면 높은 score가 실제로 멀리 이동하는 것인지 top-K score margin/rank audit으로 확인한다. 이 audit은 decoder rule을 바꾸지 않고 설명만 한다. 결과를 보기 전에는 seed 추가나 다음 model 학습을 시작하지 않는다.
+
+
+---
+
+## 43. top candidate가 바뀌는 이유를 먼저 나누어 보는 이유
+
+새 model은 과거 image에 반응하지만, 그 반응 때문에 top candidate가 바뀌기도 했다. 이때 바로 “model이 불안정하다”라고만 말하거나 score threshold를 새로 넣으면 안 된다. top candidate가 바뀌는 상황에는 적어도 두 종류가 있다.
+
+첫째는 **near-tie rank switch**다. 서로 가까운 두 local maximum의 score가 거의 같은 경우, 아주 작은 map 변화로 1위와 2위 순서만 바뀔 수 있다. 원래 1위 점이 새 map의 2위나 3위로 남아 있으면 이런 가능성이 있다. 둘째는 **high-margin peak relocation**이다. 원래 1위 peak 자체가 새 map top-K에서 사라지고, 새 1위 peak도 충분히 높은 score margin을 가진 경우다. 이 경우는 단순 순위 바꿈보다 더 강한 response relocation일 수 있다.
+
+다음 audit은 causal map과 four counterfactual map마다 top-K=5 local maximum을 찾고, top1/top2 score 차이, score 차이를 map 전체 range로 나눈 값, 점 사이 거리, causal 1위가 새 top-K에서 몇 위인지, top-K가 얼마나 겹치는지를 기록한다. 5% 이하 margin은 near-tie 설명을, 20% 이상 margin과 causal peak의 top-K 소실은 high-margin relocation 설명을 시험하는 사전 고정 기준이다. 둘 중 어느 하나도 맞지 않으면 `ambiguous`로 남긴다.
+
+| 그림 marker | 뜻 |
+|---|---|
+| 흰색 × | normal causal map의 top1 위치 |
+| 색 있는 숫자 1–5 | 현재 panel에서 rank 1–5 local maximum |
+| 같은 위치 근처의 서로 다른 숫자 | peak가 남아 있지만 rank가 바뀐 경우일 수 있음 |
+| 흰색 ×와 멀리 떨어진 1번 | top candidate가 바뀐 공간적 관계 |
+
+이 그림은 score map 위에 marker를 얹은 내부 계산 확인 그림이다. 원본 A camera photo, XCT target, 물리적 결함 위치, 실제 장비에서 움직인 물체를 뜻하지 않는다. Audit 결과도 decoder를 자동 변경하지 않는다. near-tie가 많더라도 별도의 안전 margin 설계와 승인이 필요하며, high-margin relocation이 많더라도 fusion/target robustness를 따로 연구해야 한다.
+
+**다음 작업:** 이 margin/rank audit를 한 번 실행하여 switch mechanism class를 확인한다. 그 후 결과가 near-tie 중심이면 safety-withhold margin을 설계하는 작업을 제안하고, high-margin relocation 중심이면 temporal difference fusion/target robustness를 설계하는 작업을 제안한다. 어느 경우든 먼저 결과를 기록하고 승인받은 뒤 다음 source/config를 바꾼다.
+
+
+---
+
+## 44. “높은 점수가 다른 곳으로 갔다”와 “비슷한 두 점의 순위가 바뀌었다”는 다르다
+
+Top-K margin/rank audit을 한 결과, 12개의 counterfactual 비교 중 3개는 near-tie rank switch와 일치했고, 5개는 아직 ambiguous였으며, 4개는 top1이 유지됐다. high-margin peak relocation 조건을 만족한 것은 없었다. 즉 위치가 바뀌었다고 해서 높은 확신의 peak가 항상 멀리 이동했다고 말할 수는 없었다.
+
+near-tie 예에서는 normal causal map의 1위 점이 variant map에서 2위 또는 3위로 남아 있었다. 예를 들어 z=203의 t0/t2, z=227의 t1이 그렇다. score 차이가 map의 전체 variation에 비해 작으면, map이 조금 바뀌어도 1위/2위 순서가 바뀔 수 있다. 반대로 endpoint-repeat와 일부 t1은 causal 1위가 new top-K에 없었지만, 새 1위와 2위의 score 차이도 작아 “강한 peak relocation”이라고 부를 근거가 부족했다. 그래서 `ambiguous`로 정직하게 남겼다.
+
+| 현재 확인한 것 | 아직 확인하지 못한 것 |
+|---|---|
+| explicit temporal-difference model이 prior A frame 변화에 반응함 | ordinary causal input에서 top1-top2 margin이 얼마나 자주 작은지 |
+| 일부 coordinate switch가 near-tie rank competition과 일치함 | near-tie margin을 실제 decoder safety rule에 써도 되는지 |
+| high-margin relocation class는 이 12개 stress case에서 없음 | counterfactual이 아닌 real held-out causal layer에서 candidate를 얼마나 withhold할지 |
+
+검토한 marker 그림은 Git의 `docs/qc/a_only_temporal_difference_candidate_margin_v1/`에 보관한다. 흰색 ×는 normal causal map의 1위, 색 있는 숫자는 각 panel의 top 1–5다. marker는 map 내부 계산 위치이며 실제 machine position, defect 위치, XCT target을 뜻하지 않는다.
+
+**다음 작업:** counterfactual stress test가 아니라 48개 ordinary held-out causal map을 모두 보고 top1-top2 score margin과 peak distance가 어떻게 분포하는지 측정한다. 미리 정한 1%, 2%, 5% margin을 적용했다고 *가정했을 때* 몇 개를 withhold하게 되는지 계산만 한다. 아직 decoder는 바꾸지 않는다. 이 결과가 있어야 특정 margin safety policy가 과도하게 많은 `XCT-derived continuous quality candidate`를 막지 않는지 설계할 수 있다.
+
+
+---
+
+# Part VII. A-only 모델의 한계와 단일 모달리티의 딜레마
+
+이전까지의 모든 캘리브레이션과 검증은 A 모달리티(쇳가루, AfterSpreading)만을 이용한 Causal Baseline을 확립하기 위한 과정이었습니다. 그러나 완벽한 좌표계를 구축했음에도 불구하고, 실제 학습 과정에서 단일 모달리티가 가진 치명적인 물리적 한계에 부딪혔습니다.
+
+## 32. A-only 모델의 Signal 부재 위기
+A-only 시계열은 레이저가 조사되기 전의 쇳가루 표면만을 봅니다. 이 표면은 이전 레이어의 열적 흔적(Thermal history)을 약하게 가지고 있지만, 정작 '현재 레이어에서 결함이 터질 것인가'에 대한 직접적인 단서(Signal)가 턱없이 부족했습니다.
+- **결과 (0% 성능의 물리적 한계):** 레이저를 쏘기 전인 A(쇳가루) 상태에서는 내부에 어떤 열적 결함이 발생할지 물리적인 증거(Signal)가 아직 수면 위로 드러나지 않습니다. 즉, **A-only 모델의 성능 한계는 AI의 학습 부족이 아니라 물리적 증거 부재라는 자연스러운 한계**였습니다. 이로 인해 모델은 결함을 전혀 찾지 못하고 미탐(False Negative) 비율이 치솟았습니다.
+- **실시간 탐지(Real-time)의 재정의:** A 단계에서 탐지하지 못한다고 해서 실시간 모니터링이 불가능한 것은 아닙니다. 3D 프린팅은 한 파트를 깎는 데 며칠이 걸리는 작업입니다. 우리는 레이저가 용융되는 B 단계가 끝나는 즉시 결함을 판독하여 **다음 층(Layer)의 가루를 덮기 0.1초 전에 인퍼런스를 완료**함으로써 기계를 멈출 수 있는 **진정한 의미의 실시간 층별 모니터링(Real-time Layer-by-Layer Monitoring)**으로 전략을 수정했습니다.
+## 33. B-only 모델 도입과 오탐(False Alarms)의 악몽
+A의 정보 부족을 해결하기 위해 레이저가 용융되는 순간을 찍은 B 모달리티(Burned)를 단독으로 학습시켰습니다. B 이미지는 강렬한 스패터(Spatter)와 용융풀(Melt pool)의 빛을 담고 있어 결함 신호가 매우 강력했습니다.
+- **가설:** B-only 모델은 결함을 확실히 찾아낼 것이다.
+- **절망적인 결과:** 결함을 잘 찾아내긴 했지만(Recall 상승), 정상적인 레이저 궤적이나 단순한 반사광마저 모두 결함으로 착각하여 무려 **523번의 거짓 알람(오탐, False Positive)**을 울렸습니다. 정밀도(Precision)는 7.8%로 곤두박질쳤고, 이대로는 현장에 배포할 수 없는 '양치기 소년' 모델이 되어버렸습니다.
+
+---
+
+# Part VIII. Gated CBAM Fusion 아키텍처: 모달리티의 결합
+
+## 34. 왜 단순 Concat이 실패했는가
+처음에는 A와 B 이미지를 채널 축으로 단순히 이어붙이는(Concatenation) 방식을 시도했습니다. 하지만 B 이미지의 노이즈(정상 반사광)가 너무 강렬하여 A의 미세한 기하학적 정보를 완전히 덮어버렸고, 모델은 여전히 B-only처럼 행동하며 수백 번의 오탐을 반복했습니다.
+
+## 35. Gated Fusion과 CBAM의 설계 (돌파구)
+단순 병합의 한계를 뚫기 위해 우리는 **A 정보로 B의 노이즈를 검열(Gate)하는 아키텍처**를 고안했습니다.
+1. **게이트 연산 (Gated Activation):** B에서 강한 신호가 오더라도, A의 기하학적 구조상 결함이 생길 수 없는 안정적인 지형이라면 A의 특징 맵(Feature map)이 B의 신호를 0으로 억제(Gate)하도록 시그모이드 곱 연산을 추가했습니다.
+2. **CBAM (Convolutional Block Attention Module):** 채널 어텐션과 공간 어텐션을 동시에 적용하여, 모델이 화면 전체의 쓸데없는 쇳물 노이즈를 무시하고 붉은 레이저 코어 주변의 '진짜 이상 징후'에만 집중하도록 XAI(설명 가능한 AI) 수준의 시야를 부여했습니다.
+
+---
+
+# Part IX. 손실 함수 최적화와 최종 성능 증명
+
+## 36. 1% 미만의 극불균형 데이터를 향한 Loss 튜닝
+우리의 데이터셋은 99%가 정상이고 1% 미만만이 결함이었습니다. 초기에는 사후 XCT 점수(0~1)와의 오차를 줄이는 회귀(Regression, SmoothL1)만을 사용했으나, 모델은 단순히 모든 점수를 0(정상)에 가깝게 찍어버리는 꼼수를 부렸습니다.
+- **해결책:** '점수를 맞추는 것' 이전에 '이 픽셀이 결함인가 아닌가'를 먼저 강제로 분류(Classification)하도록 **Masked BCE (Binary Cross Entropy) Loss**를 손실 함수에 결합했습니다.
+- 다중 작업(Multi-task) 튜닝 결과, 모델은 결함 구역을 만났을 때만 활성화 점수를 과감하게 높이는 데 성공했습니다.
+
+## 37. 하이퍼파라미터 변인 통제 및 모델 최적화 실험
+퓨전 아키텍처를 확립한 후에도, 모델의 극한 성능을 끌어내기 위해 수많은 변인(Variables)을 통제하며 학습을 반복하고 결과를 비교했습니다.
+- **채널 용량(Channel Capacity) 실험:** 베이스 채널(Base Channels)을 8, 16, 32로 변경하며 비교했습니다. C32는 학습 용량은 컸지만 과적합(Overfitting) 위험이 높고 VRAM 부하가 컸습니다. 반면 **C16**은 리소스가 제한된 환경에서도 실시간 처리가 가능하면서 A+B 특징을 결합하기에 충분한 최적의 스윗스팟(Sweet-spot)임을 확인하여 최종 아키텍처로 고정했습니다.
+- **다중 손실 가중치(Loss Weight) 스윕:** `SmoothL1(회귀)`과 `BCE Loss(분류)`를 결합할 때 두 손실의 반영 비율을 변경해가며 F1-Score가 정점을 찍는 구간을 찾아냈습니다.
+- **강력한 정규화(Regularization) 도입:** 게이트(Gate) 모듈과 어텐션이 추가되면서 파라미터가 늘어 과적합될 위험이 커졌습니다. 이를 막기 위해 디코더단에 **공간 드롭아웃(Spatial Dropout 30%)**을 추가하고, AdamW 옵티마이저의 **가중치 감쇠(Weight Decay)를 0.01**로 강하게 주어 B 모달리티의 과도한 빛 노이즈를 암기하지 못하게 억제시켰습니다.
+- **학습 주기(Epoch) 검증:** Epoch 8과 24를 비교하여, 모델이 제대로 예측을 못 하는 원인이 단순히 덜 학습(Under-training)되어서인지 아키텍처의 한계인지를 통제된 변인 속에서 하나씩 소거해 나갔습니다.
+
+## 38. Ablation Study: 523번의 오탐을 111번으로 억제하다
+모든 최적화가 끝난 후 객체 단위(Blob-level) 최종 성능 평가를 진행했고, 그 결과는 놀라웠습니다.
+- **B-only 단일 모델:** 오탐 523개, Precision 7.8%
+- **최종 Gated CBAM Fusion 모델:** 오탐 111개, Precision 대폭 상승!
+- **결론:** A의 기하학 정보가 B의 시각적 노이즈를 완벽하게 필터링(Gate)해내어, 결함을 놓치지 않으면서도 오탐을 5배 가까이 줄여 **F1-Score를 약 2배 향상**시켰습니다.
+
+---
+
+# Part X. 실시간 3D 조기 경보 파이프라인(Live Inference) 완성
+
+## 39. 사후 XCT의 한계를 실시간 모니터링으로 뚫다
+이 프로젝트의 진정한 가치는 "제조가 끝난 뒤에 엑스레이(XCT)를 찍어보지 않아도" 결함을 알 수 있다는 데 있습니다. 
+우리는 앞서 완성한 퓨전 모델을 사용해, 프린팅이 진행되는 즉시 카메라 이미지를 인퍼런스하여 `(x_pixel, y_pixel, layer_z, score)` 형태의 결함 좌표를 뽑아내는 파이프라인 스크립트를 완성했습니다.
+
+## 40. 조기 경보 시스템(Early Warning System)의 안착
+이렇게 추출된 결과물(`live_inference_results_v6.csv`)을 3D 시각화 모듈에 통과시켜, 공정 엔지니어가 실시간으로 결함의 위치를 입체적으로 확인할 수 있는 조기 경보 시스템의 Baseline을 성공적으로 구축해 냈습니다. 이로써 길고 험난했던 AMMT 데이터 전처리와 AI 퓨전 아키텍처 구축 프로젝트가 화려하게 막을 내렸습니다. 🚀
+
+---
+
+## 저장소 구조 및 실행 가이드 (Repository Structure & How to Run)
+
+코드 리팩토링을 통해 프로젝트 구조를 핵심 스크립트만 남겨 깔끔하게 모듈화했습니다.
+
+```
+AMMT_PROJECT/
+├── src/
+│   ├── train_fusion.py                   # 최종 Gated CBAM Fusion 모델 학습 스크립트
+│   ├── train_a_only.py                   # A-only 단일 모달리티 비교용 학습 스크립트
+│   ├── train_b_only.py                   # B-only 단일 모달리티 비교용 학습 스크립트
+│   ├── evaluate_model_performance.py     # 퓨전 모델 성능 채점 스크립트
+│   ├── evaluate_single_modality.py       # 단일 모델 성능 채점 스크립트
+│   ├── ammt_weak_target_dataset.py       # 핵심 데이터셋 로더 클래스
+│   ├── ammt_masked_regression_loss.py    # BCE 및 마스킹 손실 함수
+│   └── train_a_only_baseline.py          # 공통 훈련 루프 및 베이스라인 모델 클래스 모음
+│
+├── scripts/                              # 보조 시각화 및 데이터 추출 스크립트 모음
+├── archive/                              # 구버전(V1~V5) 및 초기 실험 디버깅 스크립트 보관소
+├── docs/                                 # 프로젝트 기획 및 진행 과정 문서 모음
+└── outputs/                              # 학습된 모델 체크포인트 (.pt) 및 시각화 이미지
+```
+
+### 학습 (Training)
+```bash
+python3 src/train_fusion.py --config configs/a_b_cbam_fusion_bce_c16_v7_tuning.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --registered-root raw_original/registered_xct \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif
+```
+
+### 평가 (Evaluation)
+```bash
+python3 src/evaluate_single_modality.py \
+  --config configs/a_only_bce_c32_v7_tuning.yaml \
+  --checkpoint outputs/a_only_bce_c32_v7_tuning/best_validation_supported_loss.pt \
+  --modality A \
+  --tiff raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
+```

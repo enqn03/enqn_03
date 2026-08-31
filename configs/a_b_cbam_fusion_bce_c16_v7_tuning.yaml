@@ -1,0 +1,89 @@
+version: 1
+status: a_b_gated_fusion_regularized_c16_v7_tuning
+purpose: >
+  A+B Gated Fusion model combining the AfterSpreading (A) and Burned (B) stage images.
+  This model uses paired independent encoders for A and B to extract temporal-difference
+  features, then uses a CNN-based Spatio-channel Gate to selectively weight and combine
+  the features before passing them through a single unified decoder to predict the
+  continuous XCT-derived quality candidate.
+comparison:
+  reference_config: configs/b_only_temporal_difference_v1.yaml
+  only_changed_variable: fusion of A and B features
+  unchanged_variables: >
+    Causal K=4 sequence, train-only normalization, 256x256 ROI resize,
+    sparse XCT weak target, temporal difference architecture pattern, decoder rules.
+data:
+  stage: fusion
+  sequence_length_k: 4
+  input_channels: 6
+  model_resolution: [256, 256]
+  batch_size: 2
+  num_workers: 0
+  pin_memory: false
+model:
+  name: a_b_gated_fusion_regularized_causal_temporal_difference_candidate_net
+  base_channels: 16
+  temporal_fusion: paired_encoders_with_gated_cnn_fusion
+  temporal_equation: >
+    diff_a = encoded_endpoint_a - prior_mean_a;
+    diff_b = encoded_endpoint_b - prior_mean_b;
+    fused_a = fusion_a([encoded_endpoint_a, difference_encoder_a(diff_a)]);
+    fused_b = fusion_b([encoded_endpoint_b, difference_encoder_b(diff_b)]);
+    gate = sigmoid(gate_conv(concat(fused_a, fused_b)));
+    gated_ab = concat(fused_a, fused_b) * gate;
+    output = decoder(gated_ab);
+  causal_policy: >
+    The current endpoint and only preceding K-1 frames from both A and B are used. No
+    future layer, XCT target, support mask, or geometry enters model input.
+  structural_change_rationale: >
+    Paired encoders are used because A (powder) and B (melt pool) have entirely
+    different photometric distributions. A CNN gate computes spatial-channel attention
+    to selectively suppress noise from A when B's signal is strong, avoiding interference.
+  output_activation: sigmoid
+  output_name: candidate_response_prediction
+loss:
+  config: configs/masked_regression_loss_v1.yaml
+  target_name: xct_derived_continuous_quality_response
+  response_direction: unresolved
+optimizer:
+  name: AdamW
+  learning_rate: 0.0001
+  weight_decay: 0.05
+  gradient_clip_norm: 1.0
+training:
+  epochs: 30
+  seed: 20260827
+  device: auto
+  select_best_by: validation_supported_pixel_mean_smooth_l1
+  skip_optimizer_step_when_batch_has_no_support: true
+evaluation:
+  top_k_candidates_per_endpoint: 5
+  local_maximum_kernel_size: 7
+  spatial_plateau_range_atol: 0.000001
+  top_score_tie_atol: 0.000001
+  top_score_tie_fraction_max: 0.001
+  temporal_map_mae_atol: 0.000001
+  temporal_map_max_abs_atol: 0.000001
+  provisional_part_geometry_gate:
+    enabled: false
+    policy: filter_local_maxima_to_known_part_rectangles
+    status: disabled_for_raw_camera_controlled_comparison
+  spatial_plateau_policy: >
+    Keep flat-map, top-score-tie, temporal-invariance, and local-maximum safety
+    gates. No XCT support mask or provisional machine geometry is decoder input.
+  score_semantics: >
+    Sigmoid-scaled XCT-derived continuous quality response from fused A+B features.
+storage:
+  output_directory: outputs/a_b_cbam_fusion_bce_c16_v7_tuning
+  overwrite_output_directory: false
+  checkpoint_name: best_validation_supported_loss.pt
+  history_name: training_history.json
+  test_metrics_name: test_metrics.json
+  test_candidates_name: test_coordinate_candidates.json
+  persist_dense_heatmaps: false
+provenance:
+  causal_manifest: manifests/causal_sequence_manifest.csv
+  normalization_config: configs/normalization_v1.yaml
+  calibration_config: configs/calibration_v1.yaml
+  weak_target_config: configs/weak_target_v1.yaml
+  loss_config: configs/masked_regression_loss_v1.yaml
