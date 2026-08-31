@@ -1,0 +1,28 @@
+version: 1
+status: baseline_ready
+purpose: >
+  Continuous regression from A/B candidate-map predictions to the XCT-derived
+  weak response only where sparse support exists. This is not binary defect
+  classification and does not define an anomaly direction.
+objective:
+  name: support_masked_bce
+  pos_weight: 100.0
+  reduction: global_supported_pixel_mean
+inputs:
+  prediction_key: candidate_response_prediction
+  target_key: weak_response
+  support_mask_key: weak_support_mask
+shape_contract: [batch, 1, height, width]
+support_policy:
+  supervised_when: weak_support_mask > 0
+  unsupported_pixels: unknown_excluded_from_loss
+  endpoint_without_support: zero_target_loss
+  batch_without_support: zero_target_loss
+response_semantics:
+  source: xct_5x5x5
+  direction: unresolved
+  binary_defect_threshold: null
+  invert: false
+provenance:
+  weak_target_config: configs/weak_target_v1.yaml
+  target_scaling: train_p01_p99
