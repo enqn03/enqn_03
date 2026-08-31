@@ -1,5 +1,5 @@
 version: 1
-status: provisional_continuous_response
+status: active
 source:
   calibration_config: configs/calibration_v1.yaml
   registered_xct_coordinate_columns_1_based: [3, 4]
@@ -12,9 +12,9 @@ response:
     train_p01: 0.40070
     train_p99: 0.58533
     clip_to_unit_interval: true
-  direction: unresolved
+  direction: high_score_is_defect
   invert: false
-  binary_defect_threshold: null
+  binary_defect_threshold: 0.85
 rasterization:
   model_resolution: [256, 256]
   gaussian_sigma_model_px: 2

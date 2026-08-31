@@ -1,8 +1,8 @@
 version: 1
-status: provisional
+status: validated
 purpose: >
   Machine XY to raw layer-camera pixel projection for support-aware sparse XCT
-  target audits. This is not a final metrology calibration or a defect-label map.
+  target audits. Visually validated against layer-125 geometry (rank 2, mirror_rotate_270).
 control_points:
   schema: screen_corners_v2_orientation_agnostic
   path: processed/calibration/screen_corner_controls_v2.json

@@ -451,3 +451,14 @@ This weakens the interpretation that observed counterfactual coordinate changes 
 The three wide top-K marker overlays were inspected in every ordered overlapping original-resolution tile and versioned only after review under `docs/qc/a_only_temporal_difference_candidate_margin_v1/`. White `×` marks causal top1; colored numbered markers show current-panel top-K rank. The endpoint-repeat panels visibly place causal × away from the variant top-K clusters; z203 t0/t2 and z227 t1 visibly retain causal top1 at a lower rank. The images remain compact display-only diagnostics, not raw camera imagery, dense outputs, XCT targets, quality truth, anomaly probabilities, or physical coordinates.
 
 **Next task:** before proposing a decoder margin-withhold policy, run a separately approved read-only causal-only margin sensitivity sweep across all 48 held-out test endpoints. It must report the distribution of existing top1-top2 normalized margins, peak separations, and *hypothetical* withhold counts for predeclared 1%, 2%, and 5% thresholds without changing the decoder, retraining, using XCT support/geometry, or selecting machine coordinates. The sweep will determine whether a safety policy can be designed from ordinary causal predictions rather than from counterfactual stress cases.
+
+##   : A-BBBBBBB-AAAAAAA+B fusion onlyonly        branch
+
+set +H   A-only decoder B-only decoder ,  layer  BBBBBBB a  A+B fusion decoder             branch .  A-only causal baseline explicit temporal-      cccccccandidate .
+
+#set +H, B-   layer  candidate, A+B  fusion      candidate .            CNN score-map decoder .  A/B/fusion decoder  task  multi-head ,  stage CNN prediction path . Multi-head attention, Transformer, YOLO, class/bbox   
+set +H   .
+
+set +H .         .DS_Store .git .gitignore AMMT_프로젝트를_처음부터_이해하기.md README.md ammt_shared_ab_model_skeleton.py ammt_tiff_pytorch_dataset_memmap.py audit_ab_pairs.py audit_layer125_orientation_overlay.py audit_layer_camera.py configs docs manifests output outputs processed raw_original src test_dataloader.py test_dataloader_2.py test_dataloader_3.py 기획서.md 실행� raw-camera `(x_pixel,y_pixel,layer_z,score)`��score �드.md defect probability  프로젝트과정.md XCT-derived continuous quality candidate.  primary output
+
+set +H , B-only/A+B     stage .DS_Store .git .gitignore AMMT_프로젝트를_처음부터_이해하기.md README.md ammt_shared_ab_model_skeleton.py ammt_tiff_pytorch_dataset_memmap.py audit_ab_pairs.py audit_layer125_orientation_overlay.py audit_layer_camera.py configs docs manifests output outputs processed raw_original src test_dataloader.py test_dataloader_2.py test_dataloader_3.py 기획서..행�  `�이드.md.md`        branch  프로젝트과정.md      .     calibration hold provisional machine-coordinate  .         
