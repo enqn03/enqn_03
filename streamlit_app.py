@@ -132,6 +132,8 @@ with tab4:
     csv_path = "outputs/live_stream_results.csv"
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path)
+        # tensor(203) 같은 문자열이 섞여있을 수 있으므로 숫자만 추출하여 정수형 변환
+        df['layer_z'] = df['layer_z'].astype(str).str.extract(r'(\d+)').astype(int)
         
         col1, col2 = st.columns([2, 1])
         
