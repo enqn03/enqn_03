@@ -276,6 +276,11 @@ with tab_analysis:
         cbam_path = "outputs/cbam_attention_layer242.png"
         if os.path.exists(cbam_path):
             st.image(Image.open(cbam_path), caption="Layer 242의 CBAM Attention Heatmap", use_container_width=True)
+            
+        cbam_comp_path = "outputs/cbam_fusion_comparison.png"
+        if os.path.exists(cbam_comp_path):
+            st.image(Image.open(cbam_comp_path), caption="CBAM Gate 도입 전후 노이즈 차단 및 오탐 감소 효과", use_container_width=True)
+            
         st.markdown("""
         단순한 모델 결합의 한계
         초기 실험에서는 파우더 도포 이미지(A)와 레이저 조사 이미지(B)를 단순히 합쳐서 모델에 넣었습니다. 하지만 이럴 경우, 두 이미지 간의 의미 없는 배경 노이즈까지 함께 섞여버리면서 오히려 단일 모델보다 성능이 떨어지는 간섭 현상이 발생했습니다.
@@ -323,11 +328,31 @@ with tab_analysis:
             st.info(" 다중 시드 성능 통계 검증 앙상블 학습이 현재 백그라운드에서 진행 중입니다. (에포크가 완료되는 대로 실시간 차트가 업데이트됩니다.)")
             
         st.markdown("""
-        "퓨전 모델이 우연히 운 좋게(Lucky Seed) 성능이 잘 나온 것은 아닐까?" 라는 비판적 의문을 해소하기 위한 실험입니다.
+        "퓨전 모델이 우연히 운 좋게 성능이 잘 나온 것은 아닐까?" 라는 비판적 의문을 해소하기 위한 실험입니다.
         
         - **초기 가중치 통제:** 무작위 시드를 42, 100, 2026 등으로 완전히 다르게 부여하여, 모델의 초기 가중치와 배치 셔플링 순서를 초기화한 뒤 처음부터 재학습시켰습니다.
         - **통계적 유의성 확보:** 수차례의 독립적인 재학습에도 불구하고 A+B Fusion 모델의 F1-Score는 흔들림(분산)이 거의 없이 타 모델들의 한계 성능을 가볍게 상회합니다. 이는 우리의 Gated CBAM 아키텍처가 요행이 아닌, 스패터 노이즈를 스스로 차단하는 **구조적인 필터링 능력**을 갖추고 있음을 통계학적으로 강력히 입증합니다.
         """)
+
+    st.divider()
+    
+    col5, col6 = st.columns(2)
+    with col5:
+        st.subheader("5. 시계열 길이(K) 최적화 트레이드오프")
+        k_path = "outputs/k_history_tradeoff.png"
+        if os.path.exists(k_path):
+            st.image(Image.open(k_path), caption="시계열 길이(K)에 따른 성능과 메모리 리소스 트레이드오프", use_container_width=True)
+        st.markdown("""
+        모델이 과거 레이어를 얼마나 길게 참조해야 하는지(K)에 대한 개념적 성능 곡선입니다.
+        
+        - **K가 너무 짧을 때 (K=1, 2):** 단발성 노이즈와 실제 결함을 일으키는 열적 누적 흐름을 구분하기 어렵습니다.
+        - **K가 너무 길 때 (K=8):** 무관한 먼 과거의 정보까지 섞이면서 오히려 노이즈가 증가해 성능이 저하됩니다. 또한 6채널(A+B) 데이터를 메모리에 대량으로 올리면 **16GB VRAM을 초과하는 메모리 고갈(OOM)** 위험이 급증합니다.
+        - **최적의 스위트 스팟 (K=4):** 메모리 효율성을 안전하게 유지하면서도, 결함 발생의 구조적 추세를 뚜렷하게 인지할 수 있는 가장 이상적인 시계열 길이입니다.
+        """)
+        
+    with col6:
+        # 짝수 레이아웃을 맞추기 위해 비워두거나 추가 분석을 넣을 수 있음
+        pass
 
 import time
 
