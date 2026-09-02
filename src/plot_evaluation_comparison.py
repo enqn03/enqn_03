@@ -3,33 +3,33 @@ import numpy as np
 import os
 from pathlib import Path
 
-# 한글 폰트 설정 (Mac OS)
-plt.rcParams['font.family'] = 'AppleGothic'
-plt.rcParams['axes.unicode_minus'] = False
-
 def main():
-    labels = ['Recall (결함 발견율)', 'Precision (정밀도)']
+    # Data
+    labels = ['Pixel-level (0mm)', 'Blob-level (2mm)']
     
-    # 평가 방식별 성능 지표 (%)
-    pixel_metrics = [4.5, 2.1]
-    blob_metrics = [28.3, 10.2]
+    recall = [4.5, 28.3]
+    precision = [2.1, 10.2]
     
     x = np.arange(len(labels))
     width = 0.35
     
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    rects1 = ax.bar(x - width/2, pixel_metrics, width, label='픽셀 단위 (0mm 허용)', color='#ff9999', edgecolor='black')
-    rects2 = ax.bar(x + width/2, blob_metrics, width, label='객체 단위 (2mm 허용)', color='#66b3ff', edgecolor='black')
+    # Use standard colors #1f77b4 (blue) and #ff7f0e (orange) to match other plots roughly
+    rects1 = ax.bar(x - width/2, recall, width, label='Recall (%)', color='#1f77b4', edgecolor='black')
+    rects2 = ax.bar(x + width/2, precision, width, label='Precision (%)', color='#ff7f0e', edgecolor='black')
     
-    ax.set_ylabel('성능 (%)', fontsize=12)
-    ax.set_title('평가 방식(Tolerance) 차이에 따른 성능 변화', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Performance Change by Evaluation Tolerance', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=12)
+    ax.set_xticklabels(labels, fontsize=12, fontweight='bold')
     ax.legend(fontsize=12)
     ax.set_ylim(0, 35)
     
-    # 값 표시
+    # Add grid
+    ax.yaxis.grid(True, linestyle='--', alpha=0.7)
+    
+    # Add labels on top of bars
     def autolabel(rects):
         for rect in rects:
             height = rect.get_height()
