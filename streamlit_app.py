@@ -222,16 +222,19 @@ with tab4:
                 },
                 hover_data=['primary_cause']
             )
-            fig.update_layout(scene=dict(
-                xaxis_title='Machine X',
-                yaxis_title='Machine Y',
-                zaxis_title='Layer',
-                xaxis=dict(range=[-20, 20]),
-                yaxis=dict(range=[-20, 20]),
-                zaxis=dict(range=[0, 300]),
-                aspectmode='manual',
-                aspectratio=dict(x=1, y=1, z=2.5) # Z축 간격을 늘려 층간 구분을 명확히 함
-            ))
+            fig.update_layout(
+                scene=dict(
+                    xaxis_title='Machine X',
+                    yaxis_title='Machine Y',
+                    zaxis_title='Layer',
+                    xaxis=dict(range=[-20, 20]),
+                    yaxis=dict(range=[-20, 20]),
+                    zaxis=dict(range=[203, 250]),
+                    aspectmode='manual',
+                    aspectratio=dict(x=1, y=1, z=4)
+                ),
+                uirevision='constant' # 사용자가 마우스로 조작한 카메라 시점(회전, 줌)을 업데이트 후에도 유지
+            )
             # 키를 제거하여 Plotly가 업데이트 시 화면 전체를 Unmount하지 않고 자연스럽게 데이터를 교체하도록 함
             st.plotly_chart(fig, use_container_width=True)
             
