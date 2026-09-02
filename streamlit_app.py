@@ -185,18 +185,32 @@ with tab_arch:
         with open(arch_file, "r", encoding="utf-8") as f:
             content = f.read()
         
-        split_keyword = "#### 3. 가우시안 타겟 릴렉세이션"
-        if split_keyword in content:
-            part1, part2 = content.split(split_keyword, 1)
+        split_keyword_1 = "#### 2. 정규화 및 과적합 방지"
+        split_keyword_2 = "#### 3. 가우시안 타겟 릴렉세이션"
+        
+        if split_keyword_1 in content and split_keyword_2 in content:
+            part1, temp = content.split(split_keyword_1, 1)
+            part2, part3 = temp.split(split_keyword_2, 1)
+            
             st.markdown(part1)
             
+            # K=4 차트 삽입
+            k_path = "outputs/k_history_tradeoff.png"
+            if os.path.exists(k_path):
+                c1, c2, c3 = st.columns([1, 2, 1])
+                with c2:
+                    st.image(Image.open(k_path), caption="Performance vs. Memory Trade-off by K", use_container_width=True)
+                    
+            st.markdown(split_keyword_1 + part2)
+            
+            # 하이퍼파라미터 손실 차트 삽입
             tune_path = "outputs/hyperparameter_tuning_loss.png"
             if os.path.exists(tune_path):
-                c1, c2, c3 = st.columns([1, 2, 1]) # 크기를 줄여 중앙 배치
+                c1, c2, c3 = st.columns([1, 2, 1])
                 with c2:
                     st.image(Image.open(tune_path), caption="하이퍼파라미터 튜닝 전후 검증 손실 비교", use_container_width=True)
                     
-            st.markdown(split_keyword + part2)
+            st.markdown(split_keyword_2 + part3)
         else:
             st.markdown(content)
             
@@ -335,24 +349,6 @@ with tab_analysis:
         """)
 
     st.divider()
-    
-    col5, col6 = st.columns(2)
-    with col5:
-        st.subheader("5. 시계열 길이(K) 최적화 트레이드오프")
-        k_path = "outputs/k_history_tradeoff.png"
-        if os.path.exists(k_path):
-            st.image(Image.open(k_path), caption="시계열 길이(K)에 따른 성능과 메모리 리소스 트레이드오프", use_container_width=True)
-        st.markdown("""
-        모델이 과거 레이어를 얼마나 길게 참조해야 하는지(K)에 대한 개념적 성능 곡선입니다.
-        
-        - **K가 너무 짧을 때 (K=1, 2):** 단발성 노이즈와 실제 결함을 일으키는 열적 누적 흐름을 구분하기 어렵습니다.
-        - **K가 너무 길 때 (K=8):** 무관한 먼 과거의 정보까지 섞이면서 오히려 노이즈가 증가해 성능이 저하됩니다. 또한 6채널(A+B) 데이터를 메모리에 대량으로 올리면 **16GB VRAM을 초과하는 메모리 고갈(OOM)** 위험이 급증합니다.
-        - **최적의 스위트 스팟 (K=4):** 메모리 효율성을 안전하게 유지하면서도, 결함 발생의 구조적 추세를 뚜렷하게 인지할 수 있는 가장 이상적인 시계열 길이입니다.
-        """)
-        
-    with col6:
-        # 짝수 레이아웃을 맞추기 위해 비워두거나 추가 분석을 넣을 수 있음
-        pass
 
 import time
 
