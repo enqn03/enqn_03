@@ -143,6 +143,33 @@ with tab_process:
     st.markdown("""
     - **결론:** 이러한 광범위한 광학/기하학적 검증을 거쳐, 우리는 의료용 볼륨 데이터(XCT)를 제조 현장의 2D 평면 이미지에 성공적으로 오차 범위 내에서 투영(Projection)할 수 있는 **정교한 Calibration Pipeline**을 확립했습니다. 이는 XCT 정답지를 모델 학습용 Weak Target으로 변환할 수 있는 핵심 기반이 되었습니다.
     """)
+    st.divider()
+    st.subheader("4. 약한 정답지(Weak Target) 생성 및 라벨링(Labeling)")
+    st.markdown("""
+    캘리브레이션이 끝난 후, XCT 3D 볼륨 데이터를 모델이 학습할 수 있는 2D 평면 정답지(Weak Target)로 변환하는 과정을 거쳤습니다.
+    
+    - **왜 상위/하위 샘플 라벨링이 필요했는가?:** 원본 XCT 데이터에는 명확한 **정상(Normal) / 결함(Defect) 이진 라벨(Label)이 존재하지 않았습니다.** 오직 연속적인 물리적 스캔 점수(Score)만이 존재했습니다. 따라서, 어설픈 중간 점수들을 배제하고 확실한 차이를 학습시키기 위해 XCT 점수 기준 최상위(하위) 샘플 패치들을 추출하여 분석(Target Semantics)하고, 이를 토대로 모델이 명확하게 결함의 특징을 학습할 수 있도록 라벨링 및 타겟을 세팅했습니다.
+    """)
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        if os.path.exists("processed/xct_target_audit/xct_target_qc.png"):
+            st.image(Image.open("processed/xct_target_audit/xct_target_qc.png"), caption="XCT 원본 Target 점수 분포 감사(Audit)", use_container_width=True)
+    with c2:
+        if os.path.exists("processed/weak_target_audit/weak_target_rasterization_qc.png"):
+            st.image(Image.open("processed/weak_target_audit/weak_target_rasterization_qc.png"), caption="2D 평면 래스터화(Rasterization) 검증", use_container_width=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        if os.path.exists("processed/target_semantics_v1/target_semantics_patches.png"):
+            st.image(Image.open("processed/target_semantics_v1/target_semantics_patches.png"), caption="상위/하위 점수 샘플 패치 추출 및 의미론(Semantics) 분석", use_container_width=True)
+    with c4:
+        if os.path.exists("processed/projected_xct_support/projected_support_qc.png"):
+            st.image(Image.open("processed/projected_xct_support/projected_support_qc.png"), caption="카메라 뷰에 투영(Projected)된 최종 지원(Support) 영역 검증", use_container_width=True)
+
+    st.markdown("""
+    - **결론:** 이 과정을 통해 모델은 "어떤 시각적 특징이 실제 사후 XCT에서도 치명적인 결함 점수를 나타내는가"를 인과적으로 맵핑하여 학습할 수 있는 튼튼한 Weak Supervision 환경을 갖추게 되었습니다.
+    """)
 
 # 탭: 모델 아키텍처 상세
 with tab_arch:
