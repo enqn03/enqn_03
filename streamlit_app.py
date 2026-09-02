@@ -316,7 +316,7 @@ with tab_analysis:
         
     with col4:
         st.subheader("4. 학습 안정성 입증 (다중 시드 분산 검증)")
-        seed_path = "processed/evaluation/multi_seed_boxplot.png"
+        seed_path = "outputs/multi_seed_boxplot.png"
         if os.path.exists(seed_path):
             st.image(Image.open(seed_path), caption="다중 무작위 시드 설정 간 성능 분산(Variance) 박스플롯", use_container_width=True)
         else:
