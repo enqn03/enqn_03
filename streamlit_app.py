@@ -61,10 +61,21 @@ with tab2:
     st.header("모델 성능 비교 (A-only vs B-only vs A+B Fusion)")
     st.markdown("""
     단일 공정 이미지만을 사용했을 때와 두 이미지를 융합했을 때의 성능 차이를 정량적으로 비교합니다.
-    - A-only 모델: 파우더 도포 이미지만 관찰 (조기 경보에는 유리하지만, 레이저 조사로 인한 최종 결함을 놓침)
-    - B-only 모델: 레이저 조사 이미지만 관찰 (최종 상태는 확인 가능하지만 도포 불량을 놓침)
-    - A+B Fusion 모델: 두 정보를 융합하여 테스트 손실을 획기적으로 낮추고 안정성을 확보!
+    테스트 손실(Test Loss)이 낮을수록 실제 결함 위치를 더 정밀하게 타격함을 의미합니다.
     """)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(label="A-only 모델 (파우더 도포)", value="0.0699", delta="가장 높음 (부정적)", delta_color="inverse")
+        st.markdown("조기 경보에는 유리하지만, 레이저 조사 후 발생하는 실제 결함을 놓침")
+    with col2:
+        st.metric(label="B-only 모델 (레이저 조사)", value="0.0546", delta="-0.0153 (A 대비)", delta_color="normal")
+        st.markdown("최종 상태는 확인 가능하지만, 도포 단계에서 발생한 초기 불량 징후를 놓침")
+    with col3:
+        st.metric(label="A+B Fusion 모델 (우리 모델)", value="0.0470", delta="-0.0076 (B 대비 최저)", delta_color="normal")
+        st.markdown("두 공정의 장점을 모두 살려 테스트 손실을 획기적으로 낮추고 예측 안정성 확보")
+        
+    st.divider()
     
     ablation_path = "outputs/ablation_bar_chart.png"
     if os.path.exists(ablation_path):
