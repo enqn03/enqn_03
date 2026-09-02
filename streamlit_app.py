@@ -17,8 +17,9 @@ st.markdown("[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연")
 st.divider()
 
 # 탭 생성
-tab1, tab_arch, tab2, tab3, tab4 = st.tabs([
+tab1, tab_process, tab_arch, tab2, tab3, tab4 = st.tabs([
     "프로젝트 소개", 
+    "프로젝트 과정",
     "모델 아키텍처 상세",
     "모델 성능 검증",
     "프로젝트 결과 분석",
@@ -40,6 +41,34 @@ with tab1:
     - 독립적 특징 추출: 파우더 도포 후(A-stage)와 레이저 조사 후(B-stage) 이미지를 각각 독립된 인코더로 분석
     - Temporal Difference: 단순히 현재 이미지만 보는 것이 아니라, 과거 3프레임 평균과 현재의 차이를 명시적으로 계산
     - CBAM Attention: 채널과 공간 어텐션을 통해 A와 B 중 어떤 특징이 치명적인지 스스로 판단하여 융합
+    """)
+
+# 탭: 프로젝트 과정
+with tab_process:
+    st.header("프로젝트 수행 과정 (Data Processing & Validation)")
+    st.markdown("로우 데이터(Raw Data)로부터 신뢰할 수 있는 결함 탐지 모델을 구축하기 위해 수행한 핵심 전처리 및 검증 과정입니다.")
+    
+    st.subheader("1. B-A (Temporal Difference) 적용 가능성 검증")
+    st.markdown("""
+    - **목적:** 파우더 도포(A) 이미지와 레이저 조사(B) 이미지 간의 차이(Difference)가 실제 공정 변화(Process Change)를 유의미하게 포착하는지 확인
+    - **검증 과정:** `audit_ab_pairs` 과정을 통해 A/B 프레임 페어링이 완벽히 정렬되는지 읽기 전용 검증(Read-only Audit)을 수행했습니다. 
+    - **결론:** Z축 레이어 전반(Layer 1~250)에 걸쳐 두 파일 간의 단순 픽셀 차이(Absolute A/B difference)가 노이즈가 아닌 강력한 '이상 후보 맵(Candidate Map)'으로 기능할 수 있음을 확인하였고, 이를 바탕으로 모델에 B-A(Temporal Difference)를 입력하기로 확정했습니다.
+    """)
+    
+    st.subheader("2. ROI(관심 영역) 설정 및 화질 분석")
+    st.markdown("""
+    - **목적:** 원본 이미지(2000x2000) 가장자리의 불필요한 장비 구조물과 왜곡(Artifacts)을 제거하여 모델 학습 효율 최적화
+    - **설정 과정:** `roi_audit`을 통해 중심 좌표 기준 `(x:250, y:250)`에서 `(x:1750, y:1750)`까지인 **1500x1500 픽셀** 구간을 유효 ROI로 크롭(Crop)했습니다.
+    - **결과:** 조명(LED 1, 2, 3)과 층수(Layer) 변화에 따라 이미지의 밝기(Saturation) 편차가 크다는 점을 `roi_saturation_summary.csv`를 통해 정량적으로 확인하였으며, 이는 추후 이미지 정규화(Normalization) 처리의 핵심 근거가 되었습니다.
+    """)
+    
+    st.subheader("3. 카메라 캘리브레이션 적용 및 좌표계 맵핑 검토")
+    st.markdown("""
+    - **목적:** 카메라의 2D 픽셀 좌표를 실제 금속 3D 프린터 장비의 3D 물리 좌표(Machine X, Y mm)로 정확히 변환
+    - **적용 과정:** 
+      1. **Dot Grid 피처 추출:** `independent_method2` 기법을 사용하여 도트 그리드 이미지에서 서브픽셀(Subpixel) 단위의 특징점 약 175,664개를 추출했습니다.
+      2. **변환 행렬 산출 및 리뷰:** 가시 영역(Visible Extent)과 센서 뷰를 매칭하는 후보 변환 행렬(Candidate Transforms)을 산출하고 `calibration_design_review_v1`을 통해 검증했습니다.
+    - **결론:** 잔차(Residual) 오차 검증과 인간 중심의 오버레이(Overlay) 교차 검증을 통해, 2D 이미지의 픽셀 좌표를 XCT 정답지와 대조할 수 있는 정밀한 캘리브레이션 맵핑 파이프라인을 최종 확정지었습니다.
     """)
 
 # 탭: 모델 아키텍처 상세
