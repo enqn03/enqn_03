@@ -17,7 +17,7 @@ from scipy.ndimage import label, binary_dilation
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, confusion_matrix
 from tqdm import tqdm
 
-from train_a_b_cbam_fusion_bce_v6 import (
+from train_fusion import (
     ABCBAMFusionRegularizedCausalTemporalDifferenceCandidateNet,
     make_fusion_dataset,
     load_yaml

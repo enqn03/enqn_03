@@ -10,8 +10,8 @@ from scipy.ndimage import label, binary_dilation
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, confusion_matrix
 from tqdm import tqdm
 
-from train_a_only_bce_v7 import AOnlyCausalTemporalDifferenceCandidateNet, make_dataset as make_a_dataset, load_yaml
-from train_b_only_bce_v7 import BOnlyCausalTemporalDifferenceCandidateNet, make_b_dataset
+from train_a_only import AOnlyCausalTemporalDifferenceCandidateNet, make_dataset as make_a_dataset, load_yaml
+from train_b_only import BOnlyCausalTemporalDifferenceCandidateNet, make_dataset as make_b_dataset
 
 def calculate_blob_metrics(binary_target, binary_pred, tolerance=2):
     gt_labeled, gt_num = label(binary_target)

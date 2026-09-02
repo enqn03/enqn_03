@@ -19,7 +19,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from train_a_b_cbam_fusion_bce_v6 import SupportMaskedBCELoss
+from train_fusion import SupportMaskedBCELoss
 from train_a_only_baseline import (
     ConvNormAct,
     build_provisional_part_geometry_gate,

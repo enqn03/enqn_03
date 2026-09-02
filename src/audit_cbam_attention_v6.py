@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 
-from train_a_b_cbam_fusion_bce_v6 import (
+from train_fusion import (
     ABCBAMFusionRegularizedCausalTemporalDifferenceCandidateNet,
     make_fusion_dataset,
     load_yaml
