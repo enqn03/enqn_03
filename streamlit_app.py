@@ -184,12 +184,27 @@ with tab_arch:
     if os.path.exists(arch_file):
         with open(arch_file, "r", encoding="utf-8") as f:
             content = f.read()
-        st.markdown(content)
         
-        # Markdown 렌더링 시 로컬 이미지 경로가 깨지는 문제를 방지하기 위해 st.image로 직접 렌더링
-        tune_path = "outputs/hyperparameter_tuning_loss.png"
-        if os.path.exists(tune_path):
-            st.image(Image.open(tune_path), caption="하이퍼파라미터 튜닝(Weight Decay 및 Learning Rate) 전후 검증 손실(Validation Loss) 비교", use_container_width=True)
+        split_keyword = "#### 3. 가우시안 타겟 릴렉세이션"
+        if split_keyword in content:
+            part1, part2 = content.split(split_keyword, 1)
+            st.markdown(part1)
+            
+            tune_path = "outputs/hyperparameter_tuning_loss.png"
+            if os.path.exists(tune_path):
+                c1, c2, c3 = st.columns([1, 2, 1]) # 크기를 줄여 중앙 배치
+                with c2:
+                    st.image(Image.open(tune_path), caption="하이퍼파라미터 튜닝 전후 검증 손실 비교", use_container_width=True)
+                    
+            st.markdown(split_keyword + part2)
+        else:
+            st.markdown(content)
+            
+            tune_path = "outputs/hyperparameter_tuning_loss.png"
+            if os.path.exists(tune_path):
+                c1, c2, c3 = st.columns([1, 2, 1])
+                with c2:
+                    st.image(Image.open(tune_path), caption="하이퍼파라미터 튜닝 전후 검증 손실 비교", use_container_width=True)
             
     else:
         st.warning(f"{arch_file} 파일을 찾을 수 없습니다.")
