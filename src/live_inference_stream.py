@@ -158,6 +158,14 @@ def main():
     model.eval()
     print(f"[시스템] 모델 가중치 로드 완료: {args.checkpoint.name}")
     
+    captured_features = {}
+    def get_activation(name):
+        def hook(module, input, output):
+            captured_features[name] = output.detach()
+        return hook
+    model.branch_a.register_forward_hook(get_activation('a'))
+    model.branch_b.register_forward_hook(get_activation('b'))
+    
     # Load calibration
     controls_path = Path("processed/calibration/screen_corner_controls_v2.json")
     parts_order = calib_config["geometry_candidate"]["screen_A_to_D_machine_parts"]
@@ -178,7 +186,7 @@ def main():
         args.output_csv.parent.mkdir(parents=True, exist_ok=True)
         csv_file = open(args.output_csv, 'w', newline='')
         csv_writer = csv.writer(csv_file)
-        csv_writer.writerow(["layer_z", "score_percent", "machine_x_mm", "machine_y_mm", "raw_image_x_px", "raw_image_y_px"])
+        csv_writer.writerow(["layer_z", "score_percent", "primary_cause", "machine_x_mm", "machine_y_mm", "raw_image_x_px", "raw_image_y_px"])
         print(f"[시스템] 감지 결과가 CSV 파일로 저장됩니다: {args.output_csv}\n")
     
     try:
@@ -205,9 +213,18 @@ def main():
                     print(f"[Layer {layer_z:03d}] 🚨 결함 의심 구역 발견! (추론: {inf_time:.1f}ms)")
                     for (px, py, score) in peaks:
                         mx, my, rx, ry = pixel_to_machine(px, py, H)
-                        print(f"   ➔ 확률: {score*100:.1f}% | 장비 위치: X={mx:+.2f}mm, Y={my:+.2f}mm | 이미지 좌표: X={rx:.1f}px, Y={ry:.1f}px")
+                        
+                        # A/B 기여도 분석
+                        mag_a = captured_features['a'][0, :, py, px].norm().item()
+                        mag_b = captured_features['b'][0, :, py, px].norm().item()
+                        total = mag_a + mag_b
+                        pct_a = (mag_a / total * 100) if total > 0 else 50.0
+                        pct_b = (mag_b / total * 100) if total > 0 else 50.0
+                        cause = "도포(A)" if pct_a > pct_b else "조사(B)"
+                        
+                        print(f"   ➔ 확률: {score*100:.1f}% | 원인: {cause} (A:{pct_a:.0f}% B:{pct_b:.0f}%) | 장비 위치: X={mx:+.2f}mm, Y={my:+.2f}mm | 이미지: X={rx:.1f}px")
                         if csv_writer:
-                            csv_writer.writerow([layer_z, score*100, mx, my, rx, ry])
+                            csv_writer.writerow([layer_z, score*100, cause, mx, my, rx, ry])
                     if csv_file:
                         csv_file.flush()
                 else:
