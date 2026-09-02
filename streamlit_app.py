@@ -52,23 +52,46 @@ with tab_process:
     st.markdown("""
     - **목적:** 파우더 도포(A) 이미지와 레이저 조사(B) 이미지 간의 차이(Difference)가 실제 공정 변화(Process Change)를 유의미하게 포착하는지 확인
     - **검증 과정:** `audit_ab_pairs` 과정을 통해 A/B 프레임 페어링이 완벽히 정렬되는지 읽기 전용 검증(Read-only Audit)을 수행했습니다. 
+    """)
+    ab_img_path = "processed/audit_ab_pairs/ab_pair_contact_sheet.png"
+    if os.path.exists(ab_img_path):
+        st.image(Image.open(ab_img_path), caption="A/B 프레임 페어링 및 차이(Difference) 시각화", use_container_width=True)
+    st.markdown("""
     - **결론:** Z축 레이어 전반(Layer 1~250)에 걸쳐 두 파일 간의 단순 픽셀 차이(Absolute A/B difference)가 노이즈가 아닌 강력한 '이상 후보 맵(Candidate Map)'으로 기능할 수 있음을 확인하였고, 이를 바탕으로 모델에 B-A(Temporal Difference)를 입력하기로 확정했습니다.
     """)
     
+    st.divider()
     st.subheader("2. ROI(관심 영역) 설정 및 화질 분석")
     st.markdown("""
     - **목적:** 원본 이미지(2000x2000) 가장자리의 불필요한 장비 구조물과 왜곡(Artifacts)을 제거하여 모델 학습 효율 최적화
-    - **설정 과정:** `roi_audit`을 통해 중심 좌표 기준 `(x:250, y:250)`에서 `(x:1750, y:1750)`까지인 **1500x1500 픽셀** 구간을 유효 ROI로 크롭(Crop)했습니다.
-    - **결과:** 조명(LED 1, 2, 3)과 층수(Layer) 변화에 따라 이미지의 밝기(Saturation) 편차가 크다는 점을 `roi_saturation_summary.csv`를 통해 정량적으로 확인하였으며, 이는 추후 이미지 정규화(Normalization) 처리의 핵심 근거가 되었습니다.
+    - **설정 과정:** 중심 좌표 기준 `(x:250, y:250)`에서 `(x:1750, y:1750)`까지인 **1500x1500 픽셀** 구간을 유효 ROI로 크롭(Crop)했습니다.
+    """)
+    roi_img_path = "processed/roi_audit/roi_candidate_qc.png"
+    if os.path.exists(roi_img_path):
+        st.image(Image.open(roi_img_path), caption="ROI 설정 및 후보 영역 QC 검증 시각화", use_container_width=True)
+    st.markdown("""
+    - **결과:** 조명(LED 1, 2, 3)과 층수(Layer) 변화에 따라 이미지의 밝기(Saturation) 편차가 크다는 점을 정량적으로 확인하였으며, 이는 추후 이미지 정규화(Normalization) 처리의 핵심 근거가 되었습니다.
     """)
     
+    st.divider()
     st.subheader("3. 카메라 캘리브레이션 적용 및 좌표계 맵핑 검토")
     st.markdown("""
     - **목적:** 카메라의 2D 픽셀 좌표를 실제 금속 3D 프린터 장비의 3D 물리 좌표(Machine X, Y mm)로 정확히 변환
     - **적용 과정:** 
       1. **Dot Grid 피처 추출:** `independent_method2` 기법을 사용하여 도트 그리드 이미지에서 서브픽셀(Subpixel) 단위의 특징점 약 175,664개를 추출했습니다.
-      2. **변환 행렬 산출 및 리뷰:** 가시 영역(Visible Extent)과 센서 뷰를 매칭하는 후보 변환 행렬(Candidate Transforms)을 산출하고 `calibration_design_review_v1`을 통해 검증했습니다.
-    - **결론:** 잔차(Residual) 오차 검증과 인간 중심의 오버레이(Overlay) 교차 검증을 통해, 2D 이미지의 픽셀 좌표를 XCT 정답지와 대조할 수 있는 정밀한 캘리브레이션 맵핑 파이프라인을 최종 확정지었습니다.
+      2. **변환 행렬 산출 및 리뷰:** 가시 영역(Visible Extent)과 센서 뷰를 매칭하는 후보 변환 행렬(Candidate Transforms)을 산출하고 오버레이 검증을 수행했습니다.
+    """)
+    c1, c2 = st.columns(2)
+    calib_img1 = "processed/calibration/calibration_design_review_v1/calibration_design_review_extent_overlay.png"
+    calib_img2 = "processed/calibration/independent_method2_calibration_candidate_v1/method2_dot_grid_heldout_residual_overlay.png"
+    with c1:
+        if os.path.exists(calib_img1):
+            st.image(Image.open(calib_img1), caption="캘리브레이션 가시 영역(Extent) 오버레이 리뷰", use_container_width=True)
+    with c2:
+        if os.path.exists(calib_img2):
+            st.image(Image.open(calib_img2), caption="도트 그리드 잔차(Residual) 에러 맵핑 검증", use_container_width=True)
+    st.markdown("""
+    - **결론:** 잔차 오차 검증과 인간 중심의 오버레이(Overlay) 교차 검증을 통해, 2D 이미지의 픽셀 좌표를 XCT 정답지와 대조할 수 있는 정밀한 캘리브레이션 맵핑 파이프라인을 최종 확정지었습니다.
     """)
 
 # 탭: 모델 아키텍처 상세
