@@ -213,7 +213,7 @@ with tab4:
                 color='score_percent', size='score_percent',
                 color_continuous_scale='YlOrRd',
                 range_color=[80, 100],
-                title=f"검출된 3D 이상 후보 위치 (Layer: {current_z})",
+                title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
                 labels={
                     'machine_x_mm': 'X 좌표',
                     'machine_y_mm': 'Y 좌표',
@@ -229,7 +229,7 @@ with tab4:
                     zaxis_title='Layer',
                     xaxis=dict(range=[-20, 20]),
                     yaxis=dict(range=[-20, 20]),
-                    zaxis=dict(range=[203, 250]),
+                    zaxis=dict(range=[150, 300]),
                     aspectmode='manual',
                     aspectratio=dict(x=1, y=1, z=4)
                 ),
