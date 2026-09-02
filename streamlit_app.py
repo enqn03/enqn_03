@@ -127,6 +127,7 @@ with tab_process:
             st.image(Image.open("processed/calibration/independent_method2_dotgrid_cov/method2_v3_nominal_coverage_evidence_overlay.png"), caption="Dot Grid 에비던스 오버레이", use_container_width=True)
 
     st.markdown("#### 3-3. 미세 정렬(Local Refinement) 및 랭크(Rank) 교차 검증")
+    st.markdown("- **왜 방향성 검증이 필요했는가?:** 제공된 사후 3D XCT 스캔 데이터에는 원본 장비 내에서 부품이 어느 방향으로 회전되어 프린팅되었는지에 대한 **절대적인 방향성(Orientation) 정보가 누락**되어 있었습니다. 따라서 XCT 정답지를 2D 카메라 평면 이미지에 올바르게 겹치기 위해서는 부품이 놓인 각도를 수동으로 역추적하는 과정이 필수적이었습니다.")
     st.markdown("- **목적:** 사후 3D XCT 데이터와 실제 레이어 이미지(Layer 125 기준)를 매칭할 때, 부품이 장비 내에 놓여진 정확한 회전 및 대칭 상태(Rank 1 vs Rank 2)의 모호성을 해결하고 잔차 오차를 최소화하는 미세 정렬(Local Refinement) 수행")
     c1, c2, c3 = st.columns(3)
     with c1:
