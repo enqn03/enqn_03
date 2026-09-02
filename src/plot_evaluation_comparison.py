@@ -8,9 +8,9 @@ def main():
     labels = ['Pixel-level (0mm)', 'Blob-level (2mm)']
     
     # Correct final A+B Fusion metrics
-    recall = [4.5, 43.5]
-    precision = [2.1, 17.9]
-    f1_score = [2.9, 25.4]
+    recall = [4.50, 43.48]
+    precision = [2.10, 17.92]
+    f1_score = [2.86, 25.38]
     
     x = np.arange(len(labels))
     width = 0.25
@@ -36,7 +36,7 @@ def main():
     def autolabel(rects):
         for rect in rects:
             height = rect.get_height()
-            ax.annotate(f'{height:.1f}%',
+            ax.annotate(f'{height:.2f}%',
                         xy=(rect.get_x() + rect.get_width() / 2, height),
                         xytext=(0, 3),  # 3 points vertical offset
                         textcoords="offset points",
