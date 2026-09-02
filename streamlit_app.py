@@ -229,7 +229,8 @@ with tab4:
                 xaxis=dict(range=[-20, 20]),
                 yaxis=dict(range=[-20, 20]),
                 zaxis=dict(range=[0, 300]),
-                aspectmode='cube'
+                aspectmode='manual',
+                aspectratio=dict(x=1, y=1, z=2.5) # Z축 간격을 늘려 층간 구분을 명확히 함
             ))
             # 키를 제거하여 Plotly가 업데이트 시 화면 전체를 Unmount하지 않고 자연스럽게 데이터를 교체하도록 함
             st.plotly_chart(fig, use_container_width=True)
