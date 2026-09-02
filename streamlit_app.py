@@ -98,24 +98,49 @@ with tab_process:
     """)
     
     st.divider()
-    st.subheader("3. 카메라 캘리브레이션 적용 및 좌표계 맵핑 검토")
+    st.subheader("3. 카메라 캘리브레이션 및 광도/방향성 정밀 검증")
     st.markdown("""
-    - **목적:** 카메라의 2D 픽셀 좌표를 실제 금속 3D 프린터 장비의 3D 물리 좌표(Machine X, Y mm)로 정확히 변환
-    - **적용 과정:** 
-      1. **Dot Grid 피처 추출:** `independent_method2` 기법을 사용하여 도트 그리드 이미지에서 서브픽셀(Subpixel) 단위의 특징점 약 175,664개를 추출했습니다.
-      2. **변환 행렬 산출 및 리뷰:** 가시 영역(Visible Extent)과 센서 뷰를 매칭하는 후보 변환 행렬(Candidate Transforms)을 산출하고 오버레이 검증을 수행했습니다.
+    단순한 2D 픽셀 단위 분석을 넘어, 최종적으로 카메라 상의 픽셀 좌표를 장비의 실제 **3D 물리 좌표(Machine X, Y mm)**로 맵핑(Mapping)하고, 사후 XCT 스캔 3D 데이터(정답지)와 정밀하게 대조하기 위해 다각적인 캘리브레이션 및 검증 과정을 거쳤습니다.
     """)
-    c1, c2 = st.columns(2)
-    calib_img1 = "processed/calibration/calibration_design_review_v1/calibration_design_review_extent_overlay.png"
-    calib_img2 = "processed/calibration/independent_method2_calibration_candidate_v1/method2_dot_grid_heldout_residual_overlay.png"
+
+    st.markdown("#### 3-1. 광도(Photometric) 및 기본 방향성(Orientation) 검증")
+    st.markdown("- **목적:** 센서의 조명 안정성과 이미지의 기하학적 정렬 상태를 초기 점검")
+    c1, c2, c3 = st.columns(3)
     with c1:
-        if os.path.exists(calib_img1):
-            st.image(Image.open(calib_img1), caption="캘리브레이션 가시 영역(Extent) 오버레이 리뷰", use_container_width=True)
+        if os.path.exists("processed/calibration/photometric_audit_v1/photometric_qc.png"):
+            st.image(Image.open("processed/calibration/photometric_audit_v1/photometric_qc.png"), caption="프레임 간 조명(광도) 일관성 검증", use_container_width=True)
     with c2:
-        if os.path.exists(calib_img2):
-            st.image(Image.open(calib_img2), caption="도트 그리드 잔차(Residual) 에러 맵핑 검증", use_container_width=True)
+        if os.path.exists("processed/calibration/orientation_audit_v1/calibration_candidate_qc.png"):
+            st.image(Image.open("processed/calibration/orientation_audit_v1/calibration_candidate_qc.png"), caption="초기 캘리브레이션 후보군 기하 검증", use_container_width=True)
+    with c3:
+        if os.path.exists("processed/calibration/calibration_design_review_v1/calibration_design_review_orientation_overlay.png"):
+            st.image(Image.open("processed/calibration/calibration_design_review_v1/calibration_design_review_orientation_overlay.png"), caption="X, Y 원점 방향성(Orientation) 오버레이 리뷰", use_container_width=True)
+
+    st.markdown("#### 3-2. Dot Grid 피처 기반 센서 커버리지(Coverage) 검증")
+    st.markdown("- **목적:** Dot Grid Calibration 기법(`Independent Method 2`)이 센서의 유효 영역을 충분히 커버하는지, 왜곡 없는 변환 행렬 도출이 가능한지 확인")
+    c1, c2 = st.columns(2)
+    with c1:
+        if os.path.exists("processed/calibration/independent_method2_dotgrid_cov/method2_v3_row_column_coverage_profiles.png"):
+            st.image(Image.open("processed/calibration/independent_method2_dotgrid_cov/method2_v3_row_column_coverage_profiles.png"), caption="Dot Grid 행/열 센서 커버리지 프로파일", use_container_width=True)
+    with c2:
+        if os.path.exists("processed/calibration/independent_method2_dotgrid_cov/method2_v3_nominal_coverage_evidence_overlay.png"):
+            st.image(Image.open("processed/calibration/independent_method2_dotgrid_cov/method2_v3_nominal_coverage_evidence_overlay.png"), caption="Dot Grid 에비던스 오버레이", use_container_width=True)
+
+    st.markdown("#### 3-3. 미세 정렬(Local Refinement) 및 랭크(Rank) 교차 검증")
+    st.markdown("- **목적:** 사후 3D XCT 데이터와 실제 레이어 이미지(Layer 125 기준)를 매칭할 때, 부품이 장비 내에 놓여진 정확한 회전 및 대칭 상태(Rank 1 vs Rank 2)의 모호성을 해결하고 잔차 오차를 최소화하는 미세 정렬(Local Refinement) 수행")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if os.path.exists("processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank1_mirror_rotate_90_overlay.png"):
+            st.image(Image.open("processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank1_mirror_rotate_90_overlay.png"), caption="방향성 랭크 1 후보 오버레이 (Rotate 90)", use_container_width=True)
+    with c2:
+        if os.path.exists("processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank2_mirror_rotate_270_overlay.png"):
+            st.image(Image.open("processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank2_mirror_rotate_270_overlay.png"), caption="방향성 랭크 2 후보 오버레이 (Rotate 270)", use_container_width=True)
+    with c3:
+        if os.path.exists("processed/calibration/local_refinement_v1/local_refinement_qc.png"):
+            st.image(Image.open("processed/calibration/local_refinement_v1/local_refinement_qc.png"), caption="Local Refinement를 통한 픽셀 오차 최소화 검증", use_container_width=True)
+            
     st.markdown("""
-    - **결론:** 잔차 오차 검증과 인간 중심의 오버레이(Overlay) 교차 검증을 통해, 2D 이미지의 픽셀 좌표를 XCT 정답지와 대조할 수 있는 정밀한 캘리브레이션 맵핑 파이프라인을 최종 확정지었습니다.
+    - **결론:** 이러한 광범위한 광학/기하학적 검증을 거쳐, 우리는 의료용 볼륨 데이터(XCT)를 제조 현장의 2D 평면 이미지에 성공적으로 오차 범위 내에서 투영(Projection)할 수 있는 **정교한 Calibration Pipeline**을 확립했습니다. 이는 XCT 정답지를 모델 학습용 Weak Target으로 변환할 수 있는 핵심 기반이 되었습니다.
     """)
 
 # 탭: 모델 아키텍처 상세
