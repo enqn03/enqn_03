@@ -1236,3 +1236,22 @@ python3 src/evaluate_model_performance.py \
   --weak-target-config configs/weak_target_v1.yaml \
   --registered-root raw_original/registered_xct
 ```
+
+### 실시간 결함 모니터링 시뮬레이션 (Live Inference Stream)
+
+학습된 퓨전 모델을 이용하여 장비가 한 층(Layer)씩 프린팅을 진행할 때, 결함을 실시간으로 감지하고 이를 기계의 물리적 절대 좌표(X, Y mm 단위)로 변환해 터미널에 출력해 주는 스크립트입니다. `--output-csv` 옵션을 부여하면 검출된 결함들의 전체 위치를 CSV로 저장하고, **2D 평면 분포도 및 3D 입체 분포도 이미지**를 자동으로 렌더링합니다.
+
+```bash
+python3 src/live_inference_stream.py \
+  --config configs/a_b_cbam_fusion_bce_c16_v7_tuning.yaml \
+  --checkpoint outputs/a_b_cbam_fusion_bce_c16_v7_tuning/best_validation_supported_loss.pt \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct \
+  --threshold 0.5 \
+  --output-csv outputs/live_stream_results.csv
+```
