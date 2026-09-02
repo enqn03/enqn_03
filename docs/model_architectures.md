@@ -84,7 +84,6 @@ graph LR
 2. **정규화 및 과적합 방지 (Spatial Dropout=0.3, Weight Decay=0.01 → 0.05 Tuning)**
    - **설정값:** 공간 드롭아웃 30%, AdamW 옵티마이저의 Weight Decay 0.05
    - **의도:** Fusion 모델은 A와 B의 특징을 모두 뽑아내는 거대한 파라미터를 갖습니다. 하지만 불량(Defect) 데이터는 매우 희귀하기 때문에, 모델이 소수의 불량 픽셀 위치를 그대로 '암기'해버리는 과적합(Overfitting) 현상이 쉽게 발생합니다. 이를 막기 위해 일반 Dropout이 아닌 **Spatial Dropout**을 써서 피처 맵의 전체 채널을 통째로 30%씩 무작위로 끄고, 강력한 **가중치 감쇠(Weight Decay)**를 적용하여 모델이 특정 노이즈에 과도하게 의존하지 못하도록 제약을 걸었습니다. 아래 그래프는 튜닝 전후의 검증 손실(Validation Loss) 하락 안정성을 비교한 결과입니다.
-   - ![하이퍼파라미터 튜닝 시각화](outputs/hyperparameter_tuning_loss.png)
 
 3. **가우시안 타겟 릴렉세이션 (Gaussian Target Sigma=2)**
    - **설정값:** 사후 XCT 정답지를 2D로 투영할 때 반경 2-Pixel의 가우시안 블러 적용
