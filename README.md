@@ -1,5 +1,7 @@
 # AMMT Defect Detection AI
 
+🚀 **라이브 대시보드 (Live Dashboard):** [https://enqn03-ammt-project.streamlit.app/](https://enqn03-ammt-project.streamlit.app/)
+
 본 프로젝트는 금속 3D 프린팅(AMMT) 과정에서 발생하는 미세한 결함을 탐지하기 위한 인공지능 모델을 개발하는 과정입니다. 
 센서(카메라) 데이터의 한계를 극복하기 위해 Gated CBAM Fusion 아키텍처를 도입하여 **A모달리티(쇳가루)**와 **B모달리티(쇳물)**를 결합, 결함 탐지 정확도를 극대화했습니다.
 
