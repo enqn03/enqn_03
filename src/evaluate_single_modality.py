@@ -11,7 +11,7 @@ from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_prec
 from tqdm import tqdm
 
 from train_a_only import AOnlyCausalTemporalDifferenceCandidateNet, make_dataset as make_a_dataset, load_yaml
-from train_b_only import BOnlyCausalTemporalDifferenceCandidateNet, make_dataset as make_b_dataset
+from train_b_only import BOnlyCausalTemporalDifferenceCandidateNet, make_b_dataset
 
 def calculate_blob_metrics(binary_target, binary_pred, tolerance=2):
     gt_labeled, gt_num = label(binary_target)
