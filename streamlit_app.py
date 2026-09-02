@@ -203,7 +203,7 @@ with tab4:
             current_z = selected_z
             st.session_state.current_layer = current_z
             
-        df_filtered = df[df['layer_z'] <= current_z]
+        df_filtered = df[df['layer_z'] == current_z]
         
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -240,7 +240,7 @@ with tab4:
             
         with c2:
             st.subheader("탐지된 결함 목록")
-            st.markdown(f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 층: {current_z})")
+            st.markdown(f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 층: {current_z})")
             if not df_filtered.empty:
                 df_display = df_filtered[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
                 df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
