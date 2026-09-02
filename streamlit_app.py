@@ -55,7 +55,9 @@ with tab_process:
     """)
     ab_img_path = "processed/audit_ab_pairs/ab_pair_contact_sheet.png"
     if os.path.exists(ab_img_path):
-        st.image(Image.open(ab_img_path), caption="A/B 프레임 페어링 및 차이(Difference) 시각화", use_container_width=True)
+        c1, c2, c3 = st.columns([1, 4, 1])
+        with c2:
+            st.image(Image.open(ab_img_path), caption="A/B 프레임 페어링 및 차이(Difference) 시각화", use_container_width=True)
     st.markdown("""
     - **결론:** Z축 레이어 전반(Layer 1~250)에 걸쳐 두 파일 간의 단순 픽셀 차이(Absolute A/B difference)가 노이즈가 아닌 강력한 '이상 후보 맵(Candidate Map)'으로 기능할 수 있음을 확인하였고, 이를 바탕으로 모델에 B-A(Temporal Difference)를 입력하기로 확정했습니다.
     """)
@@ -63,14 +65,23 @@ with tab_process:
     st.divider()
     st.subheader("2. ROI(관심 영역) 설정 및 화질 분석")
     st.markdown("""
-    - **목적:** 원본 이미지(2000x2000) 가장자리의 불필요한 장비 구조물과 왜곡(Artifacts)을 제거하여 모델 학습 효율 최적화
-    - **설정 과정:** 중심 좌표 기준 `(x:250, y:250)`에서 `(x:1750, y:1750)`까지인 **1500x1500 픽셀** 구간을 유효 ROI로 크롭(Crop)했습니다.
+    - **목적:** 원본 이미지(2000x2000) 가장자리의 불필요한 장비 구조물과 중앙부 빛 번짐(Saturation)을 고려하여 모델 학습 효율을 최적화할 유효 영역을 탐색
+    - **후보군 탐색:** 아래 5가지 ROI 후보군을 설정하여 조명(LED 1,2,3)별 빛 번짐 면적(Full-scale Fraction)을 정량적으로 평가했습니다.
+      - 1) `wide_250_250_1750_1750` (1500x1500px)
+      - 2) `inner_350_350_1650_1650` (1300x1300px)
+      - 3) `inner_450_450_1550_1550` (1100x1100px)
+      - 4) `upper_350_250_1650_1550` (1300x1300px)
+      - 5) `lower_350_450_1650_1750` (1300x1300px)
+    - **선정 결과 및 근거:** 평가 결과 중심부로 좁혀질수록(`inner_450`) 빛 번짐(Saturation)이 최대 99%까지 치솟는 문제(Center-saturation)를 발견했습니다. 반면, 가장 넓은 영역을 포함한 `wide_250_250_1750_1750` 후보군이 **빛 번짐 비율이 34.5%로 가장 낮아 유효 데이터 비율(Valid Fraction) 1위**를 기록했습니다.
+    - **결론:** 이에 따라 중앙부 빛 번짐을 최소화하면서도 가장 넓은 데이터를 확보할 수 있는 `(250, 250)` ~ `(1750, 1750)` 구역(1500x1500 픽셀)을 최종 분석 ROI로 크롭(Crop) 확정하였습니다.
     """)
     roi_img_path = "processed/roi_audit/roi_candidate_qc.png"
     if os.path.exists(roi_img_path):
-        st.image(Image.open(roi_img_path), caption="ROI 설정 및 후보 영역 QC 검증 시각화", use_container_width=True)
+        c1, c2, c3 = st.columns([1, 4, 1])
+        with c2:
+            st.image(Image.open(roi_img_path), caption="ROI 설정 및 후보 영역 QC 검증 시각화", use_container_width=True)
     st.markdown("""
-    - **결과:** 조명(LED 1, 2, 3)과 층수(Layer) 변화에 따라 이미지의 밝기(Saturation) 편차가 크다는 점을 정량적으로 확인하였으며, 이는 추후 이미지 정규화(Normalization) 처리의 핵심 근거가 되었습니다.
+    - **결론:** 조명과 층수에 따른 이미지 밝기 편차가 크다는 점을 고려하여, 확정된 ROI를 기반으로 픽셀 정규화(Normalization) 전처리 파이프라인을 구축했습니다.
     """)
     
     st.divider()
