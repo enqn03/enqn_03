@@ -1252,6 +1252,6 @@ python3 src/live_inference_stream.py \
   --calibration-config configs/calibration_v1.yaml \
   --weak-target-config configs/weak_target_v1.yaml \
   --registered-root raw_original/registered_xct \
-  --threshold 0.5 \
+  --threshold 0.9 \
   --output-csv outputs/live_stream_results.csv
 ```

@@ -137,7 +137,7 @@ def main():
     parser.add_argument("--calibration-config", required=True, type=Path)
     parser.add_argument("--weak-target-config", required=True, type=Path)
     parser.add_argument("--registered-root", required=True, type=Path)
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--threshold", type=float, default=0.9)
     parser.add_argument("--output-csv", type=Path, default=None, help="Path to save the detected coordinates as CSV")
     args = parser.parse_args()
     
