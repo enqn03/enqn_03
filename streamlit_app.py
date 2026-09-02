@@ -174,7 +174,12 @@ with tab4:
             st.session_state.is_playing = False
             
         st.subheader("🟢 실시간 라이브 시뮬레이터")
-        st.markdown("슬라이더를 움직이거나 '라이브 재생' 버튼을 눌러 결함 탐지 과정을 실시간으로 모니터링하세요.")
+        
+        col_header, col_toggle = st.columns([3, 1])
+        with col_header:
+            st.markdown("슬라이더를 움직이거나 '라이브 재생' 버튼을 눌러 결함 탐지 과정을 실시간으로 모니터링하세요.")
+        with col_toggle:
+            show_cumulative = st.toggle("누적 결함 전체 보기", value=False)
         
         col_btn, col_slider = st.columns([1, 4])
         
@@ -203,7 +208,12 @@ with tab4:
             current_z = selected_z
             st.session_state.current_layer = current_z
             
-        df_filtered = df[df['layer_z'] == current_z]
+        if show_cumulative:
+            df_filtered = df[df['layer_z'] <= current_z]
+            list_title = f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (1층 ~ {current_z}층)"
+        else:
+            df_filtered = df[df['layer_z'] == current_z]
+            list_title = f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 {current_z}층)"
         
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -240,7 +250,7 @@ with tab4:
             
         with c2:
             st.subheader("탐지된 결함 목록")
-            st.markdown(f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 층: {current_z})")
+            st.markdown(list_title)
             if not df_filtered.empty:
                 df_display = df_filtered[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
                 df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
