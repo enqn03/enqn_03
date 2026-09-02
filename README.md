@@ -1151,26 +1151,85 @@ AMMT_PROJECT/
 ├── docs/                                 # 프로젝트 기획 및 진행 과정 문서 모음
 └── outputs/                              # 학습된 모델 체크포인트 (.pt) 및 시각화 이미지
 ```
+### 모델 학습 (Training)
 
-### 학습 (Training)
+**1. A 모델 (A-only)**
 ```bash
-python3 src/train_fusion.py --config configs/a_b_cbam_fusion_bce_c16_v7_tuning.yaml \
-  --weak-target-config configs/weak_target_v1.yaml \
+python3 src/train_a_only.py \
+  --config configs/a_only_bce_c32_v7_tuning.yaml \
+  --loss-config configs/masked_bce_loss_v2.yaml \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
   --manifest manifests/causal_sequence_manifest.csv \
-  --registered-root raw_original/registered_xct \
   --normalization-config configs/normalization_v1.yaml \
   --calibration-config configs/calibration_v1.yaml \
-  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
-  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
 ```
 
-### 평가 (Evaluation)
+**2. B 모델 (B-only)**
+```bash
+python3 src/train_b_only.py \
+  --config configs/b_only_bce_c32_v7_tuning.yaml \
+  --loss-config configs/masked_bce_loss_v2.yaml \
+  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
+```
+
+**3. A+B 모델 (Gated CBAM Fusion)**
+```bash
+python3 src/train_fusion.py \
+  --config configs/a_b_cbam_fusion_bce_c16_v7_tuning.yaml \
+  --loss-config configs/masked_bce_loss_v2.yaml \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
+```
+
+### 모델 평가 (Evaluation)
+
+**1. A 모델 (A-only)**
 ```bash
 python3 src/evaluate_single_modality.py \
   --config configs/a_only_bce_c32_v7_tuning.yaml \
   --checkpoint outputs/a_only_bce_c32_v7_tuning/best_validation_supported_loss.pt \
   --modality A \
   --tiff raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
+```
+
+**2. B 모델 (B-only)**
+```bash
+python3 src/evaluate_single_modality.py \
+  --config configs/b_only_bce_c32_v7_tuning.yaml \
+  --checkpoint outputs/b_only_bce_c32_v7_tuning/best_validation_supported_loss.pt \
+  --modality B \
+  --tiff raw_original/layer_camera/LayerCameraBurned.tif \
+  --manifest manifests/causal_sequence_manifest.csv \
+  --normalization-config configs/normalization_v1.yaml \
+  --calibration-config configs/calibration_v1.yaml \
+  --weak-target-config configs/weak_target_v1.yaml \
+  --registered-root raw_original/registered_xct
+```
+
+**3. A+B 모델 (Gated CBAM Fusion)**
+```bash
+python3 src/evaluate_model_performance.py \
+  --config configs/a_b_cbam_fusion_bce_c16_v7_tuning.yaml \
+  --checkpoint outputs/a_b_cbam_fusion_bce_c16_v7_tuning/best_validation_supported_loss.pt \
+  --tiff-a raw_original/layer_camera/LayerCameraAfterSpreading.tif \
+  --tiff-b raw_original/layer_camera/LayerCameraBurned.tif \
   --manifest manifests/causal_sequence_manifest.csv \
   --normalization-config configs/normalization_v1.yaml \
   --calibration-config configs/calibration_v1.yaml \
