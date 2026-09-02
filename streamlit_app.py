@@ -151,7 +151,7 @@ with tab_process:
     - **왜 상위/하위 샘플 라벨링이 필요했는가?:** 원본 XCT 데이터에는 명확한 **정상(Normal) / 결함(Defect) 이진 라벨이 존재하지 않았습니다.** 오직 연속적인 물리적 밀도/결함 점수만이 존재했습니다. 따라서, 어설픈 중간 점수들을 배제하고 확실한 차이를 학습시키기 위해 XCT 점수 기준 최상위(하위) 샘플 패치들을 추출하여 분석(Target Semantics)하고, 이를 토대로 모델이 명확하게 결함의 특징을 학습할 수 있도록 라벨링 및 타겟을 세팅했습니다.
     - **라벨링은 어떻게 진행되었는가?:**
       1. **Robust Scaling (정규화):** 연속적인 XCT 점수의 상/하위 1% 극단값을 잘라내고(p01~p99), 전체 점수 스펙트럼을 0에서 1 사이로 매끄럽게 정규화했습니다.
-      2. **임계값 기반 이진화:** 정규화된 점수가 **0.85 이상(상위 15%)인 구역만을 치명적인 결함(Defect, Label 1)**으로 확정 짓고, 나머지를 정상으로 분류했습니다.
+      2. **임계값 기반 이진화:** 정규화된 점수가 0.85 이상(상위 15%)인 구역만을 치명적인 결함(Defect, Label 1)**으로 확정 짓고, 나머지를 정상으로 분류했습니다.
       3. **2D 가우시안 래스터화:** 3D 공간상의 결함 포인트들을 2D 평면 이미지 좌표로 투영할 때, 픽셀 간의 끊김을 방지하고자 2-Pixel 반경의 가우시안 블러를 적용하여 부드러운 히트맵 형태의 정답지를 생성했습니다.
       4. **마스킹:** 실제 부품이 얹혀지지 않은 허공 영역은 학습에 방해되지 않도록 `Unknown` 처리하여 손실 함수 계산에서 완전히 제외시켰습니다.
     """)
@@ -173,7 +173,7 @@ with tab_process:
             st.image(Image.open("processed/projected_xct_support/projected_support_qc.png"), caption="카메라 뷰에 투영된 최종 지원 영역 검증", use_container_width=True)
 
     st.markdown("""
-    - **결론:** 이 과정을 통해 모델은 "어떤 시각적 특징이 실제 사후 XCT에서도 치명적인 결함 점수를 나타내는가"를 인과적으로 맵핑하여 학습할 수 있는 튼튼한 Weak Supervision 환경을 갖추게 되었습니다.
+    - **결론:** 이 과정을 통해 모델은 어떤 시각적 특징이 실제 사후 XCT에서도 치명적인 결함 점수를 나타내는가를 인과적으로 맵핑하여 학습할 수 있는 튼튼한 Weak Supervision 환경을 갖추게 되었습니다.
     """)
 
 # 탭: 모델 아키텍처 상세
@@ -370,136 +370,141 @@ with tab4:
         min_layer = int(df['layer_z'].min())
         max_layer = int(df['layer_z'].max())
         
-        if 'current_layer' not in st.session_state:
-            st.session_state.current_layer = max_layer
-        if 'is_playing' not in st.session_state:
-            st.session_state.is_playing = False
-            
-        st.subheader(" 실시간 라이브 시뮬레이터")
-        
-        col_header, col_toggle = st.columns([3, 1])
-        with col_header:
-            st.markdown("슬라이더를 움직이거나 '라이브 재생' 버튼을 눌러 결함 탐지 과정을 실시간으로 모니터링하세요.")
-        with col_toggle:
-            show_cumulative = st.toggle("누적 결함 전체 보기", value=False)
-        
-        col_btn, col_slider = st.columns([1, 4])
-        
-        with col_btn:
-            st.write("") # 정렬용
-            button_label = " 재생 중지" if st.session_state.is_playing else " 라이브 재생 시작"
-            if st.button(button_label, use_container_width=True):
-                st.session_state.is_playing = not st.session_state.is_playing
-                if st.session_state.is_playing:
-                    # 끝까지 도달한 상태에서 재생을 누르면 처음부터 다시 시작
-                    if st.session_state.current_layer >= max_layer:
-                        st.session_state.current_layer = min_layer
-                st.rerun()
-                
-        with col_slider:
-            selected_z = st.slider(
-                "현재 프린팅 층수 (Layer Z)", 
-                min_value=min_layer, max_value=max_layer, 
-                value=st.session_state.current_layer, step=1, key="main_layer_slider"
-            )
-            
-        # 플레이 중일 때는 세션 상태의 값을 우선하고, 아니면 사용자가 슬라이더 조작한 값을 반영
-        if st.session_state.is_playing:
-            current_z = st.session_state.current_layer
-        else:
-            current_z = selected_z
-            st.session_state.current_layer = current_z
-            
-        if show_cumulative:
-            df_filtered = df[df['layer_z'] <= current_z]
-            list_title = f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (1층 ~ {current_z}층)"
-        else:
-            df_filtered = df[df['layer_z'] == current_z]
-            list_title = f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 {current_z}층)"
-        
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            is_empty = df_filtered.empty
-            if is_empty:
-                # 빈 데이터프레임일 경우 기존 px.scatter_3d 레이아웃(컬러바, 축 등)을 완벽히 유지하기 위해 더미 데이터 생성
-                import pandas as pd
-                plot_df = pd.DataFrame([{
-                    'machine_x_mm': 0, 'machine_y_mm': 0, 'layer_z': 150,
-                    'score_percent': 80, 'primary_cause': 'None'
-                }])
-            else:
-                plot_df = df_filtered
-
-            fig = px.scatter_3d(
-                plot_df, 
-                x='machine_x_mm', y='machine_y_mm', z='layer_z',
-                color='score_percent', size='score_percent',
-                color_continuous_scale='YlOrRd',
-                range_color=[80, 100],
-                title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
-                labels={
-                    'machine_x_mm': 'X 좌표',
-                    'machine_y_mm': 'Y 좌표',
-                    'layer_z': '층수',
-                    'score_percent': '결함 확률'
-                },
-                hover_data=['primary_cause']
-            )
-            
-            if is_empty:
-                # 더미 데이터를 투명하게 만들어 화면에 보이지 않게 처리 (틀만 유지)
-                fig.update_traces(marker=dict(opacity=0), hoverinfo='skip', hovertemplate=None)
-                
-            fig.update_layout(
-                scene=dict(
-                    xaxis_title='Machine X',
-                    yaxis_title='Machine Y',
-                    zaxis_title='Layer',
-                    xaxis=dict(range=[-20, 20]),
-                    yaxis=dict(range=[-20, 20]),
-                    zaxis=dict(range=[150, 300]),
-                    aspectmode='manual',
-                    aspectratio=dict(x=1, y=1, z=4)
-                ),
-                uirevision='constant' # 사용자가 마우스로 조작한 카메라 시점(회전, 줌)을 업데이트 후에도 유지
-            )
-            # 키를 제거하여 Plotly가 업데이트 시 화면 전체를 Unmount하지 않고 자연스럽게 데이터를 교체하도록 함
-            st.plotly_chart(fig, use_container_width=True)
-            
-        with c2:
-            st.subheader("탐지된 결함 목록")
-            st.markdown(list_title)
-            if not df_filtered.empty:
-                df_display = df_filtered[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
-                df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
-                df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
-                df_display['machine_y_mm'] = df_display['machine_y_mm'].apply(lambda x: f"{x:+.2f}")
-                df_display['raw_image_x_px'] = df_display['raw_image_x_px'].apply(lambda x: f"{int(x)}")
-                df_display['raw_image_y_px'] = df_display['raw_image_y_px'].apply(lambda x: f"{int(x)}")
-                
-                df_display.rename(columns={
-                    'layer_z': '층수',
-                    'score_percent': '확률',
-                    'primary_cause': '원인',
-                    'machine_x_mm': 'X(mm)',
-                    'machine_y_mm': 'Y(mm)',
-                    'raw_image_x_px': '픽셀 X',
-                    'raw_image_y_px': '픽셀 Y'
-                }, inplace=True)
-                
-                st.dataframe(df_display, use_container_width=True, height=500)
-            else:
-                st.info("현재 층수에 발견된 결함이 없습니다.")
-
-        # 시뮬레이션 상태일 경우 다음 프레임을 위해 sleep 후 rerun
-        if st.session_state.is_playing:
-            if st.session_state.current_layer < max_layer:
-                time.sleep(0.8) # 0.3초에서 0.8초로 간격 증가 (시각적 확인 용이)
-                st.session_state.current_layer += 1
-                st.rerun()
-            else:
+        @st.fragment
+        def run_live_simulator():
+            if 'current_layer' not in st.session_state:
+                st.session_state.current_layer = max_layer
+            if 'is_playing' not in st.session_state:
                 st.session_state.is_playing = False
-                st.rerun()
+                
+            st.subheader(" 실시간 라이브 시뮬레이터")
+            
+            col_header, col_toggle = st.columns([3, 1])
+            with col_header:
+                st.markdown("슬라이더를 움직이거나 '라이브 재생' 버튼을 눌러 결함 탐지 과정을 실시간으로 모니터링하세요.")
+            with col_toggle:
+                show_cumulative = st.toggle("누적 결함 전체 보기", value=False)
+            
+            col_btn, col_slider = st.columns([1, 4])
+            
+            with col_btn:
+                st.write("") # 정렬용
+                button_label = " 재생 중지" if st.session_state.is_playing else " 라이브 재생 시작"
+                if st.button(button_label, use_container_width=True):
+                    st.session_state.is_playing = not st.session_state.is_playing
+                    if st.session_state.is_playing:
+                        # 끝까지 도달한 상태에서 재생을 누르면 처음부터 다시 시작
+                        if st.session_state.current_layer >= max_layer:
+                            st.session_state.current_layer = min_layer
+                    st.rerun()
+                    
+            with col_slider:
+                selected_z = st.slider(
+                    "현재 프린팅 층수 (Layer Z)", 
+                    min_value=min_layer, max_value=max_layer, 
+                    value=st.session_state.current_layer, step=1, key="main_layer_slider"
+                )
+                
+            # 플레이 중일 때는 세션 상태의 값을 우선하고, 아니면 사용자가 슬라이더 조작한 값을 반영
+            if st.session_state.is_playing:
+                current_z = st.session_state.current_layer
+            else:
+                current_z = selected_z
+                st.session_state.current_layer = current_z
+                
+            if show_cumulative:
+                df_filtered = df[df['layer_z'] <= current_z]
+                list_title = f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (1층 ~ {current_z}층)"
+            else:
+                df_filtered = df[df['layer_z'] == current_z]
+                list_title = f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 {current_z}층)"
+            
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                is_empty = df_filtered.empty
+                if is_empty:
+                    # 빈 데이터프레임일 경우 기존 px.scatter_3d 레이아웃(컬러바, 축 등)을 완벽히 유지하기 위해 더미 데이터 생성
+                    import pandas as pd
+                    plot_df = pd.DataFrame([{
+                        'machine_x_mm': 0, 'machine_y_mm': 0, 'layer_z': 150,
+                        'score_percent': 80, 'primary_cause': 'None'
+                    }])
+                else:
+                    plot_df = df_filtered
+    
+                fig = px.scatter_3d(
+                    plot_df, 
+                    x='machine_x_mm', y='machine_y_mm', z='layer_z',
+                    color='score_percent', size='score_percent',
+                    color_continuous_scale='YlOrRd',
+                    range_color=[80, 100],
+                    title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
+                    labels={
+                        'machine_x_mm': 'X 좌표',
+                        'machine_y_mm': 'Y 좌표',
+                        'layer_z': '층수',
+                        'score_percent': '결함 확률'
+                    },
+                    hover_data=['primary_cause']
+                )
+                
+                if is_empty:
+                    # 더미 데이터를 투명하게 만들어 화면에 보이지 않게 처리 (틀만 유지)
+                    fig.update_traces(marker=dict(opacity=0), hoverinfo='skip', hovertemplate=None)
+                    
+                fig.update_layout(
+                    scene=dict(
+                        xaxis_title='Machine X',
+                        yaxis_title='Machine Y',
+                        zaxis_title='Layer',
+                        xaxis=dict(range=[-20, 20]),
+                        yaxis=dict(range=[-20, 20]),
+                        zaxis=dict(range=[150, 300]),
+                        aspectmode='manual',
+                        aspectratio=dict(x=1, y=1, z=4)
+                    ),
+                    uirevision='constant' # 사용자가 마우스로 조작한 카메라 시점(회전, 줌)을 업데이트 후에도 유지
+                )
+                # 키를 제거하여 Plotly가 업데이트 시 화면 전체를 Unmount하지 않고 자연스럽게 데이터를 교체하도록 함
+                st.plotly_chart(fig, use_container_width=True)
+                
+            with c2:
+                st.subheader("탐지된 결함 목록")
+                st.markdown(list_title)
+                if not df_filtered.empty:
+                    df_display = df_filtered[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
+                    df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
+                    df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
+                    df_display['machine_y_mm'] = df_display['machine_y_mm'].apply(lambda x: f"{x:+.2f}")
+                    df_display['raw_image_x_px'] = df_display['raw_image_x_px'].apply(lambda x: f"{int(x)}")
+                    df_display['raw_image_y_px'] = df_display['raw_image_y_px'].apply(lambda x: f"{int(x)}")
+                    
+                    df_display.rename(columns={
+                        'layer_z': '층수',
+                        'score_percent': '확률',
+                        'primary_cause': '원인',
+                        'machine_x_mm': 'X(mm)',
+                        'machine_y_mm': 'Y(mm)',
+                        'raw_image_x_px': '픽셀 X',
+                        'raw_image_y_px': '픽셀 Y'
+                    }, inplace=True)
+                    
+                    st.dataframe(df_display, use_container_width=True, height=500)
+                else:
+                    st.info("현재 층수에 발견된 결함이 없습니다.")
+    
+            # 시뮬레이션 상태일 경우 다음 프레임을 위해 sleep 후 rerun
+            if st.session_state.is_playing:
+                if st.session_state.current_layer < max_layer:
+                    time.sleep(0.8) # 0.3초에서 0.8초로 간격 증가 (시각적 확인 용이)
+                    st.session_state.current_layer += 1
+                    st.rerun()
+                else:
+                    st.session_state.is_playing = False
+                    st.rerun()
+                    
+        # 조각(Fragment) 실행
+        run_live_simulator()
             
     else:
         st.warning("실시간 스트림 결과 파일이 없습니다.")
