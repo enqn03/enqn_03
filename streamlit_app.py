@@ -195,17 +195,21 @@ with tab4:
         with col2:
             st.subheader("탐지된 결함 목록")
             st.markdown(f"총 {len(df)}개의 결함 의심 구역 발견")
-            df_display = df[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm']].copy()
+            df_display = df[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
             df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
             df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
             df_display['machine_y_mm'] = df_display['machine_y_mm'].apply(lambda x: f"{x:+.2f}")
+            df_display['raw_image_x_px'] = df_display['raw_image_x_px'].apply(lambda x: f"{int(x)}")
+            df_display['raw_image_y_px'] = df_display['raw_image_y_px'].apply(lambda x: f"{int(x)}")
             
             df_display.rename(columns={
                 'layer_z': '층수',
                 'score_percent': '확률',
                 'primary_cause': '원인',
-                'machine_x_mm': 'X 좌표',
-                'machine_y_mm': 'Y 좌표'
+                'machine_x_mm': 'X 좌표(mm)',
+                'machine_y_mm': 'Y 좌표(mm)',
+                'raw_image_x_px': '픽셀 X',
+                'raw_image_y_px': '픽셀 Y'
             }, inplace=True)
             
             st.dataframe(df_display, use_container_width=True, height=500)
