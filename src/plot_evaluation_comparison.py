@@ -17,9 +17,9 @@ def main():
     
     fig, ax = plt.subplots(figsize=(9, 6))
     
-    # Use standard colors
-    rects1 = ax.bar(x - width, recall, width, label='Recall (%)', color='#1f77b4', edgecolor='black')
-    rects2 = ax.bar(x, precision, width, label='Precision (%)', color='#ff7f0e', edgecolor='black')
+    # Use standard colors, matching the ablation chart order (Precision -> Recall -> F1)
+    rects1 = ax.bar(x - width, precision, width, label='Precision (%)', color='#ff7f0e', edgecolor='black')
+    rects2 = ax.bar(x, recall, width, label='Recall (%)', color='#1f77b4', edgecolor='black')
     rects3 = ax.bar(x + width, f1_score, width, label='F1-Score (%)', color='#2ca02c', edgecolor='black')
     
     ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
