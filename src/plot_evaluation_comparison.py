@@ -7,24 +7,27 @@ def main():
     # Data
     labels = ['Pixel-level (0mm)', 'Blob-level (2mm)']
     
-    recall = [4.5, 28.3]
-    precision = [2.1, 10.2]
+    # Correct final A+B Fusion metrics
+    recall = [4.5, 43.5]
+    precision = [2.1, 17.9]
+    f1_score = [2.9, 25.4]
     
     x = np.arange(len(labels))
-    width = 0.35
+    width = 0.25
     
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(9, 6))
     
-    # Use standard colors #1f77b4 (blue) and #ff7f0e (orange) to match other plots roughly
-    rects1 = ax.bar(x - width/2, recall, width, label='Recall (%)', color='#1f77b4', edgecolor='black')
-    rects2 = ax.bar(x + width/2, precision, width, label='Precision (%)', color='#ff7f0e', edgecolor='black')
+    # Use standard colors
+    rects1 = ax.bar(x - width, recall, width, label='Recall (%)', color='#1f77b4', edgecolor='black')
+    rects2 = ax.bar(x, precision, width, label='Precision (%)', color='#ff7f0e', edgecolor='black')
+    rects3 = ax.bar(x + width, f1_score, width, label='F1-Score (%)', color='#2ca02c', edgecolor='black')
     
     ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
-    ax.set_title('Performance Change by Evaluation Tolerance', fontsize=14, fontweight='bold')
+    ax.set_title('Performance Change by Evaluation Tolerance (A+B Fusion)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=12, fontweight='bold')
     ax.legend(fontsize=12)
-    ax.set_ylim(0, 35)
+    ax.set_ylim(0, 50)
     
     # Add grid
     ax.yaxis.grid(True, linestyle='--', alpha=0.7)
@@ -41,6 +44,7 @@ def main():
             
     autolabel(rects1)
     autolabel(rects2)
+    autolabel(rects3)
     
     fig.tight_layout()
     
