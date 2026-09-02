@@ -17,12 +17,11 @@ st.markdown("[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연")
 st.divider()
 
 # 탭 생성
-tab1, tab_process, tab_arch, tab2, tab3, tab4, tab_conclusion = st.tabs([
+tab1, tab_process, tab_arch, tab_analysis, tab4, tab_conclusion = st.tabs([
     "프로젝트 소개", 
     "프로젝트 과정",
     "모델 아키텍처 상세",
-    "모델 성능 검증",
-    "프로젝트 결과 분석",
+    "모델 성능 및 결과 심층 분석",
     "테스트셋 기준 결함 모니터링",
     "결과 및 향후 발전 방향"
 ])
@@ -189,9 +188,9 @@ with tab_arch:
     else:
         st.warning(f"{arch_file} 파일을 찾을 수 없습니다.")
 
-# 탭 2: 모델 성능 검증
-with tab2:
-    st.header("모델 성능 검증 (변인 통제 기반 실험 설계)")
+# 탭 2: 모델 성능 및 결과 심층 분석
+with tab_analysis:
+    st.header("모델 성능 및 결과 심층 분석")
     st.markdown("""
     우리 프로젝트는 단순히 모델 결과를 나열하는 것을 넘어, **독립 변인을 철저히 통제한 실험(Ablation Study)**을 통해 Recall과 F1-Score가 어떻게, 그리고 왜 향상되었는지 합리적으로 증명합니다.
     """)
@@ -246,11 +245,8 @@ with tab2:
         """)
     
     st.divider()
-    st.markdown("*(※ 추가적인 ROC/PRC 곡선 등 픽셀 단위 분석의 한계점은 다음 분석 탭에서 이어집니다.)*")
-
-# 탭 3: 프로젝트 결과 분석
-with tab3:
-    st.header("프로젝트 결과 분석 (핵심 설계 원리)")
+    
+    st.subheader("Step 3. 프로젝트 결과 심층 분석 (핵심 설계 원리)")
     st.markdown("우리 프로젝트가 높은 성능을 달성할 수 있었던 핵심적인 영상 처리 기법과 모델 아키텍처 설계 의도를 상세히 분석합니다.")
     
     col1, col2 = st.columns(2)
