@@ -18,7 +18,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from train_a_b_cbam_fusion_v5 import (
+from train_fusion import (
     ABCBAMFusionRegularizedCausalTemporalDifferenceCandidateNet,
     choose_device,
     load_yaml,

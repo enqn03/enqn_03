@@ -1,20 +1,20 @@
-# AMMT Defect Detection AI 🚀
+# AMMT Defect Detection AI
 
 본 프로젝트는 금속 3D 프린팅(AMMT) 과정에서 발생하는 미세한 결함을 탐지하기 위한 인공지능 모델을 개발하는 과정입니다. 
-센서(카메라) 데이터의 한계를 극복하기 위해 Gated CBAM Fusion 아키텍처를 도입하여 **A모달리티(쇳가루)**와 **B모달리티(쇳물)**를 결합하여 결함 탐지 정확도를 극대화했습니다.
+센서(카메라) 데이터의 한계를 극복하기 위해 Gated CBAM Fusion 아키텍처를 도입하여 **A모달리티(쇳가루)**와 **B모달리티(쇳물)**를 결합, 결함 탐지 정확도를 극대화했습니다.
 
 ### 데이터 결함 분포 분석
-저희는 데이터셋에 결함이 어디에 위치하는지 2D 및 3D로 시각화하여 분석했습니다.
+데이터셋 내 결함의 위치를 2D 및 3D로 시각화하여 분석했습니다.
 ![Defect Distribution 2D](outputs/defect_distribution_2d.png)
 ![Defect Distribution 3D](outputs/defect_distribution_3d.png)
 
 ### AI의 시선 (CBAM Spatial Attention Heatmap)
-아래는 AI가 Layer 242에서 실제 결함을 찾기 위해 집중(Focus)한 공간 영역을 시각화한 것입니다.
+다음은 AI가 Layer 242에서 실제 결함을 식별하기 위해 집중(Focus)한 공간 영역을 시각화한 결과입니다.
 ![CBAM Attention](outputs/cbam_attention_layer242.png)
 
-### 성능 증명 (ROC Curve & Ablation)
-- **B-only 모델**: 결함은 잘 찾지만(Recall 63%) 노이즈를 다 결함으로 착각해 알람이 523번 울렸습니다. (Precision 7.8%)
-- **Fusion 모델**: A의 정보로 노이즈를 필터링하여 **오탐(False Alarms)을 523번에서 111번으로 대폭 감소시켰고, F1-Score는 약 2배 향상**되었습니다!
+### 성능 검증 (ROC Curve & Ablation)
+- **B-only 모델**: 결함 탐지 성능(Recall 63%)은 양호하나, 노이즈를 결함으로 오인하여 오탐(False Alarms)이 523회 발생했습니다. (Precision 7.8%)
+- **Fusion 모델**: A 모달리티의 정보를 활용하여 노이즈를 필터링함으로써 **오탐(False Alarms)을 523회에서 111회로 대폭 감소시켰으며, F1-Score는 약 2배 향상**되었습니다.
 
 ![Ablation Bar Chart](outputs/ablation_bar_chart.png)
 ![ROC and PR Curves](outputs/roc_prc_curves.png)
@@ -1126,7 +1126,7 @@ A의 정보 부족을 해결하기 위해 레이저가 용융되는 순간을 �
 우리는 앞서 완성한 퓨전 모델을 사용해, 프린팅이 진행되는 즉시 카메라 이미지를 인퍼런스하여 `(x_pixel, y_pixel, layer_z, score)` 형태의 결함 좌표를 뽑아내는 파이프라인 스크립트를 완성했습니다.
 
 ## 40. 조기 경보 시스템(Early Warning System)의 안착
-이렇게 추출된 결과물(`live_inference_results_v6.csv`)을 3D 시각화 모듈에 통과시켜, 공정 엔지니어가 실시간으로 결함의 위치를 입체적으로 확인할 수 있는 조기 경보 시스템의 Baseline을 성공적으로 구축해 냈습니다. 이로써 길고 험난했던 AMMT 데이터 전처리와 AI 퓨전 아키텍처 구축 프로젝트가 화려하게 막을 내렸습니다. 🚀
+추출된 결과물(`live_inference_results_v6.csv`)을 3D 시각화 모듈에 통과시켜, 공정 엔지니어가 실시간으로 결함의 위치를 입체적으로 확인할 수 있는 조기 경보 시스템의 Baseline을 성공적으로 구축했습니다. 이를 통해 AMMT 데이터 전처리 및 AI 퓨전 아키텍처 구축 프로젝트를 성공적으로 완료하였습니다.
 
 ---
 
