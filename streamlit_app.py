@@ -17,13 +17,12 @@ st.markdown("[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연")
 st.divider()
 
 # 탭 생성
-tab1, tab_arch, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab_arch, tab2, tab3, tab4 = st.tabs([
     "프로젝트 소개", 
     "모델 아키텍처 상세",
-    "모델 성능 비교",
+    "모델 성능 검증",
     "프로젝트 결과 분석",
-    "테스트셋 기준 결함 모니터링", 
-    "단일 이미지 결함 테스트"
+    "테스트셋 기준 결함 모니터링"
 ])
 
 # 탭 1: 프로젝트 소개
@@ -216,59 +215,3 @@ with tab4:
     else:
         st.warning("실시간 스트림 결과 파일이 없습니다.")
 
-# 탭 5: 단일 이미지 결함 테스트
-with tab5:
-    st.header("단일 이미지 결함 테스트")
-    
-    st.error("""
-    데모 모드 한계 명시
-    실제 우리가 학습시킨 딥러닝 퓨전 모델은 정확한 결함 탐지를 위해 과거 4장의 시계열 이미지와 파우더/레이저 6채널 영상을 동시에 요구합니다.
-    본 화면은 임의의 단일 이미지 1장만 업로드했을 때, 이미지 처리 휴리스틱을 통해 부품 내에서 결함일 확률이 가장 높은 곳을 찾아 빨간 점을 찍어주는 웹 시연용 간소화 시뮬레이터입니다.
-    """)
-    
-    uploaded_file = st.file_uploader("AMMT 공정 사진을 업로드하세요", type=['png', 'jpg', 'jpeg', 'tif', 'tiff'])
-    
-    if uploaded_file is not None:
-        img = Image.open(uploaded_file).convert("RGB")
-        
-        # 데모 시뮬레이션: 가장 비정상적인 픽셀 찾기
-        img_array = np.array(img.convert("L")) # 흑백 변환
-        
-        # 간단한 블러 처리로 노이즈 제거
-        blurred = gaussian_filter(img_array, sigma=3)
-        
-        # 이미지의 중간 50% 영역 안에서만 찾기
-        h, w = blurred.shape
-        margin_h, margin_w = h // 4, w // 4
-        roi = blurred[margin_h:h-margin_h, margin_w:w-margin_w]
-        
-        # 가장 어두운 픽셀 찾기
-        min_y_roi, min_x_roi = np.unravel_index(np.argmin(roi), roi.shape)
-        
-        # 원본 이미지 좌표로 복원
-        target_y = min_y_roi + margin_h
-        target_x = min_x_roi + margin_w
-        
-        # 빨간 점과 테두리 그리기
-        draw = ImageDraw.Draw(img)
-        r = 15 # 점의 반지름
-        
-        # 빨간색 채워진 원
-        draw.ellipse((target_x - r, target_y - r, target_x + r, target_y + r), fill='red', outline='white', width=2)
-        # 주변을 감싸는 박스
-        box_r = 40
-        draw.rectangle((target_x - box_r, target_y - box_r, target_x + box_r, target_y + box_r), outline='red', width=3)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("결함 후보 탐지 결과")
-            st.image(img, caption="빨간 점: 가장 유력한 이상 픽셀", use_container_width=True)
-            
-        with col2:
-            st.subheader("예측 리포트")
-            st.success(f"탐지된 결함 좌표: (X: {target_x}, Y: {target_y})")
-            st.info("이 위치는 입력된 이미지 내에서 주변 대비 가장 이질적인 밝기 값을 갖는 곳으로 추정됩니다.")
-            st.markdown("""
-            > 실제 시스템 작동 방식
-            > 실제 파이프라인에서는 이러한 2D 픽셀 좌표가 캘리브레이션 행렬을 거쳐 프린터 물리 좌표로 변환된 후 작업자에게 알람으로 전송됩니다.
-            """)
