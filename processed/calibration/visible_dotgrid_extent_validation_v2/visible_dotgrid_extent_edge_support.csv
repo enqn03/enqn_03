@@ -1,0 +1,5 @@
+edge_index,edge_name,edge_length_px,fresh_candidate_count_within_edge_band,edge_band_max_distance_px,fraction_min,fraction_max,fraction_contiguous_run_count,approx_intervals_at_camera_pitch,important_limit
+1,top_left_outer_dot_center_to_top_right_outer_dot_center,561.749054293819,38,8.010157444773254,0.0,1.0,1,38.57127428415314,"Edge candidate count is an image-space visible-panel metric, not a physical target count or D-coordinate index."
+2,top_right_outer_dot_center_to_bottom_right_outer_dot_center,811.9507374219202,5,8.010157444773254,0.0,1.0,3,55.750827453891254,"Edge candidate count is an image-space visible-panel metric, not a physical target count or D-coordinate index."
+3,bottom_right_outer_dot_center_to_bottom_left_outer_dot_center,644.310484161169,43,8.010157444773254,0.0,1.0,1,44.24017489442422,"Edge candidate count is an image-space visible-panel metric, not a physical target count or D-coordinate index."
+4,bottom_left_outer_dot_center_to_top_left_outer_dot_center,857.0052508590597,51,8.010157444773254,0.0,1.0,1,58.8443974069508,"Edge candidate count is an image-space visible-panel metric, not a physical target count or D-coordinate index."

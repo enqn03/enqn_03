@@ -1,0 +1,2 @@
+path,size_bytes,sha256,axes,shape,dtype,page_count,width,height,channels,layers_z,leds_t
+/Users/kimsangmin/ammt_project/raw_original/layer_camera/LayerCameraAfterSpreading.tif,6000018266,f1172632c4c9ec49341041c66032bcd5a4eb9fca9b9e58ee0227ab3c9b399bf6,TZYX,3x250x2000x2000,uint16,1,2000,2000,1,250,3

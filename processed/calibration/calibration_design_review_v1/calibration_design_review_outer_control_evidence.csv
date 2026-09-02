@@ -1,0 +1,5 @@
+selection_order,semantic_name,evidence_class,current_frozen_snap_pass,local_lattice_evidence_pass,current_frozen_nearest_distance_px,nearest_local_candidate_distance_px,nearest_v3_assigned_distance_px,nearest_nominal_prediction_distance_px,extent_design_use
+1,top_left_outer_dot_center,current_detector_supported,True,True,3.479890664426711,3.479890664426711,5.121397967610703,4.8334528268326835,evidence_only; no automatic extent construction
+2,top_right_outer_dot_center,printed_dot_visible_but_current_detector_missed,False,True,170.41794110446605,4.9844983372500975,184.44334114194282,184.12098733190138,evidence_only; no automatic extent construction
+3,bottom_right_outer_dot_center,ambiguous,False,False,87.56457284197518,14.345516389616746,212.7939832599672,184.18798918796594,evidence_only; no automatic extent construction
+4,bottom_left_outer_dot_center,ambiguous,False,False,16.030693535876406,16.030693535876406,35.19573381934673,35.30581710747274,evidence_only; no automatic extent construction

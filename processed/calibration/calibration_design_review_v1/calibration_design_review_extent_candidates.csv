@@ -1,0 +1,3 @@
+extent_candidate,point_count_in_extent,point_fraction_in_extent,unique_assigned_rows,unique_assigned_columns,row_min,row_max,column_min,column_max,missing_nominal_rows,missing_nominal_columns,coverage_rows_gate_pass,coverage_columns_gate_pass,fixed_rows_ge_40_and_columns_ge_50_pass,important_limit
+frozen_detector_roi,1554,1.0,39,50,0,39,0,49,38;40;41;42;43;44;45;46;47;48;49,,False,True,False,Occupancy is descriptive image-space evidence; it cannot promote an extent or change the fixed coverage gate.
+v2_human_quad,1539,0.9903474903474904,38,50,0,37,0,49,38;39;40;41;42;43;44;45;46;47;48;49,,False,True,False,Occupancy is descriptive image-space evidence; it cannot promote an extent or change the fixed coverage gate.

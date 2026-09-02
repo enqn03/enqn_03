@@ -1,0 +1,3 @@
+rank,orientation,fit_rmse_px,loo_rmse_px,in_sensor_projected_fraction,overlay_png
+1,mirror_rotate_90,5.2120586660101775,7.028278322386677,1.0,processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank1_mirror_rotate_90_overlay.png
+2,mirror_rotate_270,5.2120586660101615,7.028278322386715,1.0,processed/calibration/layer125_orientation_overlay_v1/layer125_B_led3_rank2_mirror_rotate_270_overlay.png
