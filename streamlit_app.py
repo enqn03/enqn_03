@@ -217,21 +217,27 @@ with tab4:
         
         c1, c2 = st.columns([2, 1])
         with c1:
-            fig = px.scatter_3d(
-                df_filtered, 
-                x='machine_x_mm', y='machine_y_mm', z='layer_z',
-                color='score_percent', size='score_percent',
-                color_continuous_scale='YlOrRd',
-                range_color=[80, 100],
-                title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
-                labels={
-                    'machine_x_mm': 'X 좌표',
-                    'machine_y_mm': 'Y 좌표',
-                    'layer_z': '층수',
-                    'score_percent': '결함 확률'
-                },
-                hover_data=['primary_cause']
-            )
+            if df_filtered.empty:
+                import plotly.graph_objects as go
+                fig = go.Figure()
+                fig.update_layout(title="검출된 3D 이상 후보 위치")
+            else:
+                fig = px.scatter_3d(
+                    df_filtered, 
+                    x='machine_x_mm', y='machine_y_mm', z='layer_z',
+                    color='score_percent', size='score_percent',
+                    color_continuous_scale='YlOrRd',
+                    range_color=[80, 100],
+                    title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
+                    labels={
+                        'machine_x_mm': 'X 좌표',
+                        'machine_y_mm': 'Y 좌표',
+                        'layer_z': '층수',
+                        'score_percent': '결함 확률'
+                    },
+                    hover_data=['primary_cause']
+                )
+                
             fig.update_layout(
                 scene=dict(
                     xaxis_title='Machine X',
@@ -271,7 +277,7 @@ with tab4:
                 
                 st.dataframe(df_display, use_container_width=True, height=500)
             else:
-                st.info("현재 층수까지 발견된 결함이 없습니다.")
+                st.info("현재 층수에 발견된 결함이 없습니다.")
 
         # 시뮬레이션 상태일 경우 다음 프레임을 위해 sleep 후 rerun
         if st.session_state.is_playing:
