@@ -217,26 +217,36 @@ with tab4:
         
         c1, c2 = st.columns([2, 1])
         with c1:
-            if df_filtered.empty:
-                import plotly.graph_objects as go
-                fig = go.Figure()
-                fig.update_layout(title="검출된 3D 이상 후보 위치")
+            is_empty = df_filtered.empty
+            if is_empty:
+                # 빈 데이터프레임일 경우 기존 px.scatter_3d 레이아웃(컬러바, 축 등)을 완벽히 유지하기 위해 더미 데이터 생성
+                import pandas as pd
+                plot_df = pd.DataFrame([{
+                    'machine_x_mm': 0, 'machine_y_mm': 0, 'layer_z': 150,
+                    'score_percent': 80, 'primary_cause': 'None'
+                }])
             else:
-                fig = px.scatter_3d(
-                    df_filtered, 
-                    x='machine_x_mm', y='machine_y_mm', z='layer_z',
-                    color='score_percent', size='score_percent',
-                    color_continuous_scale='YlOrRd',
-                    range_color=[80, 100],
-                    title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
-                    labels={
-                        'machine_x_mm': 'X 좌표',
-                        'machine_y_mm': 'Y 좌표',
-                        'layer_z': '층수',
-                        'score_percent': '결함 확률'
-                    },
-                    hover_data=['primary_cause']
-                )
+                plot_df = df_filtered
+
+            fig = px.scatter_3d(
+                plot_df, 
+                x='machine_x_mm', y='machine_y_mm', z='layer_z',
+                color='score_percent', size='score_percent',
+                color_continuous_scale='YlOrRd',
+                range_color=[80, 100],
+                title="검출된 3D 이상 후보 위치", # title이 동적으로 변하면 카메라가 리셋될 수 있으므로 정적 문자열로 고정
+                labels={
+                    'machine_x_mm': 'X 좌표',
+                    'machine_y_mm': 'Y 좌표',
+                    'layer_z': '층수',
+                    'score_percent': '결함 확률'
+                },
+                hover_data=['primary_cause']
+            )
+            
+            if is_empty:
+                # 더미 데이터를 투명하게 만들어 화면에 보이지 않게 처리 (틀만 유지)
+                fig.update_traces(marker=dict(opacity=0), hoverinfo='skip', hovertemplate=None)
                 
             fig.update_layout(
                 scene=dict(
