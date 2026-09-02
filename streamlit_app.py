@@ -93,22 +93,11 @@ with tab2:
     col_plot, col_roc = st.columns([1.5, 1])
     
     with col_plot:
-        # 평가 방식 비교 데이터
-        eval_data = {
-            "평가 방식": ["픽셀 단위 (0mm 허용)", "픽셀 단위 (0mm 허용)", "객체 단위 (2mm 허용)", "객체 단위 (2mm 허용)"],
-            "지표": ["Recall (결함 발견율)", "Precision (정밀도)", "Recall (결함 발견율)", "Precision (정밀도)"],
-            "성능 (%)": [4.5, 2.1, 28.3, 10.2]
-        }
-        df_eval = pd.DataFrame(eval_data)
-        
-        fig_eval = px.bar(
-            df_eval, x="평가 방식", y="성능 (%)", color="지표", barmode="group",
-            title="평가 방식(Tolerance) 차이에 따른 성능 변화",
-            text_auto='.1f',
-            color_discrete_sequence=['#ff9999', '#66b3ff']
-        )
-        fig_eval.update_layout(yaxis_title="성능 (%)", xaxis_title="")
-        st.plotly_chart(fig_eval, use_container_width=True)
+        comp_path = "outputs/pixel_vs_blob_comparison.png"
+        if os.path.exists(comp_path):
+            st.image(Image.open(comp_path), caption="픽셀 단위 vs 객체 단위 성능 비교", use_container_width=True)
+        else:
+            st.warning(f"{comp_path} 파일이 없습니다.")
         
     with col_roc:
         roc_path = "outputs/roc_prc_curves.png"
