@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from PIL import Image
+from PIL import Image, ImageDraw
 import os
+import numpy as np
+from scipy.ndimage import gaussian_filter
 
 # 페이지 기본 설정
 st.set_page_config(page_title="AMMT Defect Detection Dashboard", layout="wide", page_icon="🏭")
@@ -15,10 +17,12 @@ st.markdown("**[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연**")
 st.divider()
 
 # 탭 생성
-tab1, tab2, tab3 = st.tabs([
-    "📖 프로젝트 소개 (Overview)", 
-    "🚨 실시간 결함 모니터링 (Live Stream)", 
-    "🧠 핵심 설계 의도 및 성능 (Rationale)"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📖 프로젝트 소개", 
+    "📊 모델 성능 비교 (A vs B vs A+B)",
+    "🖼️ 이미지 생성 원리 갤러리",
+    "🚨 실시간 결함 모니터링", 
+    "📸 단일 이미지 결함 테스트"
 ])
 
 # 탭 1: 프로젝트 소개
@@ -38,8 +42,62 @@ with tab1:
     - **CBAM Attention:** 채널과 공간 어텐션을 통해 A와 B 중 어떤 특징이 치명적인지 스스로 판단하여 융합
     """)
 
-# 탭 2: 실시간 결함 모니터링
+# 탭 2: 모델 성능 비교
 with tab2:
+    st.header("모델 성능 비교 (A-only vs B-only vs A+B Fusion)")
+    st.markdown("""
+    단일 공정 이미지만을 사용했을 때와 두 이미지를 융합했을 때의 성능 차이를 정량적으로 비교합니다.
+    - **A-only 모델:** 파우더 도포 이미지만 관찰 (조기 경보에는 유리하지만, 레이저 조사로 인한 최종 결함을 놓침)
+    - **B-only 모델:** 레이저 조사 이미지만 관찰 (최종 상태는 확인 가능하지만 도포 불량을 놓침)
+    - **A+B Fusion 모델 (우리 모델):** 두 정보를 융합하여 테스트 손실(Test Loss)을 획기적으로 낮추고 안정성을 확보!
+    """)
+    
+    ablation_path = "outputs/ablation_bar_chart.png"
+    if os.path.exists(ablation_path):
+        st.image(Image.open(ablation_path), caption="Ablation Study: 단일 모델과 융합 모델의 Test Loss 비교", use_container_width=False, width=800)
+    else:
+        st.warning("`outputs/ablation_bar_chart.png` 파일이 없습니다.")
+        
+    st.info("""
+    💡 **왜 Pixel 단위 지표(F1-score)는 낮고, Blob(덩어리) 단위 성능은 높을까요?**
+    우리 정답지는 완벽한 픽셀 마스크가 아닌 XCT에서 추출한 대략적인 덩어리(Weak Target)입니다. 
+    따라서 픽셀 단위로 칼채점하면 오차가 크게 발생하지만, **결함 덩어리를 맞췄는지(Blob-level Recall)**로 평가하면 약 30%의 치명적 결함을 성공적으로 잡아냅니다.
+    """)
+    roc_path = "outputs/roc_prc_curves.png"
+    if os.path.exists(roc_path):
+        st.image(Image.open(roc_path), caption="픽셀 단위 평가 곡선 (보수적 기준의 정량 지표)", use_container_width=False, width=600)
+
+# 탭 3: 이미지 생성 원리 갤러리
+with tab3:
+    st.header("이미지 생성 원리 갤러리 (Why Heatmaps?)")
+    st.markdown("우리 프로젝트에서 생성된 히트맵과 마스크 이미지들이 왜 이렇게 생겼는지, 어떤 의미를 가지는지 해설합니다.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("1. Gated CBAM Attention 히트맵")
+        cbam_path = "outputs/cbam_attention_layer242.png"
+        if os.path.exists(cbam_path):
+            st.image(Image.open(cbam_path), caption="Layer 242의 CBAM Attention Heatmap", use_container_width=True)
+        st.markdown("""
+        **Q: 왜 히트맵이 부품 모서리나 특정 영역에만 진하게 표시될까요?**
+        A: 모델이 파우더와 레이저 이미지를 단순 합치지 않고, **CBAM(어텐션 메커니즘)**을 통해 이상 징후가 강한 영역(주로 부품의 경계나 결함 발생 스팟)에만 가중치를 주기 때문입니다. 이는 모델이 공정의 물리적 차이를 제대로 이해하고 있다는 증거입니다.
+        """)
+        
+    with col2:
+        st.subheader("2. 가우시안 타겟과 서포트 마스크 (Gaussian Target)")
+        dist_path = "outputs/defect_distribution_2d.png"
+        if os.path.exists(dist_path):
+            st.image(Image.open(dist_path), caption="2D 결함 타겟 분포 (XCT 기반)", use_container_width=True)
+        st.markdown("""
+        **Q: 왜 타겟을 점(Point)이 아니라 둥근 덩어리로 퍼뜨렸나요?**
+        A: 카메라 픽셀과 실제 3D 프린터 기계 사이에는 미세한 좌표 오차(Calibration Drift)가 존재합니다. 정확한 픽셀 하나를 맞추라고 강요하면 학습이 무너집니다. 따라서 `sigma=2`의 가우시안 블러를 주어 **'공간적 관용(Tolerance)'**을 부여했습니다.
+        
+        **Q: Support-Masked BCE란?**
+        A: XCT 데이터가 없는 텅 빈 영역을 '정상'이라고 모델에게 거짓말하지 않기 위해, **데이터가 확실히 존재하는 영역(Support)**에서만 오차를 계산(Masking)했습니다.
+        """)
+
+# 탭 4: 실시간 결함 모니터링
+with tab4:
     st.header("실시간 결함 시뮬레이션 결과")
     st.markdown("""
     학습된 퓨전 모델이 실제 장비가 한 층씩 프린팅을 진행할 때 찾아낸 결함들입니다.
@@ -53,7 +111,6 @@ with tab2:
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            # Plotly 3D Scatter 차트 생성
             fig = px.scatter_3d(
                 df, 
                 x='machine_x_mm', y='machine_y_mm', z='layer_z',
@@ -78,7 +135,6 @@ with tab2:
         with col2:
             st.subheader("📋 탐지된 결함 목록")
             st.markdown(f"총 **{len(df)}개**의 결함 의심 구역 발견")
-            # 보기 좋게 포맷팅
             df_display = df[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm']].copy()
             df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
             df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
@@ -94,44 +150,61 @@ with tab2:
             
             st.dataframe(df_display, use_container_width=True, height=500)
     else:
-        st.warning("⚠️ 실시간 스트림 결과 파일(`outputs/live_stream_results.csv`)을 찾을 수 없습니다. 터미널에서 `live_inference_stream.py`를 먼저 실행해주세요.")
+        st.warning("⚠️ 실시간 스트림 결과 파일이 없습니다.")
 
-# 탭 3: 모델 설계 의도 및 성능
-with tab3:
-    st.header("엔지니어링 의사결정 (Design Rationale)")
-    st.markdown("단순히 모델을 가져다 쓴 것이 아니라, **데이터의 한계를 극복하기 위해 치열하게 고민한 흔적**입니다.")
+# 탭 5: 단일 이미지 결함 테스트
+with tab5:
+    st.header("단일 이미지 결함 테스트 (Demo Simulator)")
     
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.info("#### 1. K=4 시계열 선택의 이유\n"
-                "과거 프레임을 너무 길게 잡으면 예전의 노이즈가 현재를 덮어버리는 **Temporal Collapse** 현상이 발생했습니다. "
-                "모델이 절대적인 이미지를 외우지 않고 직전 3개 층과의 **'변화량'**에만 집중하도록 의도적으로 시야를 좁혔습니다.")
-        
-        st.success("#### 2. 가우시안 타겟 (Gaussian Target)\n"
-                   "카메라와 XCT 사이의 미세한 물리적 좌표 오차를 인정하고, 점(Point)이 아닌 "
-                   "`sigma=2`의 넓은 가우시안 분포를 타겟으로 주어 모델에게 공간적 관용(Spatial Tolerance)을 부여했습니다.")
-        
-    with col_b:
-        st.warning("#### 3. Support-Masked BCE와 극단적 가중치\n"
-                   "XCT 데이터가 아예 없는 빈 공간을 '정상'이라고 거짓말하지 않기 위해, 데이터가 확실히 존재하는 영역만 학습시켰습니다. "
-                   "또한 전체의 1.7%에 불과한 치명적 불량을 잡기 위해 양성 타겟에 `pos_weight=100`의 가중치를 걸었습니다.")
-        
-        st.error("#### 4. Gated CBAM Fusion\n"
-                 "파우더 도포 이미지와 레이저 조사 이미지를 단순 합치면 강한 신호가 약한 신호를 묻어버립니다. "
-                 "따라서 CBAM(어텐션)을 달아주어 지금 이 결함이 **'어느 공정에서 기인했는지' 모델 스스로 가중치를 저울질**하도록 만들었습니다.")
-
-    st.divider()
-    
-    st.header("성능 평가 및 산업적 가치")
-    st.markdown("""
-    우리의 Ground Truth는 완벽한 픽셀 마스크가 아닌 대략적인 덩어리(Weak Target)입니다. 따라서 픽셀 단위로 칼채점을 하는 
-    F1-Score 지표는 낮게 나올 수밖에 없습니다.
-    
-    하지만 **객체 단위(Blob-level)**로 평가하면 완전히 이야기가 달라집니다. 
-    듬성듬성한 XCT 데이터로만 학습시켰음에도, **숨겨진 치명적 결함 덩어리의 약 30%(Recall 28.2%)를 정확히 타격**하고 있습니다. 
-    이는 실제 산업 현장에서 공정 중 불량 알람을 띄우는 용도로 충분한 가능성을 입증한 결과입니다.
+    st.error("""
+    **🚨 데모 모드 (Demo Mode) 한계 명시**
+    실제 우리가 학습시킨 딥러닝 퓨전 모델은 정확한 결함 탐지를 위해 **과거 4장의 시계열 이미지(K=4)**와 **파우더/레이저 6채널 영상**을 동시에 요구합니다.
+    본 화면은 임의의 단일 이미지 1장만 업로드했을 때, 이미지 처리(Image Processing) 휴리스틱을 통해 부품 내에서 결함(Spatter/비정상 스팟)일 확률이 가장 높은 곳을 찾아 빨간 점을 찍어주는 **웹 시연용 간소화 시뮬레이터**입니다.
     """)
     
-    roc_path = "outputs/roc_prc_curves.png"
-    if os.path.exists(roc_path):
-        st.image(Image.open(roc_path), caption="픽셀 단위 평가 곡선 (보수적 기준의 정량 지표)", use_container_width=False, width=600)
+    uploaded_file = st.file_uploader("AMMT 공정 사진을 업로드하세요 (JPG, PNG, TIF)", type=['png', 'jpg', 'jpeg', 'tif', 'tiff'])
+    
+    if uploaded_file is not None:
+        img = Image.open(uploaded_file).convert("RGB")
+        
+        # 데모 시뮬레이션: 가장 비정상적인 픽셀(가장 튀는 밝기/어두움) 찾기
+        img_array = np.array(img.convert("L")) # 흑백 변환
+        
+        # 간단한 블러 처리로 노이즈 제거
+        blurred = gaussian_filter(img_array, sigma=3)
+        
+        # 이미지의 중간 50% 영역(ROI) 안에서만 찾기 (가장자리는 보통 배경이므로 무시)
+        h, w = blurred.shape
+        margin_h, margin_w = h // 4, w // 4
+        roi = blurred[margin_h:h-margin_h, margin_w:w-margin_w]
+        
+        # 가장 어두운 픽셀(보통 결함/Spatter/구멍) 찾기
+        min_y_roi, min_x_roi = np.unravel_index(np.argmin(roi), roi.shape)
+        
+        # 원본 이미지 좌표로 복원
+        target_y = min_y_roi + margin_h
+        target_x = min_x_roi + margin_w
+        
+        # 빨간 점과 테두리 그리기
+        draw = ImageDraw.Draw(img)
+        r = 15 # 점의 반지름
+        
+        # 빨간색 채워진 원 (결함 위치)
+        draw.ellipse((target_x - r, target_y - r, target_x + r, target_y + r), fill='red', outline='white', width=2)
+        # 주변을 감싸는 박스 (강조)
+        box_r = 40
+        draw.rectangle((target_x - box_r, target_y - box_r, target_x + box_r, target_y + box_r), outline='red', width=3)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("결함 후보 탐지 결과")
+            st.image(img, caption="빨간 점: 가장 유력한 이상(Anomaly) 픽셀", use_container_width=True)
+            
+        with col2:
+            st.subheader("예측 리포트 (Simulated)")
+            st.success(f"**탐지된 결함 좌표:** (X: {target_x}px, Y: {target_y}px)")
+            st.info("이 위치는 입력된 이미지 내에서 주변 대비 가장 이질적인 밝기 값을 갖는 곳(Spatter 튐 또는 도포 불량)으로 추정됩니다.")
+            st.markdown("""
+            > **실제 시스템 작동 방식**
+            > 실제 파이프라인에서는 이러한 2D 픽셀 좌표(X, Y)가 `Calibration Homography` 행렬을 거쳐 프린터 물리 좌표(mm)로 변환된 후 작업자에게 알람으로 전송됩니다.
+            """)
