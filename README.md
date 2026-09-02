@@ -181,18 +181,22 @@ wide ROI는 평균 saturation이 가장 낮고 1500×1500 raw pixel의 넓은 �
 
 > **중요:** wide ROI는 “포화가 사라졌다”거나 “최종 물리 ROI다”라는 결론이 아니다. 비교 후보 중 가장 안전한 baseline 선택일 뿐이며, saturation은 별도 channel로 남겨야 한다.
 
-### 5.3 ROI 선택 뒤에도 포화가 남아 왜 mask를 추가했는가
+### 5.3 ROI 선택 뒤에도 포화가 남아 왜 mask를 추가했는가 (3채널 → 6채널 확장)
 
-wide ROI에서도 stage/LED별 평균 saturation은 A LED1=35.62%, A LED2=51.19%, A LED3=11.90%, B LED1=45.44%, B LED2=49.94%, B LED3=13.11%였다. 즉 crop만으로 sensor ceiling 문제를 해결할 수 없고, 특히 LED1/2의 `65535`를 단순히 매우 밝은 physical signal로 해석하면 안 된다.
+wide ROI에서도 stage/LED별 평균 saturation은 A LED1=35.62%, A LED2=51.19%, A LED3=11.90%, B LED1=45.44%, B LED2=49.94%, B LED3=13.11%였다. 즉 crop만으로 sensor ceiling(빛 번짐 등) 문제를 해결할 수 없고, 특히 LED1/2의 `65535`를 단순히 매우 밝은 physical signal로 해석하면 안 된다.
 
-그래서 각 history layer에 대해 다음 두 종류의 channel을 함께 만든다.
+그래서 원본 3채널(LED 1, 2, 3) 이미지를 **6채널 입력 텐서**로 확장하는 전처리를 수행한다.
 
 | Channel | 계산 | 선정 이유 |
 |---|---|---|
 | Intensity 3ch | train-only normalization 뒤 `[0,1]` | LED별 raw brightness scale을 공통 model input range로 옮김 |
-| Validity 3ch | `raw < 65535`이면 1, 아니면 0 | saturation과 실제 높은 intensity를 구분하게 함 |
+| Validity 3ch | `raw < 65535`이면 1, 아니면 0 | 빛 번짐(Saturation) 등으로 유효하지 않은 픽셀을 0으로 처리하고, 정상 픽셀만 1로 마스킹하여 모델이 노이즈에 속지 않게 함 |
 
-모델용 grid는 256×256이다. wide ROI 1500 pixel을 256으로 줄이므로 model pixel 하나는 약 `1500/256 = 5.859` raw pixel 폭을 대표한다. crop/resize/mask는 Dataset이 메모리에서만 만들며, dense model frame이나 saturation mask file은 저장하지 않는다.
+### 5.4 256x256 리사이징 및 XCT 타겟 좌표 가우시안 릴렉세이션
+
+모델용 grid는 메모리 및 연산 효율성을 위해 256×256으로 설정되었다. wide ROI 1500 pixel을 256으로 줄이므로 model pixel 하나는 약 `1500/256 = 5.859` raw pixel 폭을 대표한다. crop/resize/mask는 Dataset이 메모리에서만 만들며, dense model frame이나 saturation mask file은 물리적 용량 절감을 위해 디스크에 저장하지 않는다.
+
+이 256×256 리사이징 과정에서 **정답지(XCT 결함 좌표) 처리**에 핵심적인 기법이 들어간다. 사후에 촬영된 3D XCT 좌표를 2D 카메라 좌표계로 투영할 때 발생하는 1~2 픽셀 수준의 미세한 위치 오차(Registration Error)를 보정하기 위해, 단순히 해당 좌표 점 하나만 1로 찍는 것이 아니라 **해당 좌표를 중심으로 하는 가우시안 필터(Gaussian Filter, $\sigma=2$)를 씌워 부드러운 확률 분포 형태(Relaxation)로 변환**한다. 이를 통해 모델은 픽셀 단위의 완벽한 위치 적중을 강요받지 않고, 결함 주변부의 맥락적(Contextual) 패턴을 학습할 수 있게 된다.
 
 ---
 
