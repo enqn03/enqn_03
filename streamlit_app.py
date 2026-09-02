@@ -155,7 +155,11 @@ with tab4:
             fig.update_layout(scene=dict(
                 xaxis_title='Machine X',
                 yaxis_title='Machine Y',
-                zaxis_title='Layer'
+                zaxis_title='Layer',
+                xaxis=dict(range=[-20, 20]),
+                yaxis=dict(range=[-20, 20]),
+                zaxis=dict(range=[0, 300]),
+                aspectmode='cube'
             ))
             st.plotly_chart(fig, use_container_width=True)
             
