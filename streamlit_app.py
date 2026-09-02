@@ -414,7 +414,7 @@ with tab4:
                 
             if show_cumulative:
                 df_filtered = df[df['layer_z'] <= current_z]
-                list_title = f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (1층 ~ {current_z}층)"
+                list_title = f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 ({min_layer}층 ~ {current_z}층)"
             else:
                 df_filtered = df[df['layer_z'] == current_z]
                 list_title = f"**해당 층 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 {current_z}층)"
