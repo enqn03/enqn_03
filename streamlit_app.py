@@ -75,7 +75,7 @@ with tab_process:
     - **선정 결과 및 근거:** 평가 결과 중심부로 좁혀질수록(`inner_450`) 빛 번짐(Saturation)이 최대 99%까지 치솟는 문제(Center-saturation)를 발견했습니다. 반면, 가장 넓은 영역을 포함한 `wide_250_250_1750_1750` 후보군이 **빛 번짐 비율이 34.5%로 가장 낮아 유효 데이터 비율(Valid Fraction) 1위**를 기록했습니다.
     - **결론:** 이에 따라 중앙부 빛 번짐을 최소화하면서도 가장 넓은 데이터를 확보할 수 있는 `(250, 250)` ~ `(1750, 1750)` 구역(1500x1500 픽셀)을 최종 분석 ROI로 크롭(Crop) 확정하였습니다.
     """)
-    roi_img_path = "processed/roi_audit/roi_candidate_qc.png"
+    roi_img_path = "processed/roi_candidates/roi_candidate_qc.png"
     if os.path.exists(roi_img_path):
         c1, c2, c3 = st.columns([1, 4, 1])
         with c2:
