@@ -17,8 +17,9 @@ st.markdown("[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연")
 st.divider()
 
 # 탭 생성
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab_arch, tab2, tab3, tab4, tab5 = st.tabs([
     "프로젝트 소개", 
+    "모델 아키텍처 상세",
     "모델 성능 비교",
     "이미지 생성 원리 갤러리",
     "실시간 결함 모니터링", 
@@ -41,6 +42,19 @@ with tab1:
     - Temporal Difference: 단순히 현재 이미지만 보는 것이 아니라, 과거 3프레임 평균과 현재의 차이를 명시적으로 계산
     - CBAM Attention: 채널과 공간 어텐션을 통해 A와 B 중 어떤 특징이 치명적인지 스스로 판단하여 융합
     """)
+
+# 탭: 모델 아키텍처 상세
+with tab_arch:
+    st.header("모델 구조 시각화 (Architecture Diagrams)")
+    st.markdown("프로젝트 과정에서 고안된 3가지 주요 모델의 흐름도입니다.")
+    
+    arch_file = "docs/model_architectures.md"
+    if os.path.exists(arch_file):
+        with open(arch_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        st.markdown(content)
+    else:
+        st.warning(f"{arch_file} 파일을 찾을 수 없습니다.")
 
 # 탭 2: 모델 성능 비교
 with tab2:
