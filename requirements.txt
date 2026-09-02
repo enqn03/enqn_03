@@ -7,3 +7,6 @@ scikit-learn
 scipy
 pyyaml
 tqdm
+streamlit
+plotly
+pandas
