@@ -21,7 +21,7 @@ tab1, tab_arch, tab2, tab3, tab4, tab5 = st.tabs([
     "프로젝트 소개", 
     "모델 아키텍처 상세",
     "모델 성능 비교",
-    "이미지 생성 원리 갤러리",
+    "프로젝트 결과 분석",
     "테스트셋 기준 결함 모니터링", 
     "단일 이미지 결함 테스트"
 ])
@@ -92,33 +92,39 @@ with tab2:
     if os.path.exists(roc_path):
         st.image(Image.open(roc_path), caption="픽셀 단위 평가 곡선", use_container_width=False, width=600)
 
-# 탭 3: 이미지 생성 원리 갤러리
+# 탭 3: 프로젝트 결과 분석
 with tab3:
-    st.header("이미지 생성 원리 갤러리")
-    st.markdown("우리 프로젝트에서 생성된 히트맵과 마스크 이미지들이 왜 이렇게 생겼는지, 어떤 의미를 가지는지 해설합니다.")
+    st.header("프로젝트 결과 분석 (핵심 설계 원리)")
+    st.markdown("우리 프로젝트가 높은 성능을 달성할 수 있었던 핵심적인 영상 처리 기법과 모델 아키텍처 설계 의도를 상세히 분석합니다.")
     
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("1. Gated CBAM Attention 히트맵")
+        st.subheader("1. Gated CBAM Attention 기반 특징 융합")
         cbam_path = "outputs/cbam_attention_layer242.png"
         if os.path.exists(cbam_path):
             st.image(Image.open(cbam_path), caption="Layer 242의 CBAM Attention Heatmap", use_container_width=True)
         st.markdown("""
-        Q: 왜 히트맵이 부품 모서리나 특정 영역에만 진하게 표시될까요?
-        A: 모델이 파우더와 레이저 이미지를 단순 합치지 않고, 어텐션 메커니즘을 통해 이상 징후가 강한 영역에만 가중치를 주기 때문입니다. 이는 모델이 공정의 물리적 차이를 제대로 이해하고 있다는 증거입니다.
+        단순한 모델 결합(Concat)의 한계
+        초기 실험에서는 파우더 도포 이미지(A)와 레이저 조사 이미지(B)를 단순히 합쳐서 모델에 넣었습니다. 하지만 이럴 경우, 두 이미지 간의 의미 없는 배경 노이즈까지 함께 섞여버리면서 오히려 단일 모델보다 성능이 떨어지는 간섭 현상이 발생했습니다.
+        
+        해결책: CBAM (Convolutional Block Attention Module)
+        이를 해결하기 위해 인간이 시각적으로 중요한 곳에만 집중하듯, 모델 스스로 중요한 채널과 공간에 가중치를 부여하는 CBAM을 도입했습니다. 위 히트맵에서 붉게 칠해진 영역을 보면, 모델이 부품의 형태가 없는 배경은 철저히 무시하고, 부품의 모서리나 표면 텍스처가 크게 변한 결함 의심 스팟(Spatter)에만 핀포인트로 강한 어텐션을 주고 있음을 알 수 있습니다.
         """)
         
     with col2:
-        st.subheader("2. 가우시안 타겟과 서포트 마스크")
+        st.subheader("2. 가우시안 타겟 릴렉세이션 및 Support Masking")
         dist_path = "outputs/defect_distribution_2d.png"
         if os.path.exists(dist_path):
             st.image(Image.open(dist_path), caption="2D 결함 타겟 분포", use_container_width=True)
         st.markdown("""
-        Q: 왜 타겟을 점이 아니라 둥근 덩어리로 퍼뜨렸나요?
-        A: 카메라 픽셀과 실제 3D 프린터 기계 사이에는 미세한 좌표 오차가 존재합니다. 정확한 픽셀 하나를 맞추라고 강요하면 학습이 무너집니다. 따라서 sigma=2의 가우시안 블러를 주어 공간적 관용을 부여했습니다.
+        좌표 오차 문제 (Calibration Drift)
+        이 프로젝트의 가장 큰 어려움 중 하나는 XCT 정답지와 2D 카메라 이미지 간의 미세한 물리적 좌표 불일치였습니다. 3D 공간을 2D 픽셀로 변환하는 과정에서 기계적 오차가 발생하기 때문에, 완벽한 1픽셀 단위의 정답을 요구하면 모델이 혼란에 빠집니다.
         
-        Q: Support-Masked BCE란?
-        A: XCT 데이터가 없는 텅 빈 영역을 '정상'이라고 모델에게 거짓말하지 않기 위해, 데이터가 확실히 존재하는 영역에서만 오차를 계산했습니다.
+        해결책: 가우시안 블러 (Gaussian Target Relaxation)
+        해결책으로 정답 픽셀 주변에 sigma=2 수준의 가우시안 블러를 주어 공간적 관용을 부여했습니다. 즉, "정확히 이 픽셀을 맞춰라"가 아니라 "이 근방에 결함이 있다"고 가르친 것입니다.
+        
+        Support-Masked BCE 손실 함수
+        또한 XCT 데이터가 제공되지 않는 구멍이나 빈 공간을 '정상'이라고 잘못 학습하는 것을 막기 위해, 데이터가 확실히 존재하는 부품 내부 영역(Support)에서만 오차를 계산(Masking)하도록 손실 함수를 재설계하여 학습 안정성을 극대화했습니다.
         """)
 
 # 탭 4: 실시간 결함 모니터링
