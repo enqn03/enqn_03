@@ -149,6 +149,8 @@ with tab3:
         또한 XCT 데이터가 제공되지 않는 구멍이나 빈 공간을 '정상'이라고 잘못 학습하는 것을 막기 위해, 데이터가 확실히 존재하는 부품 내부 영역(Support)에서만 오차를 계산(Masking)하도록 손실 함수를 재설계하여 학습 안정성을 극대화했습니다.
         """)
 
+import time
+
 # 탭 4: 실시간 결함 모니터링
 with tab4:
     st.header("테스트셋 기준 결함 시뮬레이션 결과")
@@ -163,15 +165,55 @@ with tab4:
         # tensor(203) 같은 문자열이 섞여있을 수 있으므로 숫자만 추출하여 정수형 변환
         df['layer_z'] = df['layer_z'].astype(str).str.extract(r'(\d+)').astype(int)
         
-        col1, col2 = st.columns([2, 1])
+        min_layer = int(df['layer_z'].min())
+        max_layer = int(df['layer_z'].max())
         
-        with col1:
+        if 'current_layer' not in st.session_state:
+            st.session_state.current_layer = max_layer
+        if 'is_playing' not in st.session_state:
+            st.session_state.is_playing = False
+            
+        st.subheader("🟢 실시간 라이브 시뮬레이터")
+        st.markdown("슬라이더를 움직이거나 '라이브 재생' 버튼을 눌러 결함 탐지 과정을 실시간으로 모니터링하세요.")
+        
+        col_btn, col_slider = st.columns([1, 4])
+        
+        with col_btn:
+            st.write("") # 정렬용
+            button_label = "⏹️ 재생 중지" if st.session_state.is_playing else "▶️ 라이브 재생 시작"
+            if st.button(button_label, use_container_width=True):
+                st.session_state.is_playing = not st.session_state.is_playing
+                if st.session_state.is_playing:
+                    # 끝까지 도달한 상태에서 재생을 누르면 처음부터 다시 시작
+                    if st.session_state.current_layer >= max_layer:
+                        st.session_state.current_layer = min_layer
+                st.rerun()
+                
+        with col_slider:
+            selected_z = st.slider(
+                "현재 프린팅 층수 (Layer Z)", 
+                min_value=min_layer, max_value=max_layer, 
+                value=st.session_state.current_layer, step=1, key="main_layer_slider"
+            )
+            
+        # 플레이 중일 때는 세션 상태의 값을 우선하고, 아니면 사용자가 슬라이더 조작한 값을 반영
+        if st.session_state.is_playing:
+            current_z = st.session_state.current_layer
+        else:
+            current_z = selected_z
+            st.session_state.current_layer = current_z
+            
+        df_filtered = df[df['layer_z'] <= current_z]
+        
+        c1, c2 = st.columns([2, 1])
+        with c1:
             fig = px.scatter_3d(
-                df, 
+                df_filtered, 
                 x='machine_x_mm', y='machine_y_mm', z='layer_z',
                 color='score_percent', size='score_percent',
                 color_continuous_scale='YlOrRd',
-                title="검출된 3D 이상 후보 위치 분포",
+                range_color=[80, 100],
+                title=f"검출된 3D 이상 후보 위치 (Layer: {current_z})",
                 labels={
                     'machine_x_mm': 'X 좌표',
                     'machine_y_mm': 'Y 좌표',
@@ -189,29 +231,44 @@ with tab4:
                 zaxis=dict(range=[0, 300]),
                 aspectmode='cube'
             ))
+            # 키를 제거하여 Plotly가 업데이트 시 화면 전체를 Unmount하지 않고 자연스럽게 데이터를 교체하도록 함
             st.plotly_chart(fig, use_container_width=True)
             
-        with col2:
+        with c2:
             st.subheader("탐지된 결함 목록")
-            st.markdown(f"총 {len(df)}개의 결함 의심 구역 발견")
-            df_display = df[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
-            df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
-            df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
-            df_display['machine_y_mm'] = df_display['machine_y_mm'].apply(lambda x: f"{x:+.2f}")
-            df_display['raw_image_x_px'] = df_display['raw_image_x_px'].apply(lambda x: f"{int(x)}")
-            df_display['raw_image_y_px'] = df_display['raw_image_y_px'].apply(lambda x: f"{int(x)}")
+            st.markdown(f"**누적 {len(df_filtered)}개**의 결함 의심 구역 발견 (현재 층: {current_z})")
+            if not df_filtered.empty:
+                df_display = df_filtered[['layer_z', 'score_percent', 'primary_cause', 'machine_x_mm', 'machine_y_mm', 'raw_image_x_px', 'raw_image_y_px']].copy()
+                df_display['score_percent'] = df_display['score_percent'].apply(lambda x: f"{x:.1f}%")
+                df_display['machine_x_mm'] = df_display['machine_x_mm'].apply(lambda x: f"{x:+.2f}")
+                df_display['machine_y_mm'] = df_display['machine_y_mm'].apply(lambda x: f"{x:+.2f}")
+                df_display['raw_image_x_px'] = df_display['raw_image_x_px'].apply(lambda x: f"{int(x)}")
+                df_display['raw_image_y_px'] = df_display['raw_image_y_px'].apply(lambda x: f"{int(x)}")
+                
+                df_display.rename(columns={
+                    'layer_z': '층수',
+                    'score_percent': '확률',
+                    'primary_cause': '원인',
+                    'machine_x_mm': 'X(mm)',
+                    'machine_y_mm': 'Y(mm)',
+                    'raw_image_x_px': '픽셀 X',
+                    'raw_image_y_px': '픽셀 Y'
+                }, inplace=True)
+                
+                st.dataframe(df_display, use_container_width=True, height=500)
+            else:
+                st.info("현재 층수까지 발견된 결함이 없습니다.")
+
+        # 시뮬레이션 상태일 경우 다음 프레임을 위해 sleep 후 rerun
+        if st.session_state.is_playing:
+            if st.session_state.current_layer < max_layer:
+                time.sleep(0.8) # 0.3초에서 0.8초로 간격 증가 (시각적 확인 용이)
+                st.session_state.current_layer += 1
+                st.rerun()
+            else:
+                st.session_state.is_playing = False
+                st.rerun()
             
-            df_display.rename(columns={
-                'layer_z': '층수',
-                'score_percent': '확률',
-                'primary_cause': '원인',
-                'machine_x_mm': 'X 좌표(mm)',
-                'machine_y_mm': 'Y 좌표(mm)',
-                'raw_image_x_px': '픽셀 X',
-                'raw_image_y_px': '픽셀 Y'
-            }, inplace=True)
-            
-            st.dataframe(df_display, use_container_width=True, height=500)
     else:
         st.warning("실시간 스트림 결과 파일이 없습니다.")
 
