@@ -19,6 +19,13 @@ tab1, tab_process, tab_arch, tab_analysis, tab4, tab_conclusion = st.tabs([
     "결과 및 향후 발전 방향"
 ])
 with tab1:
+    st.header("🎯 핵심 프로젝트 성과 요약 (TL;DR)")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("오탐율(False Alarms) 감소", "▼ 78%", "523회 → 111회")
+    col2.metric("결함 탐지 재현율(Recall)", "85%+", "Pixel vs Blob 비교 기준")
+    col3.metric("타겟 불균형 극복", "0.8% 미만", "Masked BCE 손실함수 적용")
+    st.divider()
+
     st.header("1. 프로젝트 배경 및 문제 정의")
     st.markdown("""
     **LPBF(Laser Powder Bed Fusion)** 기반 금속 3D 프린팅 공정은 한 번에 제품을 만드는 것이 아니라, 수천 개의 레이어를 한 층씩 쌓아 올려 완성합니다.
@@ -40,6 +47,22 @@ with tab1:
     - **Temporal Difference 적용:** 단순히 현재 시점의 이미지만 보는 것을 넘어, 직전 과거 프레임들의 평균과 현재 프레임의 차이를 명시적으로 계산하여 공정 상의 **변화량에** 모델이 집중하도록 유도했습니다.
     - **게이트 융합:** A와 B에서 추출된 특징을 결합할 때, CBAM이 채널 및 공간적 어텐션을 동적으로 계산합니다. 이를 통해 B 이미지의 시끄러운 노이즈는 억제하고, 결함 탐지에 유효한 시그널만 선별적으로 융합(Fusion)하여 오탐을 획기적으로 줄였습니다.
     """)
+    st.info("💡 **Gated CBAM Fusion 아키텍처 흐름도**")
+    st.markdown('''
+    ```mermaid
+    graph LR
+        A[A Modality<br>쇳가루 도포 직후] -->|CNN Encoder| E1(A Features)
+        B[B Modality<br>레이저 조사 직후] -->|CNN Encoder| E2(B Features)
+        
+        E1 --> G{Gated CBAM<br>어텐션 밸브}
+        E2 --> G
+        
+        G -->|스패터 노이즈 차단<br>결함 시그널 융합| D[CNN Decoder Block]
+        D -->|Spatial Dropout 30%| O[최종 결함 히트맵<br>Quality Score Map]
+    ```
+    *(참고: 위 다이어그램은 프로젝트 퓨전 모델 아키텍처의 논리적 흐름도입니다)*
+    ''')
+
 with tab_process:
     st.header("프로젝트 수행 과정")
     st.markdown("로우 데이터(Raw Data)로부터 신뢰할 수 있는 결함 탐지 모델을 구축하기 위해 수행한 핵심 전처리 및 검증 과정입니다.")
@@ -157,6 +180,16 @@ with tab_process:
     - **결론:** 이 과정을 통해 모델은 어떤 시각적 특징이 실제 사후 XCT에서도 치명적인 결함 점수를 나타내는가를 인과적으로 맵핑하여 학습할 수 있는 튼튼한 Weak Supervision 환경을 갖추게 되었습니다.
     """)
 with tab_arch:
+    st.header("💡 맞서 싸운 데이터셋의 극단적 한계와 난이도")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("총 3D 시퀀스", "250+ Layers", "프린팅 타워")
+    c2.metric("원본 해상도", "2000 x 2000 px", "대용량 광학 픽셀")
+    c3.metric("최대 센서 포화값", "65535 도달", "극심한 빛 번짐 현상")
+    c4.metric("실제 결함 비율", "0.8% 미만", "초격차 타겟 불균형")
+    st.markdown("> **설계 당위성:** 위와 같이 압도적으로 무겁고 극불균형한 데이터를 다루기 위해, 단순 CNN 모델이 아닌 **ROI 최적화, 6채널 확장, 정규화, 가우시안 릴렉세이션** 등의 정밀한 전처리 파이프라인과 **Gated CBAM 아키텍처**를 설계해야만 했습니다.")
+    st.divider()
+
+
     st.header("모델 구조 시각화")
     st.markdown("프로젝트 과정에서 고안된 3가지 주요 모델의 흐름도입니다.")
     arch_file = "docs/model_architectures.md"
@@ -449,3 +482,28 @@ with tab_conclusion:
     - **다양한 결함 원인 분석 확장:** 현재는 결함 **확률을** 중심으로 의심 위치를 좁히는 1차 모니터링에 주력하고 있습니다.
       > **발전 방향:** 결함의 유형(크랙, 기공, 층간 분리 등)을 세부적으로 다중 분류하는 기능까지 확장하여, 엔지니어에게 구체적인 원인 분석 리포트까지 자동 제공하는 차세대 시스템으로 발전할 수 있습니다.
     """)
+
+    st.divider()
+    st.header("💡 Tech Stack & Team R&R")
+    st.markdown("본 프로젝트 파이프라인 및 대시보드 구축에 활용된 기술 스택과 팀원들의 역할입니다.")
+    
+    col_ts, col_tm = st.columns([1, 2])
+    with col_ts:
+        st.subheader("🛠 Tech Stack")
+        st.markdown('''
+        - **Deep Learning:** `PyTorch`, `TorchVision`
+        - **Data Processing:** `NumPy`, `SciPy`, `Pandas`
+        - **Computer Vision:** `PIL (Pillow)`, `OpenCV`
+        - **Visualization:** `Streamlit`, `Plotly`, `Matplotlib`
+        - **Architecture:** `CBAM (Attention)`, `Gated CNN`
+        ''')
+    with col_tm:
+        st.subheader("👨‍💻 TEAM 3Do 역할 분담")
+        st.markdown('''
+        | 이름 | 담당 역할 (R&R) |
+        |---|---|
+        | **김상민** | **PM & 퓨전 아키텍처 설계:** Gated CBAM 모델 구축, Loss 최적화, 대시보드 기획 |
+        | **김태학** | **데이터 엔지니어링:** ROI 분석, 카메라-머신 간 XCT 캘리브레이션 및 정렬 검증 |
+        | **이주현** | **MLOps & 시각화:** 실시간 라이브 인퍼런스 스트림 구축, 3D Plotly 시뮬레이터 개발 |
+        | **정미연** | **성능 검증 (Audit):** A/B 단일 모델 베이스라인 테스트, Multi-seed 실험 및 정량 지표 분석 |
+        ''')
