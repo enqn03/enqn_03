@@ -1087,7 +1087,7 @@ A-only 시계열은 레이저가 조사되기 전의 쇳가루 표면만을 봅�
 ## 33. B-only 모델 도입과 오탐(False Alarms)의 악몽
 A의 정보 부족을 해결하기 위해 레이저가 용융되는 순간을 찍은 B 모달리티(Burned)를 단독으로 학습시켰습니다. B 이미지는 강렬한 스패터(Spatter)와 용융풀(Melt pool)의 빛을 담고 있어 결함 신호가 매우 강력했습니다.
 - **가설:** B-only 모델은 결함을 확실히 찾아낼 것이다.
-- **절망적인 결과:** 결함을 잘 찾아내긴 했지만(Recall 상승), 정상적인 레이저 궤적이나 단순한 반사광마저 모두 결함으로 착각하여 무려 **523번의 거짓 알람(오탐, False Positive)**을 울렸습니다. 정밀도(Precision)는 7.8%로 곤두박질쳤고, 이대로는 현장에 배포할 수 없는 '양치기 소년' 모델이 되어버렸습니다.
+- **절망적인 결과:** 결함을 잘 찾아내긴 했지만(Recall 상승), 정상적인 레이저 궤적이나 단순한 반사광마저 모두 결함으로 착각하여 무려 **523번의 거짓 알람(오탐, False Positive)**을 울렸습니다. 정밀도(Precision)는 7.8%로 곤두박질쳤고, 이대로는 현장에 배포할 수 없는 모델이 되어버렸습니다.
 
 ---
 
@@ -1260,4 +1260,12 @@ python3 src/live_inference_stream.py \
   --registered-root raw_original/registered_xct \
   --threshold 0.9 \
   --output-csv outputs/live_stream_results.csv
+```
+
+### 인터랙티브 웹 대시보드 (Interactive Streamlit Dashboard)
+
+터미널 출력을 넘어, 모델의 분석 결과와 실시간 3D 결함 분포도를 웹 브라우저에서 직관적으로 확인할 수 있는 스트림릿 애플리케이션이 준비되어 있습니다. 브라우저에서 직접 시뮬레이터를 조작하며 층별 변화를 시각적으로 분석할 수 있습니다.
+
+```bash
+streamlit run streamlit_app.py
 ```
