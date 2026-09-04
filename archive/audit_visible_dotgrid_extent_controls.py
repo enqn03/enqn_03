@@ -1,18 +1,16 @@
+utf-8
 #!/usr/bin/env python3
 """Validate four human-reviewed visible DotGrid outer controls without calibrating.
-
 Inputs are the immutable DotGrid TIFF, a compact four-point control JSON from
 select_visible_dotgrid_extent_controls.py, and the completed V3 feature CSV.
 The audit snaps clicks only after a frozen image-space tolerance check, verifies
 convex human panel geometry and edge-dot support, and compares that panel to
 V3 assigned/predicted image-lattice footprint.
-
 It does not select a physical D origin, fit or deploy a machine calibration,
 change grid size or the 40-row gate, edit config, choose rank/orientation, or
 access production TIFF/XCT/target/model/candidate data.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -21,12 +19,10 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials_refined import (
     density_roi,
     dot_grid_candidates,
@@ -40,14 +36,10 @@ from audit_independent_method2_calibration_candidate import (
     nearest_camera_dot_pitch_px,
     project,
 )
-
-
 EXPECTED_ORDER = ["top_left_outer_dot_center", "top_right_outer_dot_center", "bottom_right_outer_dot_center", "bottom_left_outer_dot_center"]
 CLICK_SNAP_MAX_PITCH = 0.60
 EDGE_SUPPORT_MAX_PITCH = 0.55
 NOMINAL_GRID_SIZE = GRID_SIZE
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid TIFF, opened read-only via memmap(mode='r').")
@@ -56,16 +48,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path, help="New ignored directory for compact validation CSV/JSON and at most two overlays.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only an existing output directory after review.")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def load_controls(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -86,8 +74,6 @@ def load_controls(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"Control {index} has non-finite raw coordinate.")
         output.append({"selection_order": index, "semantic_name": EXPECTED_ORDER[index - 1], "clicked_x_px": x, "clicked_y_px": y})
     return output
-
-
 def load_v3_features(path: Path) -> list[dict[str, Any]]:
     required = {"image_lattice_col_index_0_to_49", "image_lattice_row_index_0_to_49", "raw_x_px", "raw_y_px"}
     with path.open("r", newline="", encoding="utf-8") as handle:
@@ -105,8 +91,6 @@ def load_v3_features(path: Path) -> list[dict[str, Any]]:
     if len(rows) < 8:
         raise ValueError("V3 feature CSV requires at least eight rows.")
     return rows
-
-
 def nearest_indices_and_distances(query: np.ndarray, reference: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     indices: list[np.ndarray] = []
     distances: list[np.ndarray] = []
@@ -118,12 +102,8 @@ def nearest_indices_and_distances(query: np.ndarray, reference: np.ndarray) -> t
         indices.append(index)
         distances.append(np.sqrt(squared[np.arange(len(chunk)), index]))
     return np.concatenate(indices), np.concatenate(distances)
-
-
 def cross(left: np.ndarray, right: np.ndarray) -> float:
     return float(left[0] * right[1] - left[1] * right[0])
-
-
 def is_strictly_convex_quad(points: np.ndarray) -> tuple[bool, list[float]]:
     values: list[float] = []
     for index in range(4):
@@ -133,8 +113,6 @@ def is_strictly_convex_quad(points: np.ndarray) -> tuple[bool, list[float]]:
     positive = all(value > 0.0 for value in values)
     negative = all(value < 0.0 for value in values)
     return bool(positive or negative), values
-
-
 def points_inside_convex_quad(points: np.ndarray, quad: np.ndarray) -> np.ndarray:
     signs = []
     for index in range(4):
@@ -145,8 +123,6 @@ def points_inside_convex_quad(points: np.ndarray, quad: np.ndarray) -> np.ndarra
         signs.append(edge[0] * vector[:, 1] - edge[1] * vector[:, 0])
     stacked = np.stack(signs, axis=1)
     return np.all(stacked >= -1.0e-9, axis=1) | np.all(stacked <= 1.0e-9, axis=1)
-
-
 def point_segment_distance_and_fraction(points: np.ndarray, first: np.ndarray, second: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     direction = second - first
     denom = float(np.dot(direction, direction))
@@ -156,15 +132,11 @@ def point_segment_distance_and_fraction(points: np.ndarray, first: np.ndarray, s
     projection = first + fraction[:, None] * direction[None, :]
     distance = np.linalg.norm(points - projection, axis=1)
     return distance, fraction
-
-
 def contiguous_run_count(values: np.ndarray, gap_limit: float) -> int:
     if len(values) == 0:
         return 0
     ordered = np.sort(values)
     return int(1 + np.sum(np.diff(ordered) > gap_limit))
-
-
 def edge_support_records(quad: np.ndarray, fresh_points: np.ndarray, pitch: float) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     max_distance = EDGE_SUPPORT_MAX_PITCH * pitch
@@ -189,15 +161,11 @@ def edge_support_records(quad: np.ndarray, fresh_points: np.ndarray, pitch: floa
             "important_limit": "Edge candidate count is an image-space visible-panel metric, not a physical target count or D-coordinate index.",
         })
     return records
-
-
 def fit_v3_image_lattice(features: list[dict[str, Any]]) -> np.ndarray:
     source = np.asarray([[float(row["col"]), float(row["row"])] for row in features], dtype=np.float64)
     raw = np.asarray([[float(row["raw_x_px"]), float(row["raw_y_px"])] for row in features], dtype=np.float64)
     h_matrix, _, _, _ = inlier_fit(source, raw)
     return h_matrix
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"Cannot write empty validation CSV: {path.name}")
@@ -205,8 +173,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def plot_controls_and_edges(gray: np.ndarray, quad: np.ndarray, fresh_points: np.ndarray, edge_records: list[dict[str, Any]], output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
@@ -228,8 +194,6 @@ def plot_controls_and_edges(gray: np.ndarray, quad: np.ndarray, fresh_points: np
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_v3_footprint(gray: np.ndarray, quad: np.ndarray, features: list[dict[str, Any]], nominal_predicted: np.ndarray, output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     figure, axis = plt.subplots(figsize=(9, 9), dpi=160)
@@ -252,8 +216,6 @@ def plot_v3_footprint(gray: np.ndarray, quad: np.ndarray, features: list[dict[st
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
@@ -263,7 +225,6 @@ def main() -> None:
     if not args.v3_features.is_file():
         raise FileNotFoundError(f"Required completed V3 feature CSV not found: {args.v3_features}")
     prepare_output_directory(args.output_dir, args.overwrite)
-
     controls = load_controls(args.controls_json)
     features = load_v3_features(args.v3_features)
     channels, metadata = read_tiff(args.dot_grid)
@@ -314,7 +275,6 @@ def main() -> None:
         "nominal_50x50_predicted_outside_human_quad_count": int((~nominal_inside).sum()),
         "important_limit": "Human visible extent is image-space evidence only; these counts do not alter grid size, coverage gate, physical target convention, D origin, machine coordinates, transform/rank, or config.",
     }
-
     controls_csv = args.output_dir / "visible_dotgrid_extent_control_validation.csv"
     edges_csv = args.output_dir / "visible_dotgrid_extent_edge_support.csv"
     footprint_csv = args.output_dir / "visible_dotgrid_extent_v3_footprint_summary.csv"
@@ -326,7 +286,6 @@ def main() -> None:
     write_csv(footprint_csv, [summary_row])
     plot_controls_and_edges(gray, snapped, fresh_points, edge_rows, controls_overlay)
     plot_v3_footprint(gray, snapped, features, nominal_predicted, footprint_overlay)
-
     min_edge_candidates = min(int(row["fresh_candidate_count_within_edge_band"]) for row in edge_rows)
     validation_pass = bool(all_snapped and distinct and convex and all_inside_sensor and min_edge_candidates >= 3)
     summary = {
@@ -375,8 +334,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Visible DotGrid extent controls validated. No raw TIFF/CSV, grid/coverage policy, calibration, model, target, checkpoint, decoder, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Audit rank/margin mechanisms behind temporal-difference candidate switches.
-
 For selected held-out endpoints, compare normal causal K=4 history against the
 same diagnostic counterfactuals used by the matched stability audit. The audit
 uses the unchanged support-independent local-maximum decoder, stores only compact
 metrics and display-only overlays, and never alters decoder thresholds or policy.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -15,27 +14,21 @@ import math
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import Tensor
-
 from ammt_causal_dataset import AMMTCausalStageDataset
 from audit_a_only_temporal_difference_stability_v1 import counterfactual_histories, decode
 from train_a_only_baseline import choose_device, load_yaml
 from train_a_only_temporal_difference_v1 import AOnlyCausalTemporalDifferenceCandidateNet
-
-
 TOP_K = 5
 MATCH_RADIUS_MODEL_PX = 1.0
 NEAR_TIE_MARGIN_FRACTION_MAX = 0.05
 HIGH_MARGIN_FRACTION_MIN = 0.20
 MAX_SELECTED_ENDPOINTS = 3
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -48,20 +41,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path) -> None:
     if path.exists():
         raise FileExistsError(f"Output directory already exists: {path}. Review it and choose a new --output-dir; this audit never overwrites it.")
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError("Cannot write an empty CSV.")
@@ -69,16 +56,10 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def distance_model(left: dict[str, Any], right: dict[str, Any]) -> float:
     return float(math.hypot(float(left["x_model_pixel"]) - float(right["x_model_pixel"]), float(left["y_model_pixel"]) - float(right["y_model_pixel"])))
-
-
 def distance_raw(left: dict[str, Any], right: dict[str, Any]) -> float:
     return float(math.hypot(float(left["x_pixel"]) - float(right["x_pixel"]), float(left["y_pixel"]) - float(right["y_pixel"])))
-
-
 def score_metrics(candidates: list[dict[str, Any]], spatial_range: float) -> dict[str, float | None]:
     if not candidates:
         return {"top1_score": None, "top2_score": None, "top1_top2_margin": None, "top1_top2_margin_fraction_of_spatial_range": None, "top1_top2_separation_model_px": None, "top1_top2_separation_raw_px": None}
@@ -95,8 +76,6 @@ def score_metrics(candidates: list[dict[str, Any]], spatial_range: float) -> dic
         "top1_top2_separation_model_px": distance_model(first, second),
         "top1_top2_separation_raw_px": distance_raw(first, second),
     }
-
-
 def matched_candidate_rank(reference: dict[str, Any], candidates: list[dict[str, Any]], radius_model_px: float) -> tuple[int | None, float | None]:
     matches = [(int(candidate["rank"]), distance_model(reference, candidate)) for candidate in candidates]
     nearby = [(rank, distance) for rank, distance in matches if distance <= radius_model_px]
@@ -104,8 +83,6 @@ def matched_candidate_rank(reference: dict[str, Any], candidates: list[dict[str,
         return None, min((distance for _, distance in matches), default=None)
     rank, distance = min(nearby, key=lambda item: (item[0], item[1]))
     return rank, distance
-
-
 def top_k_overlap(reference: list[dict[str, Any]], variant: list[dict[str, Any]], radius_model_px: float) -> int:
     used: set[int] = set()
     count = 0
@@ -116,8 +93,6 @@ def top_k_overlap(reference: list[dict[str, Any]], variant: list[dict[str, Any]]
             used.add(chosen)
             count += 1
     return count
-
-
 def classify_switch(
     baseline: dict[str, Any],
     variant: dict[str, Any],
@@ -147,8 +122,6 @@ def classify_switch(
     ):
         return "high_margin_peak_relocation_consistent"
     return "ambiguous_switch_mechanism"
-
-
 def plot_overlays(
     maps: list[tuple[str, Tensor]],
     decoded: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]],
@@ -184,8 +157,6 @@ def plot_overlays(
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not 1 <= len(args.indices) <= MAX_SELECTED_ENDPOINTS or len(set(args.indices)) != len(args.indices):
@@ -209,14 +180,12 @@ def main() -> None:
     if int(evaluation["top_k_candidates_per_endpoint"]) != TOP_K:
         raise ValueError(f"Audit requires fixed top-K={TOP_K} comparison.")
     prepare_output_directory(args.output_dir)
-
     device = choose_device(args.device or str(training["device"]))
     checkpoint = torch.load(args.checkpoint, map_location=device)
     model = AOnlyCausalTemporalDifferenceCandidateNet(input_channels=6, base_channels=int(model_config["base_channels"])).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     dataset = AMMTCausalStageDataset(stage="A", tiff_path=args.tiff_a, manifest_path=args.manifest, normalization_config_path=args.normalization_config, split=args.split, resize_hw=tuple(int(value) for value in data["model_resolution"]))
-
     rows: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
     qc_paths: list[str] = []
@@ -286,7 +255,6 @@ def main() -> None:
             qc_path = args.output_dir / f"temporal_difference_candidate_margin_endpoint_z{int(sample['endpoint_layer_z']):03d}.png"
             plot_overlays(maps, decoded, int(sample["endpoint_layer_z"]), qc_path)
             qc_paths.append(str(qc_path))
-
     csv_path = args.output_dir / "a_only_temporal_difference_candidate_margin_by_variant.csv"
     summary_path = args.output_dir / "a_only_temporal_difference_candidate_margin_summary.json"
     write_csv(csv_path, rows)
@@ -326,8 +294,6 @@ def main() -> None:
     write_json(summary_path, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Temporal-difference candidate-margin audit complete. No raw data, XCT/weak target, checkpoint, config, calibration, or decoder policy was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

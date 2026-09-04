@@ -1,19 +1,17 @@
+utf-8
 #!/usr/bin/env python3
 """Audit NIST method-#2 D-to-C calibration candidates without changing deployment calibration.
-
 This script uses only the layer-camera DotGrid TIFF, the existing provisional
 calibration config/control JSON, and published method-#2 constants. It detects
 subpixel dot candidates, constructs an approximate 50x50 dot-grid lattice,
 fits D-to-C homography *candidates*, and evaluates them on held-out lattice
 blocks. It writes a candidate set for human review only.
-
 It never changes calibration_v1.yaml, selects a rank/orientation, rewrites raw
 TIFF/CSV, accesses A/B manufacturing image stacks, target/model/checkpoints, or
 relabels any quality candidate. The primary candidate location policy remains
 raw layer-camera pixels.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -22,13 +20,11 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
-
 from audit_independent_metrology_fiducials_refined import (
     density_roi,
     dot_grid_candidates,
@@ -38,16 +34,12 @@ from audit_independent_metrology_fiducials_refined import (
     refined_feature_candidates,
 )
 from audit_machine_camera_calibration import Hfit, build_candidates, project
-
-
 GRID_SIZE = 50
 DOT_PITCH_MM = 1.0
 A_ORIGIN_IN_D_MM = np.array([28.25, 24.25], dtype=np.float64)
 D_TO_A_ABS_ANGLE_DEG = 2.5
 HOLDOUT_BLOCK_SIZE = 5
 HOLDOUT_MODULUS = 5
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid_2000x2000.tif read via memmap(mode='r').")
@@ -55,27 +47,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def hom(points: np.ndarray) -> np.ndarray:
     return np.column_stack([points, np.ones(len(points), dtype=np.float64)])
-
-
 def add_raw_offset(h_matrix: np.ndarray, offset_xy: tuple[float, float]) -> np.ndarray:
     """Compose a raw-camera pixel translation after a source-to-camera transform."""
     dx, dy = offset_xy
     translation = np.array([[1.0, 0.0, dx], [0.0, 1.0, dy], [0.0, 0.0, 1.0]], dtype=np.float64)
     return translation @ np.asarray(h_matrix, dtype=np.float64)
-
-
 def subpixel_dark_blob_centers(gray: np.ndarray, points: np.ndarray, radius: int = 4) -> tuple[np.ndarray, np.ndarray]:
     """Use local positive dark-blob response weights to obtain conservative subpixel centroids."""
     response = dot_response(gray)
@@ -97,14 +81,11 @@ def subpixel_dark_blob_centers(gray: np.ndarray, points: np.ndarray, radius: int
         refined_x = float((xx * weights).sum() / total)
         refined_y = float((yy * weights).sum() / total)
         shift = float(math.hypot(refined_x - x, refined_y - y))
-        # A response centroid that moves more than one dot radius is treated as unstable.
         if shift > radius:
             refined_x, refined_y, shift = float(x), float(y), 0.0
         centers.append([refined_x, refined_y])
         shifts.append(shift)
     return np.asarray(centers, dtype=np.float64), np.asarray(shifts, dtype=np.float64)
-
-
 def kmeans_1d(values: np.ndarray, cluster_count: int, iterations: int = 100) -> np.ndarray:
     """Deterministic 1D k-means initialized at evenly spaced empirical quantiles."""
     values = np.asarray(values, dtype=np.float64)
@@ -125,8 +106,6 @@ def kmeans_1d(values: np.ndarray, cluster_count: int, iterations: int = 100) -> 
             break
         centers = updated
     return centers
-
-
 def pca_coordinates(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return centered PCA coordinates and orthonormal image-space basis vectors."""
     points = np.asarray(points, dtype=np.float64)
@@ -138,11 +117,8 @@ def pca_coordinates(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndar
     order = np.argsort(values)[::-1]
     basis = vectors[:, order]
     return (points - center) @ basis, center, basis
-
-
 def assign_lattice_cells(points: np.ndarray, responses: np.ndarray, grid_size: int = GRID_SIZE) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Assign candidates to one approximate 50x50 lattice under image-space PCA axes.
-
     The output index is intentionally orientation-agnostic. Eight D-axis variants
     are composed later and all are retained; no image/machine orientation is selected.
     """
@@ -151,7 +127,6 @@ def assign_lattice_cells(points: np.ndarray, responses: np.ndarray, grid_size: i
     axis1_centers = kmeans_1d(coordinates[:, 1], grid_size)
     col = np.argmin(np.abs(coordinates[:, 0, None] - axis0_centers[None, :]), axis=1)
     row = np.argmin(np.abs(coordinates[:, 1, None] - axis1_centers[None, :]), axis=1)
-
     retained: dict[tuple[int, int], int] = {}
     for index, key in enumerate(zip(col.tolist(), row.tolist(), strict=True)):
         previous = retained.get(key)
@@ -180,8 +155,6 @@ def assign_lattice_cells(points: np.ndarray, responses: np.ndarray, grid_size: i
         "pca_basis_columns_raw_xy": basis.tolist(),
         "important_limit": "PCA cell indices are image-lattice indices. Their lower-left D origin and axis directions are intentionally unresolved here and retained as alternatives.",
     }
-
-
 def orientation_variants() -> list[dict[str, Any]]:
     """Enumerate eight D-axis assignments for an orientation-ambiguous PCA lattice."""
     variants: list[dict[str, Any]] = []
@@ -195,8 +168,6 @@ def orientation_variants() -> list[dict[str, Any]]:
                     "orientation_variant": f"{'swap_' if swapped else ''}pca_xy__dx_{'reverse' if flip_x else 'forward'}__dy_{'reverse' if flip_y else 'forward'}",
                 })
     return variants
-
-
 def d_coordinates_from_index_rows(index_rows: list[dict[str, Any]], variant: dict[str, Any]) -> np.ndarray:
     coordinates: list[list[float]] = []
     for row in index_rows:
@@ -207,12 +178,8 @@ def d_coordinates_from_index_rows(index_rows: list[dict[str, Any]], variant: dic
         d_y = GRID_SIZE - 1 - second if bool(variant["pca_row_reversed_for_d_y"]) else second
         coordinates.append([float(d_x) * DOT_PITCH_MM, float(d_y) * DOT_PITCH_MM])
     return np.asarray(coordinates, dtype=np.float64)
-
-
 def raw_coordinates_from_index_rows(index_rows: list[dict[str, Any]]) -> np.ndarray:
     return np.asarray([[float(row["raw_x_px"]), float(row["raw_y_px"])] for row in index_rows], dtype=np.float64)
-
-
 def inlier_fit(source_d: np.ndarray, raw_c: np.ndarray, initial_threshold_fraction: float = 0.30, iterations: int = 6) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """Iteratively refit a D-to-C candidate and reject large pixel residuals deterministically."""
     if len(source_d) != len(raw_c) or len(source_d) < 8:
@@ -226,7 +193,6 @@ def inlier_fit(source_d: np.ndarray, raw_c: np.ndarray, initial_threshold_fracti
         residual = np.linalg.norm(project(h_matrix, source_d) - raw_c, axis=1)
         active_residual = residual[active]
         robust_scale = float(np.median(active_residual))
-        # Scale against local camera dot spacing estimated from residual-free source neighbors later.
         threshold = max(2.0, 3.0 * robust_scale, initial_threshold_fraction * float(np.percentile(active_residual, 90)))
         updated = residual <= threshold
         final_threshold = threshold
@@ -236,8 +202,6 @@ def inlier_fit(source_d: np.ndarray, raw_c: np.ndarray, initial_threshold_fracti
     h_matrix = Hfit(source_d[active], raw_c[active])
     residual = np.linalg.norm(project(h_matrix, source_d) - raw_c, axis=1)
     return h_matrix, active, residual, final_threshold
-
-
 def heldout_block_mask(index_rows: list[dict[str, Any]]) -> np.ndarray:
     """Hold out deterministic 5x5 lattice blocks, not individual neighboring dots."""
     values = []
@@ -247,38 +211,25 @@ def heldout_block_mask(index_rows: list[dict[str, Any]]) -> np.ndarray:
         block_id = (col // HOLDOUT_BLOCK_SIZE + 2 * (image_row // HOLDOUT_BLOCK_SIZE)) % HOLDOUT_MODULUS
         values.append(block_id == 0)
     return np.asarray(values, dtype=bool)
-
-
 def a_to_d_matrix(angle_deg: float) -> np.ndarray:
     """Map machine A coordinates to D coordinates under one explicit angle-sign alternative."""
     theta = math.radians(angle_deg)
     rotation = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]], dtype=np.float64)
-    # The source gives D(A=0) and the magnitude of D/A relative orientation. It does
-    # not provide a code-ready image-axis sign, so +2.5 and -2.5 degree alternatives
-    # are retained. This maps D = R(angle) * A + D(A=0), enabling A→D→C composition.
     return np.array([
         [rotation[0, 0], rotation[0, 1], A_ORIGIN_IN_D_MM[0]],
         [rotation[1, 0], rotation[1, 1], A_ORIGIN_IN_D_MM[1]],
         [0.0, 0.0, 1.0],
     ], dtype=np.float64)
-
-
 def matrix_to_list(matrix: np.ndarray) -> list[list[float]]:
     return [[float(value) for value in row] for row in np.asarray(matrix, dtype=np.float64)]
-
-
 def rmse(values: np.ndarray) -> float | None:
     values = np.asarray(values, dtype=np.float64)
     if len(values) == 0:
         return None
     return float(math.sqrt(float(np.mean(values ** 2))))
-
-
 def percentile_or_none(values: np.ndarray, percentile: float) -> float | None:
     values = np.asarray(values, dtype=np.float64)
     return None if len(values) == 0 else float(np.percentile(values, percentile))
-
-
 def nearest_camera_dot_pitch_px(points: np.ndarray) -> float | None:
     """Return the median nearest-neighbor spacing in raw camera pixels for a lattice subset."""
     points = np.asarray(points, dtype=np.float64)
@@ -290,13 +241,9 @@ def nearest_camera_dot_pitch_px(points: np.ndarray) -> float | None:
     nearest = np.sqrt(np.min(squared_distance, axis=1))
     value = float(np.median(nearest))
     return value if math.isfinite(value) and value > 0.0 else None
-
-
 def canonical_a_anchors() -> np.ndarray:
     """Reference points within the method-#2 dot-grid span; they are not candidate/model coordinates."""
     return np.asarray([[0.0, 0.0], [-10.0, -10.0], [-10.0, 10.0], [10.0, -10.0], [10.0, 10.0]], dtype=np.float64)
-
-
 def transform_displacement_summary(reference_h: np.ndarray, candidate_h: np.ndarray) -> dict[str, float | None]:
     anchors = canonical_a_anchors()
     displacement = np.linalg.norm(project(reference_h, anchors) - project(candidate_h, anchors), axis=1)
@@ -307,8 +254,6 @@ def transform_displacement_summary(reference_h: np.ndarray, candidate_h: np.ndar
         "raw_pixel_shift_p95": float(np.percentile(displacement, 95)),
         "raw_pixel_shift_max": float(displacement.max()),
     }
-
-
 def load_current_comparison_transforms(config_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     with config_path.open(encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
@@ -349,8 +294,6 @@ def load_current_comparison_transforms(config_path: Path) -> tuple[dict[str, Any
         },
     ]
     return config, comparisons
-
-
 def write_indexed_features_csv(path: Path, index_rows: list[dict[str, Any]], shifts: np.ndarray, inlier_mask: np.ndarray, holdout_mask: np.ndarray, residual: np.ndarray) -> None:
     fields = [
         "pca_col_index_0_to_49", "pca_row_index_0_to_49", "raw_x_px", "raw_y_px", "detector_response", "subpixel_shift_px",
@@ -367,8 +310,6 @@ def write_indexed_features_csv(path: Path, index_rows: list[dict[str, Any]], shi
                 "heldout_block": bool(heldout),
                 "full_fit_residual_px": float(distance),
             })
-
-
 def plot_indexing_overlay(gray: np.ndarray, index_rows: list[dict[str, Any]], inlier_mask: np.ndarray, holdout_mask: np.ndarray, output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
@@ -389,8 +330,6 @@ def plot_indexing_overlay(gray: np.ndarray, index_rows: list[dict[str, Any]], in
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_holdout_residual_overlay(gray: np.ndarray, raw_c: np.ndarray, holdout_mask: np.ndarray, predicted_c: np.ndarray, output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
@@ -409,8 +348,6 @@ def plot_holdout_residual_overlay(gray: np.ndarray, raw_c: np.ndarray, holdout_m
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
@@ -419,7 +356,6 @@ def main() -> None:
         raise FileNotFoundError(f"Required comparison calibration config not found: {args.calibration_config}")
     output_dir = args.output_dir
     prepare_output_directory(output_dir, args.overwrite)
-
     channels, dot_metadata = read_tiff(args.dot_grid)
     gray = grayscale(channels)
     coarse_points, _, _ = dot_grid_candidates(gray)
@@ -429,9 +365,6 @@ def main() -> None:
     index_rows, lattice_metrics = assign_lattice_cells(subpixel_points, response_scores)
     raw_c = raw_coordinates_from_index_rows(index_rows)
     holdout_mask = heldout_block_mask(index_rows)
-
-    # Choose one orientation only as a computation representative for overlay/inlier determination.
-    # The eight orientation variants share lattice incidence and all are reported below.
     representative = orientation_variants()[0]
     representative_d = d_coordinates_from_index_rows(index_rows, representative)
     full_h, inlier_mask, full_residual, full_threshold = inlier_fit(representative_d, raw_c)
@@ -445,7 +378,6 @@ def main() -> None:
     inlier_spacing = nearest_camera_dot_pitch_px(raw_c[inlier_mask])
     holdout_rmse = rmse(holdout_residual)
     holdout_rmse_as_pitch = None if holdout_rmse is None or inlier_spacing is None else float(holdout_rmse / inlier_spacing)
-
     config, comparison_refs = load_current_comparison_transforms(args.calibration_config)
     candidates: list[dict[str, Any]] = []
     comparison_rows: list[dict[str, Any]] = []
@@ -499,13 +431,10 @@ def main() -> None:
                     **transform_displacement_summary(np.asarray(reference["machine_a_to_raw_c"], dtype=np.float64), h_a_to_c),
                     "reference_note": str(reference["note"]),
                 })
-
-    # A representative fit gate is orientation invariant because variants are planar index relabelings.
     coverage_gate = bool(lattice_metrics["unique_indexed_cell_count"] >= 1200 and lattice_metrics["unique_pca_column_count"] >= 40 and lattice_metrics["unique_pca_row_count"] >= 40)
     holdout_p95 = percentile_or_none(holdout_residual, 95)
     holdout_gate = bool(holdout_rmse_as_pitch is not None and holdout_rmse_as_pitch <= 0.25 and holdout_p95 is not None and inlier_spacing is not None and float(holdout_p95) <= 0.50 * float(inlier_spacing))
     all_gates = bool(coverage_gate and holdout_gate)
-
     indexed_csv = output_dir / "dot_grid_indexed_subpixel_features.csv"
     transform_csv = output_dir / "method2_candidate_transforms.csv"
     comparison_csv = output_dir / "method2_candidate_vs_existing_comparison.csv"
@@ -530,12 +459,10 @@ def main() -> None:
         writer = csv.DictWriter(handle, fieldnames=list(comparison_rows[0].keys()))
         writer.writeheader()
         writer.writerows(comparison_rows)
-
     indexing_overlay = output_dir / "method2_dot_grid_indexing_overlay.png"
     holdout_overlay = output_dir / "method2_dot_grid_heldout_residual_overlay.png"
     plot_indexing_overlay(gray, index_rows, inlier_mask, holdout_mask, indexing_overlay)
     plot_holdout_residual_overlay(gray, raw_c, test_mask, holdout_predicted_c, holdout_overlay)
-
     summary = {
         "audit_type": "read-only independent NIST method-2 candidate D-to-C calibration audit; no calibration config update or rank selection",
         "narrative": {
@@ -571,8 +498,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Independent method-#2 calibration candidate audit complete. No raw TIFF/CSV, calibration config, model, target, checkpoint, or deployment candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

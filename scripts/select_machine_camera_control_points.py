@@ -1,27 +1,22 @@
+utf-8
 #!/usr/bin/env python3
 """Select screen-corner control points without assuming machine-axis orientation.
-
 The user only identifies the four visible parts by screen order (top to bottom)
 and clicks each part's screen TL, TR, BR, BL outer corners. Machine part identity
 and X/Y orientation are intentionally NOT assigned here; the calibration audit
 compares those hypotheses later.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
 SCREEN_PARTS = ("screen_part_A_topmost", "screen_part_B", "screen_part_C", "screen_part_D_bottommost")
 SCREEN_CORNERS = ("screen_top_left", "screen_top_right", "screen_bottom_right", "screen_bottom_left")
-
-
 def args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Record screen-corner controls for orientation-agnostic calibration")
     p.add_argument("--tiff", required=True, type=Path)
@@ -32,13 +27,9 @@ def args() -> argparse.Namespace:
     p.add_argument("--percentiles", nargs=2, type=float, default=[1.0, 99.5])
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
-
-
 def frame_info(path: Path) -> tuple[str, tuple[int, ...]]:
     with tifffile.TiffFile(path) as tif:
         return str(tif.series[0].axes), tuple(int(x) for x in tif.series[0].shape)
-
-
 def load_frame(path: Path, axes: str, shape: tuple[int, ...], z: int, led: int) -> np.ndarray:
     if not {"T", "Z", "Y", "X"}.issubset(axes):
         raise ValueError(f"Expected TZYX-compatible TIFF, got axes={axes!r}")
@@ -55,8 +46,6 @@ def load_frame(path: Path, axes: str, shape: tuple[int, ...], z: int, led: int) 
     out = np.asarray(data[tuple(idx)])
     if out.ndim != 2: raise ValueError(f"Expected 2D frame, got {out.shape}")
     return out
-
-
 def main() -> None:
     a = args()
     path, output = a.tiff.resolve(), a.output_json.resolve()
@@ -72,7 +61,6 @@ def main() -> None:
     scale = min(1.0, a.display_max_px / max(h, w))
     dw, dh = w * scale, h * scale
     low, high = np.percentile(frame, a.percentiles)
-
     fig, ax = plt.subplots(figsize=(8.2, 8.2))
     ax.imshow(frame, cmap="gray", vmin=low, vmax=high, origin="upper", extent=(0, dw, dh, 0), interpolation="nearest")
     ax.set_xlim(0, dw); ax.set_ylim(dh, 0); ax.set_aspect("equal")
@@ -107,7 +95,6 @@ def main() -> None:
     with output.open("w", encoding="utf-8") as f: json.dump(payload, f, ensure_ascii=False, indent=2); f.write("\n")
     print(f"Saved 16 screen-corner controls to: {output}")
     print("Next: run audit_machine_camera_calibration.py to compare machine-part/orientation hypotheses.")
-
 if __name__ == "__main__":
     try: main()
     except Exception as exc:

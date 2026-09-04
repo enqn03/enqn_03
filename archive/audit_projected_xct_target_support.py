@@ -1,3 +1,4 @@
+utf-8
 #!/usr/bin/env python3
 """Audit camera-space support of provisional sparse XCT weak targets."""
 from __future__ import annotations
@@ -6,7 +7,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np,yaml
 from audit_machine_camera_calibration import build_candidates,project
-
 def args():
  p=argparse.ArgumentParser();p.add_argument('--calibration-config',required=True,type=Path);p.add_argument('--registered-root',required=True,type=Path);p.add_argument('--manifest',required=True,type=Path);p.add_argument('--output-dir',required=True,type=Path);p.add_argument('--qc-layer',type=int,default=125);p.add_argument('--overwrite',action='store_true');return p.parse_args()
 def train_layers(manifest):

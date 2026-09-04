@@ -1,22 +1,19 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only ROI and saturation audit for AMMT A/B layer-camera TIFF data.
-
 Purpose
 -------
 Before defining model normalization or fusion inputs, this script measures
 where 16-bit full-scale saturation occurs and evaluates one candidate ROI.
 It does NOT modify either raw TIFF file.
-
 Input
 -----
 * LayerCameraAfterSpreading.tif (A)
 * LayerCameraBurned.tif (B)
-
 Output (only under --output-dir)
 --------------------------------
 * roi_saturation_summary.csv : per sample frame and aggregate ROI statistics
 * roi_candidate_qc.png       : candidate ROI and A/B saturation frequency maps
-
 Example
 -------
 cd ~/ammt_project
@@ -27,23 +24,17 @@ cd ~/ammt_project
   --candidate-roi 250 250 1750 1750 \
   --z-values 1 10 20 125 230 250
 """
-
 from __future__ import annotations
-
 import argparse
 import csv
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
 FULL_SCALE = np.iinfo(np.uint16).max
-
-
 @dataclass(frozen=True)
 class StackInfo:
     axes: str
@@ -53,8 +44,6 @@ class StackInfo:
     width: int
     layers: int
     leds: int
-
-
 def inspect(path: Path) -> StackInfo:
     """Read TIFF/ImageJ metadata without decoding the stack."""
     with tifffile.TiffFile(path) as tif:
@@ -74,16 +63,12 @@ def inspect(path: Path) -> StackInfo:
         layers=int(imagej.get("slices", 1)),
         leds=int(imagej.get("frames", 1)),
     )
-
-
 def check_pair(a: StackInfo, b: StackInfo) -> None:
     for field in ("axes", "shape", "dtype", "height", "width", "layers", "leds"):
         if getattr(a, field) != getattr(b, field):
             raise ValueError(f"A/B mismatch at {field}: {getattr(a, field)!r} != {getattr(b, field)!r}")
     if a.dtype != np.dtype(np.uint16):
         raise ValueError(f"This audit expects uint16 TIFF data, got {a.dtype}")
-
-
 def read_frame(data: np.memmap, info: StackInfo, z: int, led: int) -> np.ndarray:
     """Read exactly one 2D frame. z and led are 1-based external indices."""
     if not 1 <= z <= info.layers:
@@ -106,21 +91,15 @@ def read_frame(data: np.memmap, info: StackInfo, z: int, led: int) -> np.ndarray
     if frame.ndim != 2:
         raise ValueError(f"Expected 2D frame, got {frame.shape}")
     return frame
-
-
 def display_scale(frame: np.ndarray) -> np.ndarray:
     """For PNG visualization only; never used as a training transformation."""
     lo, hi = np.percentile(frame, (1.0, 99.0))
     if hi <= lo:
         hi = lo + 1.0
     return np.clip((frame.astype(np.float32) - lo) / (hi - lo), 0, 1)
-
-
 def ensure_new(path: Path, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(f"Refusing to overwrite existing file: {path}. Use --overwrite after review.")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
     ensure_new(path, overwrite)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,14 +107,10 @@ def write_csv(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def draw_roi(axis: plt.Axes, roi: tuple[int, int, int, int]) -> None:
     x0, y0, x1, y1 = roi
     rectangle = plt.Rectangle((x0, y0), x1 - x0, y1 - y0, edgecolor="#FF3B30", facecolor="none", linewidth=2.0)
     axis.add_patch(rectangle)
-
-
 def save_qc(
     path: Path,
     a_data: np.memmap,
@@ -169,8 +144,6 @@ def save_qc(
     fig.suptitle("AMMT ROI candidate and saturation audit (red = candidate model ROI)", fontsize=14)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read-only AMMT ROI and saturation audit")
     parser.add_argument("--tiff-a", required=True, type=Path)
@@ -182,15 +155,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reference-led", type=int, default=1, help="QC panel LED index")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     path_a, path_b = args.tiff_a.resolve(), args.tiff_b.resolve()
     output_dir = args.output_dir.resolve()
     if not path_a.is_file() or not path_b.is_file():
         raise FileNotFoundError(f"Missing TIFF input. A={path_a}, B={path_b}")
-
     info_a, info_b = inspect(path_a), inspect(path_b)
     check_pair(info_a, info_b)
     info = info_a
@@ -201,17 +171,14 @@ def main() -> None:
     z_values = sorted(set(args.z_values))
     if any(z < 1 or z > info.layers for z in z_values):
         raise ValueError(f"z-values must be within 1..{info.layers}")
-
     summary_csv = output_dir / "roi_saturation_summary.csv"
     qc_png = output_dir / "roi_candidate_qc.png"
     for output in (summary_csv, qc_png):
         ensure_new(output, args.overwrite)
-
     print("[1/3] Opening A/B TIFF through read-only memmap.")
     a_data = tifffile.memmap(path_a, series=0, mode="r")
     b_data = tifffile.memmap(path_b, series=0, mode="r")
     print(f"A/B shape={a_data.shape}; ROI={roi}; sampled z={z_values}")
-
     saturation_a = np.zeros((info.height, info.width), dtype=np.uint16)
     saturation_b = np.zeros((info.height, info.width), dtype=np.uint16)
     rows: list[dict[str, Any]] = []
@@ -241,7 +208,6 @@ def main() -> None:
                     "pair_mean_abs_difference": float(diff_roi.mean()),
                 },
             ])
-
     print("[3/3] Writing two small audit outputs.")
     write_csv(summary_csv, rows, args.overwrite)
     sample_count = len(z_values) * info.leds
@@ -249,8 +215,6 @@ def main() -> None:
     print("Done. Raw TIFF files were never modified.")
     print(f"- {summary_csv}")
     print(f"- {qc_png}")
-
-
 if __name__ == "__main__":
     try:
         main()

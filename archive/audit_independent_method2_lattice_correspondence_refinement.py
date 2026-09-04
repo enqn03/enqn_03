@@ -1,19 +1,17 @@
+utf-8
 #!/usr/bin/env python3
 """Refine DotGrid 2D lattice correspondence before any calibration selection.
-
 This audit reads one immutable layer-camera DotGrid TIFF via the existing
 read-only memmap helper. It replaces the V1 independent 1D PCA clustering with
 a deterministic local-neighbor graph, provisional 2D cell propagation, and
 projective reassignment. It then applies the *same* 5x5-block held-out residual
 gate used by the V1 method-#2 candidate audit.
-
 It does not update calibration_v1.yaml, fit a deployed calibration, select an
 orientation/rank, access A/B manufacturing images, XCT, targets, models, or
 checkpoints, or change camera-primary candidate reporting. Any D-to-C mapping
 reported here is a correspondence diagnostic for human review only.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -23,12 +21,10 @@ import sys
 from collections import deque
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials_refined import (
     density_roi,
     dot_grid_candidates,
@@ -48,8 +44,6 @@ from audit_independent_method2_calibration_candidate import (
     rmse,
     subpixel_dark_blob_centers,
 )
-
-
 MAX_NEIGHBORS = 6
 AXIS_DIRECTION_COSINE_MIN = 0.92
 NEIGHBOR_DISTANCE_MIN_PITCH = 0.45
@@ -60,24 +54,18 @@ MIN_COVERAGE_CELLS = 1200
 MIN_AXIS_COVERAGE = 40
 HELDOUT_RMSE_MAX_PITCH = 0.25
 HELDOUT_P95_MAX_PITCH = 0.50
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid_2000x2000.tif read via memmap(mode='r').")
     parser.add_argument("--output-dir", required=True, type=Path, help="New ignored directory for compact CSV/JSON and at most three QC overlays.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only an existing output directory after review.")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def pca_coordinates(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     points = np.asarray(points, dtype=np.float64)
     if points.ndim != 2 or points.shape[1] != 2 or len(points) < 4:
@@ -86,11 +74,8 @@ def pca_coordinates(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndar
     values, vectors = np.linalg.eigh(np.cov((points - center).T))
     basis = vectors[:, np.argsort(values)[::-1]]
     return (points - center) @ basis, center, basis
-
-
 def nearest_neighbor_graph(points: np.ndarray) -> tuple[list[dict[str, Any]], dict[str, Any], np.ndarray, np.ndarray]:
     """Build a deterministic local graph and keep only near-horizontal/vertical PCA edges.
-
     The graph is an image-space correspondence aid. It does not assign machine
     orientation, physical D origin, or a calibration transform.
     """
@@ -105,7 +90,6 @@ def nearest_neighbor_graph(points: np.ndarray) -> tuple[list[dict[str, Any]], di
     pitch = float(np.median(nearest))
     if not math.isfinite(pitch) or pitch <= 0.0:
         raise RuntimeError("Unable to estimate positive local DotGrid pitch from candidate neighbors.")
-
     raw_edges: dict[tuple[int, int], dict[str, Any]] = {}
     min_distance = NEIGHBOR_DISTANCE_MIN_PITCH * pitch
     max_distance = NEIGHBOR_DISTANCE_MAX_PITCH * pitch
@@ -137,7 +121,6 @@ def nearest_neighbor_graph(points: np.ndarray) -> tuple[list[dict[str, Any]], di
                 "distance_px": distance,
                 "axis_alignment_cosine": dominant,
             }
-
     edges = list(raw_edges.values())
     if len(edges) < 8:
         raise RuntimeError("Too few locally consistent DotGrid neighbor edges survived graph filtering.")
@@ -160,8 +143,6 @@ def nearest_neighbor_graph(points: np.ndarray) -> tuple[list[dict[str, Any]], di
         "pca_basis_columns_raw_xy": basis.tolist(),
     }
     return edges, metrics, pca, degree
-
-
 def adjacency_from_edges(edges: list[dict[str, Any]], point_count: int) -> list[list[tuple[int, int, int]]]:
     """Create adjacency records `(neighbor, axis, signed_label_step)` for each direction."""
     adjacency: list[list[tuple[int, int, int]]] = [[] for _ in range(point_count)]
@@ -173,8 +154,6 @@ def adjacency_from_edges(edges: list[dict[str, Any]], point_count: int) -> list[
     for neighbor_list in adjacency:
         neighbor_list.sort(key=lambda item: (item[1], item[2], item[0]))
     return adjacency
-
-
 def propagate_provisional_2d_labels(points: np.ndarray, responses: np.ndarray, edges: list[dict[str, Any]]) -> tuple[dict[int, tuple[int, int]], dict[str, Any]]:
     """Assign provisional image-lattice labels by graph propagation with cycle-consistency filtering."""
     count = len(points)
@@ -196,9 +175,6 @@ def propagate_provisional_2d_labels(points: np.ndarray, responses: np.ndarray, e
                 queue.append(neighbor)
             elif existing != proposal_tuple:
                 conflicts += 1
-
-    # Connected components not attached to the high-response root are not allowed to
-    # manufacture an independent grid origin. They are recorded as unlabelled.
     metrics = {
         "method": "BFS label propagation from maximum-response DotGrid candidate along local 2D neighbor edges; inconsistent cycles are counted and not used to overwrite the first deterministic label",
         "root_source_candidate_index": root,
@@ -209,8 +185,6 @@ def propagate_provisional_2d_labels(points: np.ndarray, responses: np.ndarray, e
         "important_limit": "Labels are provisional image-grid coordinates. Their lower-left D origin and machine-axis orientation are not inferred here.",
     }
     return labels, metrics
-
-
 def best_dense_grid_window(labels: dict[int, tuple[int, int]], grid_size: int = GRID_SIZE) -> tuple[int, int, dict[str, Any]]:
     """Choose a deterministic dense square label window, retaining only a 50x50 image-lattice candidate region."""
     if not labels:
@@ -224,7 +198,6 @@ def best_dense_grid_window(labels: dict[int, tuple[int, int]], grid_size: int = 
     for col_start in candidate_cols:
         for row_start in candidate_rows:
             count = sum(col_start <= col < col_start + grid_size and row_start <= row < row_start + grid_size for col, row in labels.values())
-            # Stable tie-break prefers smaller row then smaller column.
             candidate = (count, -row_start, -col_start)
             if best is None or candidate > best:
                 best = candidate
@@ -240,11 +213,8 @@ def best_dense_grid_window(labels: dict[int, tuple[int, int]], grid_size: int = 
         "graph_labels_inside_selected_window": int(best[0]),
         "important_limit": "This is an image-lattice window only; it does not select D lower-left origin or machine-axis orientation.",
     }
-
-
 def select_one_per_cell(points: np.ndarray, responses: np.ndarray, labels: dict[int, tuple[int, int]], col_start: int, row_start: int, source: str) -> list[dict[str, Any]]:
     """Retain one deterministic candidate per provisional 50x50 cell.
-
     For graph labels, higher response wins. For projective reassignment, the
     caller passes only one proposal per candidate and this function retains the
     candidate with the smallest projective residual, then higher response.
@@ -270,14 +240,10 @@ def select_one_per_cell(points: np.ndarray, responses: np.ndarray, labels: dict[
             "correspondence_source": source,
         })
     return rows
-
-
 def arrays_from_rows(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
     source = np.asarray([[float(row["image_lattice_col_index_0_to_49"]), float(row["image_lattice_row_index_0_to_49"])] for row in rows], dtype=np.float64)
     raw = np.asarray([[float(row["raw_x_px"]), float(row["raw_y_px"])] for row in rows], dtype=np.float64)
     return source, raw
-
-
 def projective_reassignment(points: np.ndarray, responses: np.ndarray, h_matrix: np.ndarray, camera_pitch_px: float) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Assign every dot candidate to nearest projectively predicted 2D cell, with a fixed local-distance bound."""
     cells = np.asarray([[float(col), float(row)] for row in range(GRID_SIZE) for col in range(GRID_SIZE)], dtype=np.float64)
@@ -295,7 +261,6 @@ def projective_reassignment(points: np.ndarray, responses: np.ndarray, h_matrix:
         row, col = divmod(int(flat_cell), GRID_SIZE)
         key = (col, row)
         previous = retained.get(key)
-        # Closest projective agreement is primary; response breaks numerical ties.
         if previous is None or float(distance) < previous[1] - 1.0e-9 or (abs(float(distance) - previous[1]) <= 1.0e-9 and float(responses[index]) > float(responses[previous[0]])):
             retained[key] = (index, float(distance))
         accepted += 1
@@ -320,11 +285,8 @@ def projective_reassignment(points: np.ndarray, responses: np.ndarray, h_matrix:
         "projective_assignment_residual_median_px": None if not rows else float(np.median([float(row["projective_cell_residual_px"]) for row in rows])),
         "projective_assignment_residual_p95_px": None if not rows else float(np.percentile([float(row["projective_cell_residual_px"]) for row in rows], 95)),
     }
-
-
 def refine_correspondence(points: np.ndarray, responses: np.ndarray) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], list[dict[str, Any]], np.ndarray, np.ndarray]:
     """Create graph seed cells, iteratively reassign under a projective 2D lattice, and return final rows.
-
     This function never examines manufacturing data or a machine-coordinate
     transform. It only builds an image-lattice `0..49 x 0..49` correspondence.
     """
@@ -339,7 +301,6 @@ def refine_correspondence(points: np.ndarray, responses: np.ndarray) -> tuple[li
     pitch = nearest_camera_dot_pitch_px(raw[inliers])
     if pitch is None:
         raise RuntimeError("Unable to estimate camera-dot pitch from graph-seed inliers.")
-
     iterations: list[dict[str, Any]] = []
     final_rows = graph_rows
     previous_keys: set[tuple[int, int]] | None = None
@@ -368,10 +329,8 @@ def refine_correspondence(points: np.ndarray, responses: np.ndarray) -> tuple[li
         if previous_keys == current_keys:
             break
         previous_keys = current_keys
-
     final_source, final_raw = arrays_from_rows(final_rows)
     final_h, final_inliers, final_residual, final_threshold = inlier_fit(final_source, final_raw)
-    # Mark the final full-fit diagnostics; strict held-out fitting happens later.
     for row, inlier, residual in zip(final_rows, final_inliers, final_residual, strict=True):
         row["full_refined_fit_inlier"] = bool(inlier)
         row["full_refined_fit_residual_px"] = float(residual)
@@ -393,8 +352,6 @@ def refine_correspondence(points: np.ndarray, responses: np.ndarray) -> tuple[li
         "important_limit": "Full-fit residual is diagnostic only. The gate below is based on a transform fit without the held-out blocks.",
     }
     return final_rows, graph_metrics, propagation_metrics, edges, final_h, final_inliers
-
-
 def holdout_mask(rows: list[dict[str, Any]]) -> np.ndarray:
     values = []
     for row in rows:
@@ -403,8 +360,6 @@ def holdout_mask(rows: list[dict[str, Any]]) -> np.ndarray:
         block = (col // HOLDOUT_BLOCK_SIZE + 2 * (image_row // HOLDOUT_BLOCK_SIZE)) % HOLDOUT_MODULUS
         values.append(block == 0)
     return np.asarray(values, dtype=bool)
-
-
 def strict_heldout_validation(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
     """Fit only non-held-out cells and evaluate fixed held-out 5x5 blocks."""
     source, raw = arrays_from_rows(rows)
@@ -454,8 +409,6 @@ def strict_heldout_validation(rows: list[dict[str, Any]]) -> tuple[dict[str, Any
         "important_limit": "This is an image-pixel correspondence consistency test, not a final physical calibration uncertainty or an automatic deployment decision.",
     }
     return metrics, block_test, predicted, residual
-
-
 def write_features_csv(path: Path, rows: list[dict[str, Any]], block_test: np.ndarray, predicted: np.ndarray, residual: np.ndarray) -> None:
     fields = [
         "source_candidate_index", "image_lattice_col_index_0_to_49", "image_lattice_row_index_0_to_49", "raw_x_px", "raw_y_px", "detector_response",
@@ -474,22 +427,17 @@ def write_features_csv(path: Path, rows: list[dict[str, Any]], block_test: np.nd
                 "train_only_residual_px": float(distance),
             })
             writer.writerow(result)
-
-
 def write_edge_csv(path: Path, edges: list[dict[str, Any]]) -> None:
     fields = ["left", "right", "axis", "sign_left_to_right", "distance_px", "axis_alignment_cosine"]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(edges)
-
-
 def plot_neighbor_graph(gray: np.ndarray, points: np.ndarray, edges: list[dict[str, Any]], output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
     figure, axis = plt.subplots(figsize=(9, 9), dpi=160)
     axis.imshow(display, cmap="gray", origin="upper", interpolation="nearest")
-    # Limit only display density, never the correspondence calculation.
     selected = edges[::max(1, int(math.ceil(len(edges) / 1000)))]
     for edge in selected:
         left, right = int(edge["left"]), int(edge["right"])
@@ -503,8 +451,6 @@ def plot_neighbor_graph(gray: np.ndarray, points: np.ndarray, edges: list[dict[s
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_correspondence(gray: np.ndarray, rows: list[dict[str, Any]], block_test: np.ndarray, output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
@@ -526,8 +472,6 @@ def plot_correspondence(gray: np.ndarray, rows: list[dict[str, Any]], block_test
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_heldout_residual(gray: np.ndarray, rows: list[dict[str, Any]], block_test: np.ndarray, predicted: np.ndarray, output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::stride, ::stride]
@@ -546,14 +490,11 @@ def plot_heldout_residual(gray: np.ndarray, rows: list[dict[str, Any]], block_te
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
         raise FileNotFoundError(f"Required immutable DotGrid TIFF not found: {args.dot_grid}")
     prepare_output_directory(args.output_dir, args.overwrite)
-
     channels, metadata = read_tiff(args.dot_grid)
     gray = grayscale(channels)
     coarse_points, _, _ = dot_grid_candidates(gray)
@@ -562,7 +503,6 @@ def main() -> None:
     subpixel_points, shifts = subpixel_dark_blob_centers(gray, points)
     rows, graph_metrics, propagation_metrics, edges, _, _ = refine_correspondence(subpixel_points, responses)
     validation, block_test, predicted, residual = strict_heldout_validation(rows)
-
     features_csv = args.output_dir / "method2_refined_2d_lattice_features.csv"
     edges_csv = args.output_dir / "method2_refined_2d_neighbor_edges.csv"
     summary_path = args.output_dir / "independent_method2_lattice_correspondence_refinement_summary.json"
@@ -574,7 +514,6 @@ def main() -> None:
     plot_neighbor_graph(gray, subpixel_points, edges, graph_overlay)
     plot_correspondence(gray, rows, block_test, correspondence_overlay)
     plot_heldout_residual(gray, rows, block_test, predicted, residual, residual_overlay)
-
     summary = {
         "audit_type": "read-only perspective-aware 2D DotGrid lattice-correspondence refinement; no deployed calibration fit, config update, rank/orientation selection, or candidate-location change",
         "purpose": "Refine only image-lattice row/column correspondence after V1 independent 1D PCA clustering failed fixed block-held-out residual gates.",
@@ -620,8 +559,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Perspective-aware 2D lattice-correspondence refinement audit complete. No raw TIFF/CSV, calibration config, model, target, checkpoint, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

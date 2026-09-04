@@ -1,34 +1,27 @@
+utf-8
 #!/usr/bin/env python3
 """Collect four human-reviewed outer DotGrid dot centres using a macOS GUI backend.
-
 This V2 selector is intentionally independent of batch-QC modules that configure
 Matplotlib ``Agg``. Before importing ``matplotlib.pyplot``, it selects the
 ``MacOSX`` backend and falls back to ``TkAgg`` only if ``MacOSX`` is unavailable.
 It reads the immutable TIFF directly via ``tifffile.memmap(..., mode='r')`` and
 writes a compact four-click control JSON only after all points are collected.
-
 Click exactly four visible outer dot centres in visual order: top-left,
 top-right, bottom-right, bottom-left. The click coordinates are converted from
 downsampled display pixels to raw camera pixels. This is visible-panel evidence,
 not calibration control points or a grid/gate/config decision.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import math
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 import numpy as np
 import tifffile
-
-
 POINT_ORDER = ["top_left_outer_dot_center", "top_right_outer_dot_center", "bottom_right_outer_dot_center", "bottom_left_outer_dot_center"]
-
-
 def load_gui_pyplot() -> tuple[Any, str, list[str]]:
     """Select a GUI backend before importing pyplot; never accept Agg for clicks."""
     attempted: list[str] = []
@@ -37,22 +30,19 @@ def load_gui_pyplot() -> tuple[Any, str, list[str]]:
         try:
             attempted.append(backend)
             matplotlib.use(backend, force=True)
-            import matplotlib.pyplot as pyplot  # Imported only after GUI backend selection.
+            import matplotlib.pyplot as pyplot                                              
             selected = str(matplotlib.get_backend())
             if selected.lower() == "agg":
                 raise RuntimeError("Matplotlib selected noninteractive Agg despite GUI backend request.")
             return pyplot, selected, attempted
         except Exception as error:
             last_error = error
-            # pyplot is not imported on a failed backend selection path; retry fallback safely.
             continue
     raise RuntimeError(
         "No interactive Matplotlib backend is available. Tried "
         f"{attempted}. Install/enable the macOS Python GUI backend or Tk, then rerun. "
         f"Last error: {last_error}"
     )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid TIFF opened with tifffile.memmap(..., series=0, mode='r').")
@@ -60,16 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-max-side", type=int, default=1000, help="Maximum display preview side in pixels. Default: 1000.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only the specified existing control JSON after review.")
     return parser.parse_args()
-
-
 def verify_output_path_before_selection(path: Path, overwrite: bool) -> None:
     """Fail before opening GUI if output needs review; never delete or create anything."""
     if path.exists() and not overwrite:
         raise FileExistsError(f"Output control JSON already exists: {path}. Review it or use --overwrite deliberately.")
     if path.exists() and path.is_dir():
         raise IsADirectoryError(f"Output path is a directory, not a JSON file: {path}")
-
-
 def write_controls_json_after_four_valid_clicks(path: Path, payload: dict[str, Any], overwrite: bool) -> None:
     """Persist JSON only after successful selection; explicit overwrite is applied here."""
     if path.exists():
@@ -82,8 +68,6 @@ def write_controls_json_after_four_valid_clicks(path: Path, payload: dict[str, A
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
-
-
 def read_grayscale_memmap(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     """Return immutable YX DotGrid pixels; intentionally reject unknown axes."""
     with tifffile.TiffFile(path) as tiff:
@@ -112,14 +96,10 @@ def read_grayscale_memmap(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         "raw_width_px": int(shape[1]),
     }
     return pixels, metadata
-
-
 def preview_stride(shape: tuple[int, int], max_side: int) -> int:
     if max_side <= 0:
         raise ValueError("--preview-max-side must be positive.")
     return max(1, int(math.ceil(max(shape) / float(max_side))))
-
-
 def collect_points(pyplot: Any, gray: np.ndarray, stride: int) -> list[tuple[float, float]]:
     display = gray[::stride, ::stride]
     figure, axis = pyplot.subplots(figsize=(10, 10), dpi=120)
@@ -137,13 +117,10 @@ def collect_points(pyplot: Any, gray: np.ndarray, stride: int) -> list[tuple[flo
     if len(points) != 4:
         raise RuntimeError(f"Expected exactly four control points, received {len(points)}. No JSON was written.")
     return [(float(x), float(y)) for x, y in points]
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
         raise FileNotFoundError(f"Required immutable DotGrid TIFF not found: {args.dot_grid}")
-    # Select GUI backend before any pyplot import and before altering output paths.
     pyplot, backend, attempted_backends = load_gui_pyplot()
     verify_output_path_before_selection(args.output_json, args.overwrite)
     gray, metadata = read_grayscale_memmap(args.dot_grid)
@@ -185,8 +162,6 @@ def main() -> None:
     write_controls_json_after_four_valid_clicks(args.output_json, payload, args.overwrite)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     print("Visible DotGrid extent controls V2 recorded. No raw TIFF/CSV, calibration, coverage gate, model, target, checkpoint, decoder, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only counterfactual stability audit for a temporal-difference checkpoint.
-
 This script evaluates a saved temporal-difference model at selected endpoints,
 replacing prior causal frames with endpoint frames only for diagnostic variants.
 It uses no XCT support or geometry during decoding and stores compact metrics plus
 three display-only QC PNGs, never dense prediction arrays.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -15,23 +14,17 @@ import math
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 from torch import Tensor
-
 from ammt_causal_dataset import AMMTCausalStageDataset
 from train_a_only_baseline import choose_device, load_yaml, local_maximum_candidates
 from train_a_only_temporal_difference_v1 import AOnlyCausalTemporalDifferenceCandidateNet
-
-
 MAP_CHANGE_MAE_MIN = 1.0e-4
 RAW_COORDINATE_STABILITY_MAX_MODEL_PIXEL = 1.0
 MAX_SELECTED_ENDPOINTS = 3
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -44,20 +37,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path) -> None:
     if path.exists():
         raise FileExistsError(f"Output directory already exists: {path}. Review it and choose a new --output-dir; this audit never overwrites it.")
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError("Cannot write an empty per-variant CSV.")
@@ -65,8 +52,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def map_pearson(left: Tensor, right: Tensor) -> float | None:
     x = left.detach().float().reshape(-1).cpu()
     y = right.detach().float().reshape(-1).cpu()
@@ -76,8 +61,6 @@ def map_pearson(left: Tensor, right: Tensor) -> float | None:
     if float(denominator.item()) <= 0.0:
         return None
     return float(torch.dot(x_centered, y_centered).item() / denominator.item())
-
-
 def counterfactual_histories(history: Tensor) -> list[tuple[str, Tensor]]:
     if history.ndim != 5 or history.shape[0] != 1:
         raise ValueError(f"Expected one [1,K,C,H,W] history, got {tuple(history.shape)}")
@@ -92,8 +75,6 @@ def counterfactual_histories(history: Tensor) -> list[tuple[str, Tensor]]:
         variant[:, time_index] = endpoint[:, 0]
         variants.append((f"prior_t{time_index}_replaced_with_endpoint", variant))
     return variants
-
-
 def decode(prediction: Tensor, sample: dict[str, Any], evaluation: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     result = local_maximum_candidates(
         prediction,
@@ -109,18 +90,12 @@ def decode(prediction: Tensor, sample: dict[str, Any], evaluation: dict[str, Any
         geometry_gate=None,
     )
     return result, result.pop("candidates")
-
-
 def first_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     return candidates[0] if candidates else None
-
-
 def raw_displacement(reference: dict[str, Any] | None, variant: dict[str, Any] | None) -> float | None:
     if reference is None or variant is None:
         return None
     return float(math.hypot(float(reference["x_pixel"]) - float(variant["x_pixel"]), float(reference["y_pixel"]) - float(variant["y_pixel"])))
-
-
 def plot_qc(maps: list[tuple[str, Tensor]], endpoint_layer: int, output_path: Path) -> None:
     values = torch.cat([prediction[0, 0].detach().float().cpu().reshape(-1) for _, prediction in maps])
     low = float(torch.quantile(values, 0.01).item())
@@ -141,8 +116,6 @@ def plot_qc(maps: list[tuple[str, Tensor]], endpoint_layer: int, output_path: Pa
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not 1 <= len(args.indices) <= MAX_SELECTED_ENDPOINTS or len(set(args.indices)) != len(args.indices):
@@ -164,7 +137,6 @@ def main() -> None:
     if bool(evaluation.get("provisional_part_geometry_gate", {}).get("enabled", False)):
         raise ValueError("This raw-camera audit requires geometry gate disabled.")
     prepare_output_directory(args.output_dir)
-
     device = choose_device(args.device or str(training["device"]))
     model = AOnlyCausalTemporalDifferenceCandidateNet(input_channels=6, base_channels=int(model_config["base_channels"])).to(device)
     checkpoint = torch.load(args.checkpoint, map_location=device)
@@ -175,7 +147,6 @@ def main() -> None:
         normalization_config_path=args.normalization_config, split=args.split,
         resize_hw=tuple(int(value) for value in data["model_resolution"]),
     )
-
     rows: list[dict[str, Any]] = []
     endpoint_summaries: list[dict[str, Any]] = []
     qc_paths: list[str] = []
@@ -249,7 +220,6 @@ def main() -> None:
             qc_path = args.output_dir / f"temporal_difference_stability_endpoint_z{int(sample['endpoint_layer_z']):03d}.png"
             plot_qc(predictions, int(sample["endpoint_layer_z"]), qc_path)
             qc_paths.append(str(qc_path))
-
     csv_path = args.output_dir / "a_only_temporal_difference_stability_by_variant.csv"
     summary_path = args.output_dir / "a_only_temporal_difference_stability_summary.json"
     write_csv(csv_path, rows)
@@ -291,8 +261,6 @@ def main() -> None:
     write_json(summary_path, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Temporal-difference stability audit complete. No raw data, XCT/weak target, checkpoint, config, calibration, or candidate policy was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

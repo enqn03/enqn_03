@@ -1,30 +1,22 @@
+utf-8
 #!/usr/bin/env python3
 import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from pathlib import Path
-
 def main():
     csv_path = Path("outputs/live_inference_results_v6.csv")
     if not csv_path.exists():
         print(f"Error: {csv_path} not found.")
         return
-
     df = pd.read_csv(csv_path)
     if len(df) == 0:
         print("CSV file is empty. No defects to visualize.")
         return
-        
-    # Clean up layer_z if it contains 'tensor(...)' strings
     df['layer_z'] = df['layer_z'].astype(str).str.extract(r'(\d+)').astype(int)
-
     print(f"Loaded {len(df)} defect points.")
-
-    # 1. 2D Scatter Plot (Top-down view of the build plate)
     plt.figure(figsize=(10, 8))
-    
-    # Use scatter plot with colormap based on confidence score
     scatter = plt.scatter(
         df['machine_x_mm'], 
         df['machine_y_mm'], 
@@ -35,26 +27,18 @@ def main():
         edgecolors='k',
         linewidth=0.5
     )
-    
     plt.colorbar(scatter, label='Confidence Score (%)')
     plt.title('AMMT Defect Distribution (Top-Down View)')
     plt.xlabel('Machine X (mm)')
     plt.ylabel('Machine Y (mm)')
     plt.grid(True, linestyle='--', alpha=0.6)
-    
-    # Ensure axes have equal aspect ratio to prevent distortion
     plt.axis('equal')
-    
     out_2d = Path("outputs/defect_distribution_2d.png")
     plt.savefig(out_2d, dpi=300, bbox_inches='tight')
     print(f"Saved 2D visualization to {out_2d}")
     plt.close()
-
-    # 2. 3D Scatter Plot (Including Layer Z)
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
-
-    # Scatter plot in 3D
     scatter3d = ax.scatter(
         df['machine_x_mm'], 
         df['machine_y_mm'], 
@@ -66,18 +50,14 @@ def main():
         edgecolors='k',
         linewidth=0.5
     )
-    
     fig.colorbar(scatter3d, label='Confidence Score (%)', shrink=0.7, pad=0.1)
-    
     ax.set_title('AMMT Defect Distribution (3D View)')
     ax.set_xlabel('Machine X (mm)')
     ax.set_ylabel('Machine Y (mm)')
     ax.set_zlabel('Layer (Z)')
-    
     out_3d = Path("outputs/defect_distribution_3d.png")
     plt.savefig(out_3d, dpi=300, bbox_inches='tight')
     print(f"Saved 3D visualization to {out_3d}")
     plt.close()
-
 if __name__ == "__main__":
     main()

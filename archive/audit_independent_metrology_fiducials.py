@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Measure independent metrology fiducial detectability without calibration fitting.
-
 The audit reads NIST dot-grid, checkerboard, and secondary-camera TIFF metadata
 through read-only memmap access. It extracts compact *pixel-space feature
 candidates* and measures local regularity/coverage only. It never computes a
@@ -8,7 +8,6 @@ machine-to-camera homography, selects a calibration rank, changes a config,
 uses XCT/model output, or identifies a red component as the machine origin.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -17,18 +16,13 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
-
 MAX_FEATURE_ROWS = 5000
 MAX_RED_COMPONENT_ROWS = 50
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path)
@@ -38,16 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-display-pixels", type=int, default=1000)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def robust_normalize(image: np.ndarray) -> tuple[np.ndarray, dict[str, float]]:
     values = np.asarray(image, dtype=np.float32)
     finite = values[np.isfinite(values)]
@@ -57,16 +47,12 @@ def robust_normalize(image: np.ndarray) -> tuple[np.ndarray, dict[str, float]]:
     if not math.isfinite(p01) or not math.isfinite(p99) or p99 <= p01:
         raise ValueError(f"Invalid robust display range: p01={p01}, p99={p99}.")
     return np.clip((values - p01) / (p99 - p01), 0.0, 1.0), {"p01": p01, "p50": p50, "p99": p99}
-
-
 def downsample(image: np.ndarray, max_display_pixels: int) -> tuple[np.ndarray, int]:
     if max_display_pixels < 128:
         raise ValueError("--max-display-pixels must be at least 128.")
     height, width = image.shape[-2:]
     stride = max(1, int(math.ceil(max(height, width) / max_display_pixels)))
     return image[..., ::stride, ::stride], stride
-
-
 def to_channels_yx(data: np.ndarray, axes: str) -> np.ndarray:
     """Keep Y/X and one samples/channels axis; select first non-spatial page."""
     if data.ndim != len(axes):
@@ -98,8 +84,6 @@ def to_channels_yx(data: np.ndarray, axes: str) -> np.ndarray:
     if selected.ndim != 3:
         raise ValueError(f"Expected multi-channel 2D array, got {selected.shape} from {axes!r}.")
     return np.transpose(selected, (channel_axis, y_axis, x_axis))
-
-
 def read_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     if not path.is_file():
         raise FileNotFoundError(f"Required metadata TIFF not found: {path}")
@@ -121,16 +105,12 @@ def read_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         "raw_width_px": int(channels.shape[2]),
     })
     return channels, metadata
-
-
 def grayscale(channels: np.ndarray) -> np.ndarray:
     if channels.shape[0] == 1:
         return np.asarray(channels[0], dtype=np.float32)
     if channels.shape[0] >= 3:
         return (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]).astype(np.float32)
     return channels.mean(axis=0, dtype=np.float32)
-
-
 def box_mean(image: np.ndarray, radius: int) -> np.ndarray:
     """Edge-padded box mean with summed-area table; no third-party CV dependency."""
     if radius < 1:
@@ -140,8 +120,6 @@ def box_mean(image: np.ndarray, radius: int) -> np.ndarray:
     integral = np.pad(padded.cumsum(axis=0, dtype=np.float64).cumsum(axis=1, dtype=np.float64), ((1, 0), (1, 0)))
     summed = integral[kernel:, kernel:] - integral[:-kernel, kernel:] - integral[kernel:, :-kernel] + integral[:-kernel, :-kernel]
     return (summed / float(kernel * kernel)).astype(np.float32)
-
-
 def greedy_nms(response: np.ndarray, quantile: float, min_distance_px: int, maximum: int) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """Extract high-response pixel candidates using bounded greedy square NMS."""
     if min_distance_px < 1 or maximum < 1:
@@ -179,8 +157,6 @@ def greedy_nms(response: np.ndarray, quantile: float, min_distance_px: int, maxi
         "maximum_retained": int(maximum),
         "retained_count": int(len(points)),
     }
-
-
 def nearest_neighbor_metrics(points: np.ndarray, sample_limit: int = 1500) -> dict[str, float | int | None]:
     if len(points) < 2:
         return {"sample_count": int(len(points)), "nearest_neighbor_median_px": None, "nearest_neighbor_p05_px": None, "nearest_neighbor_p95_px": None, "nearest_neighbor_cv": None}
@@ -199,8 +175,6 @@ def nearest_neighbor_metrics(points: np.ndarray, sample_limit: int = 1500) -> di
         "nearest_neighbor_p95_px": float(np.percentile(nearest, 95)),
         "nearest_neighbor_cv": None if median <= 1.0e-12 else float(np.std(nearest) / median),
     }
-
-
 def feature_geometry_metrics(points: np.ndarray, image_shape: tuple[int, int]) -> dict[str, Any]:
     height, width = image_shape
     if len(points) == 0:
@@ -213,8 +187,6 @@ def feature_geometry_metrics(points: np.ndarray, image_shape: tuple[int, int]) -
         "bbox_xyxy_px": [float(x0), float(y0), float(x1), float(y1)],
         "bbox_area_fraction": float(area / float(height * width)),
     }
-
-
 def dot_grid_candidates(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     normalized, _ = robust_normalize(gray)
     response = box_mean(normalized, radius=3) - normalized
@@ -231,8 +203,6 @@ def dot_grid_candidates(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[
         **nearest,
         **geometry,
     }
-
-
 def checkerboard_candidates(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     normalized, _ = robust_normalize(gray)
     gy, gx = np.gradient(normalized)
@@ -253,8 +223,6 @@ def checkerboard_candidates(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray, d
         **nearest,
         **geometry,
     }
-
-
 def red_dominance(channels: np.ndarray) -> np.ndarray:
     if channels.shape[0] < 3:
         raise ValueError("Secondary-camera TIFF has fewer than three channels; red-component audit is unavailable.")
@@ -262,8 +230,6 @@ def red_dominance(channels: np.ndarray) -> np.ndarray:
     green, _ = robust_normalize(channels[1])
     blue, _ = robust_normalize(channels[2])
     return np.clip(red - 0.5 * (green + blue), 0.0, None).astype(np.float32)
-
-
 def connected_components(mask: np.ndarray, weights: np.ndarray, minimum_area: int = 3, maximum: int = MAX_RED_COMPONENT_ROWS) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Eight-connected components on a sparse thresholded mask only."""
     if mask.shape != weights.shape:
@@ -322,8 +288,6 @@ def connected_components(mask: np.ndarray, weights: np.ndarray, minimum_area: in
         "minimum_component_area_px": int(minimum_area),
         "maximum_recorded_components": int(maximum),
     }
-
-
 def red_component_candidates(channels: np.ndarray) -> tuple[list[dict[str, Any]], np.ndarray, dict[str, Any]]:
     dominance = red_dominance(channels)
     positive = dominance[dominance > 0.0]
@@ -344,8 +308,6 @@ def red_component_candidates(channels: np.ndarray) -> tuple[list[dict[str, Any]]
         "top_component": top,
         **metrics,
     }
-
-
 def write_feature_csv(path: Path, points: np.ndarray, scores: np.ndarray, point_name: str) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         fields = ["rank_by_response", "feature_type", "raw_x_px", "raw_y_px", "response"]
@@ -353,8 +315,6 @@ def write_feature_csv(path: Path, points: np.ndarray, scores: np.ndarray, point_
         writer.writeheader()
         for rank, (point, score) in enumerate(zip(points, scores, strict=True), start=1):
             writer.writerow({"rank_by_response": rank, "feature_type": point_name, "raw_x_px": float(point[0]), "raw_y_px": float(point[1]), "response": float(score)})
-
-
 def write_component_csv(path: Path, components: list[dict[str, Any]]) -> None:
     fields = [
         "rank_by_integrated_red_dominance", "area_px", "integrated_red_dominance", "peak_red_dominance", "centroid_x_px", "centroid_y_px", "weighted_spread_px",
@@ -364,8 +324,6 @@ def write_component_csv(path: Path, components: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(components)
-
-
 def plot_feature_overlay(gray: np.ndarray, points: np.ndarray, title: str, label: str, output_path: Path) -> None:
     display, stride = downsample(gray, 1000)
     figure, axis = plt.subplots(figsize=(9, 9), dpi=150)
@@ -380,8 +338,6 @@ def plot_feature_overlay(gray: np.ndarray, points: np.ndarray, title: str, label
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def plot_red_overlay(channels: np.ndarray, components: list[dict[str, Any]], output_path: Path) -> None:
     rgb = np.stack([robust_normalize(channel)[0] for channel in channels[:3]], axis=-1)
     display, stride = downsample(np.moveaxis(rgb, -1, 0), 1000)
@@ -402,8 +358,6 @@ def plot_red_overlay(channels: np.ndarray, components: list[dict[str, Any]], out
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     for required in (args.dot_grid, args.secondary_camera, args.checkerboard):
@@ -411,30 +365,25 @@ def main() -> None:
             raise FileNotFoundError(f"Required metadata TIFF not found: {required}")
     output_dir = args.output_dir
     prepare_output_directory(output_dir, args.overwrite)
-
     dot_channels, dot_metadata = read_tiff(args.dot_grid)
     checker_channels, checker_metadata = read_tiff(args.checkerboard)
     secondary_channels, secondary_metadata = read_tiff(args.secondary_camera)
     dot_gray, checker_gray = grayscale(dot_channels), grayscale(checker_channels)
-
     dot_points, dot_scores, dot_metrics = dot_grid_candidates(dot_gray)
     checker_points, checker_scores, checker_metrics = checkerboard_candidates(checker_gray)
     red_components, _, red_metrics = red_component_candidates(secondary_channels)
-
     dot_csv = output_dir / "dot_grid_feature_candidates.csv"
     checker_csv = output_dir / "checkerboard_feature_candidates.csv"
     red_csv = output_dir / "secondary_red_component_candidates.csv"
     write_feature_csv(dot_csv, dot_points, dot_scores, "dot_center_candidate")
     write_feature_csv(checker_csv, checker_points, checker_scores, "checkerboard_corner_candidate")
     write_component_csv(red_csv, red_components)
-
     dot_png = output_dir / "dot_grid_detection_overlay.png"
     checker_png = output_dir / "checkerboard_detection_overlay.png"
     red_png = output_dir / "secondary_red_component_overlay.png"
     plot_feature_overlay(dot_gray, dot_points, "Dot-grid response candidates", "dot candidates", dot_png)
     plot_feature_overlay(checker_gray, checker_points, "Checkerboard response candidates", "corner candidates", checker_png)
     plot_red_overlay(secondary_channels, red_components, red_png)
-
     all_eligible = bool(dot_metrics["fit_eligibility_local_regular_lattice"] and checker_metrics["fit_eligibility_local_regular_lattice"] and red_metrics["fit_eligibility_local_reference_component"])
     summary = {
         "audit_type": "read-only independent fiducial detector-and-fit feasibility audit; not a homography fit, calibration selection, or defect-labeling operation",
@@ -464,8 +413,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Independent fiducial detector-and-fit feasibility audit complete. No raw TIFF/CSV, calibration config, target, model, checkpoint, or dense output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Refine independent fiducial candidates in image pixels without calibration fitting.
-
 This read-only follow-up uses the same NIST metadata TIFFs as the V1 detector.
 It limits dot/checkerboard candidates to an automatically selected high-density
 planar candidate ROI and groups nearby red connected components before ranking.
@@ -9,7 +9,6 @@ a homography, selects a rank, attributes a red cluster to machine origin, change
 calibration_v1.yaml, or accesses the manufacturing model/XCT data.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -18,12 +17,10 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials import (
     MAX_FEATURE_ROWS,
     box_mean,
@@ -37,11 +34,7 @@ from audit_independent_metrology_fiducials import (
     red_dominance,
     robust_normalize,
 )
-
-
 MAX_RED_CLUSTER_ROWS = 20
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path)
@@ -50,16 +43,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def grid_components(mask: np.ndarray, values: np.ndarray) -> list[dict[str, Any]]:
     """Return 8-connected components from a small candidate-density bin grid."""
     if mask.shape != values.shape:
@@ -88,8 +77,6 @@ def grid_components(mask: np.ndarray, values: np.ndarray) -> list[dict[str, Any]
             "cell_count": int(len(members)), "density_sum": float(sum(values[y, x] for y, x in members)),
         })
     return components
-
-
 def density_roi(points: np.ndarray, image_shape: tuple[int, int], bin_size_px: int = 32, pad_px: int = 64) -> tuple[tuple[int, int, int, int], dict[str, Any]]:
     """Select one dense candidate component in a bin grid; result remains a candidate ROI."""
     if len(points) < 1:
@@ -124,20 +111,14 @@ def density_roi(points: np.ndarray, image_shape: tuple[int, int], bin_size_px: i
         "roi_area_fraction": float((x1 - x0) * (y1 - y0) / float(height * width)),
         "important_limit": "Automatic ROI is a detector restriction, not a metrology board pose or physical calibration region.",
     }
-
-
 def add_offset(points: np.ndarray, x_offset: int, y_offset: int) -> np.ndarray:
     result = np.asarray(points, dtype=np.float64).copy()
     result[:, 0] += x_offset
     result[:, 1] += y_offset
     return result
-
-
 def dot_response(gray: np.ndarray) -> np.ndarray:
     normalized, _ = robust_normalize(gray)
     return box_mean(normalized, radius=3) - normalized
-
-
 def checker_response(gray: np.ndarray) -> np.ndarray:
     normalized, _ = robust_normalize(gray)
     gy, gx = np.gradient(normalized)
@@ -145,8 +126,6 @@ def checker_response(gray: np.ndarray) -> np.ndarray:
     b = box_mean(gx * gy, radius=4)
     c = box_mean(gy * gy, radius=4)
     return (a * c - b * b) - 0.04 * (a + c) ** 2
-
-
 def refined_feature_candidates(gray: np.ndarray, roi: tuple[int, int, int, int], kind: str) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     x0, y0, x1, y1 = roi
     crop = gray[y0:y1, x0:x1]
@@ -178,23 +157,18 @@ def refined_feature_candidates(gray: np.ndarray, roi: tuple[int, int, int, int],
         **nms,
         **nearest,
     }
-
-
 def union_find_clusters(components: list[dict[str, Any]], max_link_distance_px: float = 120.0) -> list[list[int]]:
     count = len(components)
     parent = list(range(count))
-
     def find(index: int) -> int:
         while parent[index] != index:
             parent[index] = parent[parent[index]]
             index = parent[index]
         return index
-
     def union(left: int, right: int) -> None:
         left_root, right_root = find(left), find(right)
         if left_root != right_root:
             parent[right_root] = left_root
-
     centers = np.asarray([[float(row["centroid_x_px"]), float(row["centroid_y_px"])] for row in components], dtype=np.float64)
     for left in range(count):
         for right in range(left + 1, count):
@@ -204,8 +178,6 @@ def union_find_clusters(components: list[dict[str, Any]], max_link_distance_px: 
     for index in range(count):
         grouped.setdefault(find(index), []).append(index)
     return list(grouped.values())
-
-
 def red_component_clusters(channels: np.ndarray) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     dominance = red_dominance(channels)
     positive = dominance[dominance > 0.0]
@@ -259,8 +231,6 @@ def red_component_clusters(channels: np.ndarray) -> tuple[list[dict[str, Any]], 
         "fit_eligibility_compact_red_cluster": compact,
         "eligibility_rule": "top clustered component has >=2 source components, is non-boundary, and combined spread<=100 px; not origin attribution",
     }
-
-
 def write_feature_csv(path: Path, points: np.ndarray, scores: np.ndarray, kind: str) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         fields = ["rank_by_response", "feature_type", "raw_x_px", "raw_y_px", "response"]
@@ -268,8 +238,6 @@ def write_feature_csv(path: Path, points: np.ndarray, scores: np.ndarray, kind: 
         writer.writeheader()
         for rank, (point, score) in enumerate(zip(points, scores, strict=True), start=1):
             writer.writerow({"rank_by_response": rank, "feature_type": kind, "raw_x_px": float(point[0]), "raw_y_px": float(point[1]), "response": float(score)})
-
-
 def write_cluster_csv(path: Path, clusters: list[dict[str, Any]]) -> None:
     fields = [
         "rank_by_clustered_integrated_red_dominance", "component_count", "area_px_sum", "integrated_red_dominance_sum", "peak_red_dominance_max",
@@ -280,8 +248,6 @@ def write_cluster_csv(path: Path, clusters: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(clusters)
-
-
 def plot_planar_overlay(gray: np.ndarray, points: np.ndarray, roi: tuple[int, int, int, int], title: str, output_path: Path) -> None:
     display_stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     display = gray[::display_stride, ::display_stride]
@@ -300,8 +266,6 @@ def plot_planar_overlay(gray: np.ndarray, points: np.ndarray, roi: tuple[int, in
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def plot_red_cluster_overlay(channels: np.ndarray, clusters: list[dict[str, Any]], output_path: Path) -> None:
     rgb = np.stack([robust_normalize(channel)[0] for channel in channels[:3]], axis=-1)
     stride = max(1, int(math.ceil(max(rgb.shape[:2]) / 1000)))
@@ -322,8 +286,6 @@ def plot_red_cluster_overlay(channels: np.ndarray, clusters: list[dict[str, Any]
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     for required in (args.dot_grid, args.secondary_camera, args.checkerboard):
@@ -331,12 +293,10 @@ def main() -> None:
             raise FileNotFoundError(f"Required metadata TIFF not found: {required}")
     output_dir = args.output_dir
     prepare_output_directory(output_dir, args.overwrite)
-
     dot_channels, dot_metadata = read_tiff(args.dot_grid)
     checker_channels, checker_metadata = read_tiff(args.checkerboard)
     secondary_channels, secondary_metadata = read_tiff(args.secondary_camera)
     dot_gray, checker_gray = grayscale(dot_channels), grayscale(checker_channels)
-
     coarse_dot_points, _, _ = dot_grid_candidates(dot_gray)
     coarse_checker_points, _, _ = checkerboard_candidates(checker_gray)
     dot_roi, dot_roi_metrics = density_roi(coarse_dot_points, dot_gray.shape)
@@ -344,21 +304,18 @@ def main() -> None:
     dot_points, dot_scores, dot_metrics = refined_feature_candidates(dot_gray, dot_roi, "dot")
     checker_points, checker_scores, checker_metrics = refined_feature_candidates(checker_gray, checker_roi, "checkerboard")
     red_clusters, red_metrics = red_component_clusters(secondary_channels)
-
     dot_csv = output_dir / "dot_grid_roi_feature_candidates.csv"
     checker_csv = output_dir / "checkerboard_roi_feature_candidates.csv"
     red_csv = output_dir / "secondary_red_component_clusters.csv"
     write_feature_csv(dot_csv, dot_points, dot_scores, "roi_restricted_dot_center_candidate")
     write_feature_csv(checker_csv, checker_points, checker_scores, "roi_restricted_checkerboard_corner_candidate")
     write_cluster_csv(red_csv, red_clusters)
-
     dot_overlay = output_dir / "dot_grid_roi_refinement_overlay.png"
     checker_overlay = output_dir / "checkerboard_roi_refinement_overlay.png"
     red_overlay = output_dir / "secondary_red_cluster_refinement_overlay.png"
     plot_planar_overlay(dot_gray, dot_points, dot_roi, "Dot-grid refined candidates", dot_overlay)
     plot_planar_overlay(checker_gray, checker_points, checker_roi, "Checkerboard refined candidates", checker_overlay)
     plot_red_cluster_overlay(secondary_channels, red_clusters, red_overlay)
-
     all_eligible = bool(dot_metrics["fit_eligibility_roi_regular_lattice"] and checker_metrics["fit_eligibility_roi_regular_lattice"] and red_metrics["fit_eligibility_compact_red_cluster"])
     summary = {
         "audit_type": "read-only independent fiducial ROI and red-cluster refinement; not calibration fit, rank selection, origin attribution, or defect labeling",
@@ -384,8 +341,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Independent fiducial ROI/cluster refinement complete. No raw TIFF/CSV, calibration config, target, model, checkpoint, or dense output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

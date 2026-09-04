@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Diagnose V2 visible-DotGrid outer-control snap failures in image space only.
-
 This read-only follow-up compares each existing human click with four independent
 image-space references: the frozen refined detector, a deterministic local
 same-response detector, V3 assigned cells, and the V3 nominal 50x50 prediction.
@@ -8,7 +8,6 @@ It classifies evidence only; it never edits clicks, thresholds, grid/gates,
 calibration, model data, or candidate reporting.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -17,12 +16,10 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials import greedy_nms, robust_normalize
 from audit_independent_metrology_fiducials_refined import (
     density_roi,
@@ -40,8 +37,6 @@ from audit_visible_dotgrid_extent_controls import (
     load_v3_features,
     nearest_indices_and_distances,
 )
-
-
 CURRENT_SNAP_MAX_PITCH = 0.60
 LOCAL_PATCH_RADIUS_PITCH = 4.0
 LOCAL_RESPONSE_QUANTILE = 0.990
@@ -51,8 +46,6 @@ LOCAL_NEIGHBOR_MIN_PITCH = 0.55
 LOCAL_NEIGHBOR_MAX_PITCH = 1.55
 LOCAL_ORTHOGONAL_MAX_ABS_COSINE = 0.50
 OUTSIDE_EVIDENCE_MIN_PITCH = 1.25
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid TIFF; read-only memmap only.")
@@ -61,16 +54,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path, help="New ignored directory for compact metrics and five QC PNGs.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only this diagnostic output after review.")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"Cannot write empty diagnostic CSV: {path}")
@@ -78,8 +67,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def distance_to_roi(point: np.ndarray, roi: tuple[int, int, int, int]) -> tuple[bool, float]:
     x, y = float(point[0]), float(point[1])
     x0, y0, x1, y1 = roi
@@ -87,16 +74,12 @@ def distance_to_roi(point: np.ndarray, roi: tuple[int, int, int, int]) -> tuple[
     dx = max(float(x0) - x, 0.0, x - float(x1 - 1))
     dy = max(float(y0) - y, 0.0, y - float(y1 - 1))
     return inside, float(math.hypot(dx, dy))
-
-
 def nearest_one(point: np.ndarray, reference: np.ndarray) -> tuple[int, float, np.ndarray]:
     if len(reference) == 0:
         raise ValueError("Nearest-reference set is empty.")
     indices, distances = nearest_indices_and_distances(point[None, :], reference)
     index = int(indices[0])
     return index, float(distances[0]), np.asarray(reference[index], dtype=np.float64)
-
-
 def has_orthogonal_neighbor_pair(vectors: np.ndarray) -> tuple[bool, float | None]:
     if len(vectors) < 2:
         return False, None
@@ -111,8 +94,6 @@ def has_orthogonal_neighbor_pair(vectors: np.ndarray) -> tuple[bool, float | Non
     if not math.isfinite(best_abs_cosine):
         return False, None
     return bool(best_abs_cosine <= LOCAL_ORTHOGONAL_MAX_ABS_COSINE), best_abs_cosine
-
-
 def local_dot_evidence(gray: np.ndarray, click: np.ndarray, pitch: float) -> dict[str, Any]:
     height, width = gray.shape
     radius = max(24, int(math.ceil(LOCAL_PATCH_RADIUS_PITCH * pitch)))
@@ -157,8 +138,6 @@ def local_dot_evidence(gray: np.ndarray, click: np.ndarray, pitch: float) -> dic
         "local_best_neighbor_pair_abs_cosine": best_abs_cosine,
         "local_lattice_evidence_pass": lattice_support,
     }
-
-
 def evidence_class(
     current_pass: bool,
     local_result: dict[str, Any],
@@ -185,8 +164,6 @@ def evidence_class(
         "ambiguous",
         "At least one image-space reference is near the click, but the independent local lattice-support gate is incomplete; no click or detector conclusion is promoted.",
     )
-
-
 def plot_local_patch(
     gray: np.ndarray,
     click: np.ndarray,
@@ -251,8 +228,6 @@ def plot_local_patch(
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_full_panel(
     gray: np.ndarray,
     clicks: np.ndarray,
@@ -285,15 +260,12 @@ def plot_full_panel(
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     for path, label in ((args.dot_grid, "DotGrid TIFF"), (args.controls_json, "V2 controls JSON"), (args.v3_features, "V3 compact feature CSV")):
         if not path.is_file():
             raise FileNotFoundError(f"Required {label} not found: {path}")
     prepare_output_directory(args.output_dir, args.overwrite)
-
     controls = load_controls(args.controls_json)
     features = load_v3_features(args.v3_features)
     channels, metadata = read_tiff(args.dot_grid)
@@ -311,7 +283,6 @@ def main() -> None:
     nominal_cells = np.asarray([[float(col), float(row)] for row in range(GRID_SIZE) for col in range(GRID_SIZE)], dtype=np.float64)
     nominal_predicted = project(h_matrix, nominal_cells)
     clicks = np.asarray([[float(row["clicked_x_px"]), float(row["clicked_y_px"])] for row in controls], dtype=np.float64)
-
     rows: list[dict[str, Any]] = []
     local_results: list[dict[str, Any]] = []
     current_nearest_points: list[np.ndarray] = []
@@ -370,7 +341,6 @@ def main() -> None:
         local_results.append(local_result)
         current_nearest_points.append(current_nearest)
         classes.append(classification)
-
     local_nearest_array = np.asarray([result["nearest_local_candidate"] for result in local_results], dtype=np.float64)
     current_nearest_array = np.asarray(current_nearest_points, dtype=np.float64)
     csv_path = args.output_dir / "visible_dotgrid_outer_boundary_diagnostic_by_control.csv"
@@ -383,7 +353,6 @@ def main() -> None:
         plot_local_patch(gray, click, local_result, fresh_points, current_nearest, v3_raw, nominal_predicted, roi, classification, output_path)
         local_overlays.append(output_path)
     plot_full_panel(gray, clicks, fresh_points, local_nearest_array, v3_raw, nominal_predicted, roi, classes, full_overlay)
-
     class_counts = {name: int(classes.count(name)) for name in sorted(set(classes))}
     failing_classes = [classification for row, classification in zip(rows, classes) if not bool(row["current_frozen_snap_pass"])]
     if failing_classes and all(value == "printed_dot_visible_but_current_detector_missed" for value in failing_classes):
@@ -392,7 +361,6 @@ def main() -> None:
         recommendation = "human_click_placement_issue_supported_for_separate_reselection_design_review_only"
     else:
         recommendation = "hold_outer_boundary_diagnosis; mixed_or_ambiguous_image_space_evidence"
-
     summary_path = args.output_dir / "visible_dotgrid_outer_boundary_diagnostic_summary.json"
     summary = {
         "audit_type": "read-only visible DotGrid outer-boundary snap-failure diagnostic; no calibration or coverage-policy decision",
@@ -443,8 +411,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Visible DotGrid outer-boundary diagnostic complete. No raw/control/V3 data, detector threshold, grid/gate, calibration, model, target, checkpoint, decoder, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

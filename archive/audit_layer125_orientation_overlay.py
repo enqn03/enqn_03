@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Create deterministic layer-125 orientation QC overlays for existing calibration ranks.
-
 This read-only audit overlays layer-125 laser-on XYPT command paths on one
 B-stage layer-camera frame for two pre-existing calibration hypotheses. It
 supports visual comparison against the authoritative NIST layer-125 layout:
@@ -8,7 +8,6 @@ Part 1–4 numbering, cylindrical cavity at -X/left, and overhang at +X/right.
 It does not select a rank, modify calibration, train a model, or make labels.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -17,45 +16,34 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 import yaml
-
 from audit_machine_camera_calibration import PARTS, RECT, build_candidates
-
 PART_COLORS = {
     "part01": "#d62728",
     "part02": "#1f77b4",
     "part03": "#2ca02c",
     "part04": "#9467bd",
 }
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = yaml.safe_load(handle)
     if not isinstance(value, dict):
         raise ValueError(f"Expected YAML mapping: {path}")
     return value
-
-
 def load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle)
     if not isinstance(value, dict):
         raise ValueError(f"Expected JSON object: {path}")
     return value
-
-
 def resolve_from_working_directory(value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else Path.cwd() / path
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tiff-b", required=True, type=Path)
@@ -69,16 +57,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def point_part_ids(xy: np.ndarray) -> np.ndarray:
     result = np.full(shape=(len(xy),), fill_value="outside_known_part_rectangles", dtype=object)
     for part in PARTS:
@@ -86,8 +70,6 @@ def point_part_ids(xy: np.ndarray) -> np.ndarray:
         inside = (xy[:, 0] >= x_min) & (xy[:, 0] <= x_max) & (xy[:, 1] >= y_min) & (xy[:, 1] <= y_max)
         result[inside] = str(part)
     return result
-
-
 def read_xypt_laser_on(path: Path) -> tuple[np.ndarray, np.ndarray]:
     try:
         values = np.loadtxt(path, delimiter=",")
@@ -104,8 +86,6 @@ def read_xypt_laser_on(path: Path) -> tuple[np.ndarray, np.ndarray]:
     if xy.size == 0:
         raise ValueError("No finite laser-on XYPT positions were found.")
     return xy, point_part_ids(xy)
-
-
 def project_points(homography: np.ndarray, machine_xy: np.ndarray, offset_x: float, offset_y: float) -> tuple[np.ndarray, np.ndarray]:
     homogeneous_input = np.column_stack([machine_xy, np.ones(len(machine_xy), dtype=np.float64)])
     projected = homogeneous_input @ homography.T
@@ -116,14 +96,10 @@ def project_points(homography: np.ndarray, machine_xy: np.ndarray, offset_x: flo
     raw_xy[valid, 0] += offset_x
     raw_xy[valid, 1] += offset_y
     return raw_xy, valid
-
-
 def downsample_indices(count: int, maximum: int) -> np.ndarray:
     if count <= maximum:
         return np.arange(count, dtype=np.int64)
     return np.linspace(0, count - 1, num=maximum, dtype=np.int64)
-
-
 def finite_percentile_display(frame: np.ndarray, max_display_pixels: int) -> tuple[np.ndarray, dict[str, float | int]]:
     if frame.ndim != 2:
         raise ValueError(f"Expected 2D layer frame, got {frame.shape}")
@@ -144,8 +120,6 @@ def finite_percentile_display(frame: np.ndarray, max_display_pixels: int) -> tup
         "display_height": int(normalized[::stride, ::stride].shape[0]),
         "display_width": int(normalized[::stride, ::stride].shape[1]),
     }
-
-
 def metadata(rank: int, hypothesis: dict[str, Any]) -> dict[str, Any]:
     return {
         "rank": int(rank),
@@ -155,8 +129,6 @@ def metadata(rank: int, hypothesis: dict[str, Any]) -> dict[str, Any]:
         "fit_rmse_px": float(hypothesis["fit_rmse"]),
         "loo_rmse_px": float(hypothesis["loo_rmse"]),
     }
-
-
 def plot_overlay(display_image: np.ndarray, frame_shape: tuple[int, int], rank_info: dict[str, Any], raw_by_part: dict[str, np.ndarray], output_path: Path) -> None:
     height, width = frame_shape
     figure, axis = plt.subplots(figsize=(10, 10), dpi=160)
@@ -177,8 +149,6 @@ def plot_overlay(display_image: np.ndarray, frame_shape: tuple[int, int], rank_i
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     rank_a, rank_b = (int(value) for value in args.compare_ranks)
@@ -193,7 +163,6 @@ def main() -> None:
     for path in (args.tiff_b, args.xypt, args.calibration_config):
         if not path.is_file():
             raise FileNotFoundError(f"Required input not found: {path}")
-
     calibration = load_yaml(args.calibration_config)
     selected_rank = int(calibration["geometry_candidate"]["rank"])
     if rank_b != selected_rank:
@@ -206,14 +175,12 @@ def main() -> None:
     if max(rank_a, rank_b) > len(hypotheses):
         raise ValueError("Requested rank is outside available existing calibration hypotheses.")
     offset_x, offset_y = (float(value) for value in calibration["local_photometric_refinement"]["raw_pixel_global_offset_xy"])
-
     stack = tifffile.memmap(args.tiff_b, series=0, mode="r")
     if stack.ndim != 4 or stack.shape[0] != 3 or stack.shape[1] < args.layer_z:
         raise ValueError(f"Expected read-only TZYX B hyperstack with 3 LEDs and layer {args.layer_z}, got {stack.shape}")
     raw_frame = np.asarray(stack[args.led - 1, args.layer_z - 1])
     display_image, display_stats = finite_percentile_display(raw_frame, args.max_display_pixels)
     machine_xy, machine_parts = read_xypt_laser_on(args.xypt)
-
     output_dir = args.output_dir
     prepare_output_directory(output_dir, args.overwrite)
     rows: list[dict[str, Any]] = []
@@ -249,7 +216,6 @@ def main() -> None:
             "in_sensor_projected_fraction": float(in_sensor.mean()),
             "overlay_png": str(overlay_path),
         })
-
     comparison_path = output_dir / "rank_overlay_projection_summary.csv"
     with comparison_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
@@ -296,8 +262,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Layer-125 orientation overlay audit complete. No raw TIFF/XYPT CSV, calibration config, target, model, checkpoint, or dense heatmap was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

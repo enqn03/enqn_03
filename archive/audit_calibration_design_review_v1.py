@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only calibration design review for extent, coverage, and orientation.
-
 This audit compares frozen detector ROI and existing V2 human extent evidence,
 measures V3 row/column occupancy without changing the fixed coverage gate, and
 quantifies residual ties in the existing 192-hypothesis ranking. It never
@@ -8,7 +8,6 @@ selects a final extent/orientation, edits controls/configuration, refits a
 calibration for deployment, or accesses manufacturing/XCT/model data.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -17,21 +16,16 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials_refined import grayscale, read_tiff
-
 NOMINAL_GRID_SIZE = 50
 MIN_COVERAGE_ROWS = 40
 MIN_COVERAGE_COLUMNS = 50
 FROZEN_SNAP_BOUND_PX = 8.738353576116276
 TOP_TIE_TOLERANCE_PX = 1.0e-6
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path)
@@ -43,32 +37,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it before using --overwrite.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
-
-
 def as_float(row: dict[str, str], *names: str) -> float:
     for name in names:
         if name in row and row[name] not in {"", "nan", "NaN"}:
             return float(row[name])
     raise KeyError(f"None of the required numeric fields are present: {names}")
-
-
 def as_int(row: dict[str, str], *names: str) -> int:
     return int(round(as_float(row, *names)))
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"Cannot write empty CSV: {path}")
@@ -76,13 +60,9 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def point_inside_rectangle(points: np.ndarray, rect: tuple[float, float, float, float]) -> np.ndarray:
     x0, y0, x1, y1 = rect
     return (points[:, 0] >= x0) & (points[:, 0] <= x1) & (points[:, 1] >= y0) & (points[:, 1] <= y1)
-
-
 def point_inside_convex_quad(points: np.ndarray, quad: np.ndarray) -> np.ndarray:
     signs: list[np.ndarray] = []
     for index in range(4):
@@ -93,20 +73,14 @@ def point_inside_convex_quad(points: np.ndarray, quad: np.ndarray) -> np.ndarray
         signs.append(edge[0] * vector[:, 1] - edge[1] * vector[:, 0])
     stacked = np.stack(signs, axis=1)
     return np.all(stacked >= -1.0e-9, axis=1) | np.all(stacked <= 1.0e-9, axis=1)
-
-
 def polygon_area(points: np.ndarray) -> float:
     return float(0.5 * abs(np.sum(points[:, 0] * np.roll(points[:, 1], -1) - points[:, 1] * np.roll(points[:, 0], -1))))
-
-
 def load_human_quad(path: Path) -> np.ndarray:
     rows = read_csv_rows(path)
     if len(rows) != 4:
         raise ValueError(f"Expected exactly four snapped V2 controls, found {len(rows)} in {path}")
     ordered = sorted(rows, key=lambda row: int(row["selection_order"]))
     return np.asarray([[as_float(row, "snapped_x_px"), as_float(row, "snapped_y_px")] for row in ordered], dtype=np.float64)
-
-
 def load_v3(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     rows = read_csv_rows(path)
     if not rows:
@@ -124,8 +98,6 @@ def load_v3(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         points.append([x, y])
         labels.append([col, lattice_row])
     return np.asarray(points, dtype=np.float64), np.asarray(labels, dtype=np.int64), np.asarray(rows, dtype=object)
-
-
 def occupancy_metrics(points: np.ndarray, labels: np.ndarray, inside: np.ndarray, name: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     selected_labels = labels[inside]
     selected_points = points[inside]
@@ -168,8 +140,6 @@ def occupancy_metrics(points: np.ndarray, labels: np.ndarray, inside: np.ndarray
             "row_present": col in cols_present,
         })
     return summary, detail_rows
-
-
 def orientation_review(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     rows = read_csv_rows(path)
     if not rows:
@@ -199,8 +169,6 @@ def orientation_review(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
         "important_limit": "Residual ranking is candidate evidence only; it does not select rank/orientation or edit calibration_v1.yaml.",
     }
     return summary, ranked[: min(12, len(ranked))]
-
-
 def plot_extent_overlay(gray: np.ndarray, frozen_roi: tuple[float, float, float, float], human_quad: np.ndarray, v3_points: np.ndarray, extent_rows: list[dict[str, Any]], output: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     figure, axis = plt.subplots(figsize=(9, 9), dpi=160)
@@ -224,8 +192,6 @@ def plot_extent_overlay(gray: np.ndarray, frozen_roi: tuple[float, float, float,
     figure.tight_layout()
     figure.savefig(output, dpi=160)
     plt.close(figure)
-
-
 def plot_orientation(ranked: list[dict[str, Any]], output: Path) -> None:
     figure, axis = plt.subplots(figsize=(10, 5), dpi=160)
     labels = [f"r{row['rank']}\n{row['orientation']}" for row in ranked]
@@ -238,8 +204,6 @@ def plot_orientation(ranked: list[dict[str, Any]], output: Path) -> None:
     figure.tight_layout()
     figure.savefig(output, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     required = [
@@ -254,14 +218,12 @@ def main() -> None:
         if not path.is_file():
             raise FileNotFoundError(f"Required {label} not found: {path}")
     prepare_output_directory(args.output_dir, args.overwrite)
-
     with args.v2_validation_summary.open(encoding="utf-8") as handle:
         v2_summary = json.load(handle)
     if v2_summary.get("human_control_validation", {}).get("all_control_validity_checks_pass") is not False:
         raise ValueError("Expected the preserved V2 human extent strict-snap hold; refusing to review a different state.")
     if int(v2_summary.get("image_space_panel_and_v3_footprint", {}).get("nominal_50x50_predicted_outside_human_quad_count", -1)) < 0:
         raise ValueError("V2 summary lacks the expected nominal 50x50 footprint evidence.")
-
     human_quad = load_human_quad(args.v2_controls_csv)
     outer_rows = read_csv_rows(args.outer_boundary_csv)
     if len(outer_rows) != 4:
@@ -281,7 +243,6 @@ def main() -> None:
     orientation_summary, orientation_rows = orientation_review(args.orientation_ranking_csv)
     dot_channels, dot_metadata = read_tiff(args.dot_grid)
     gray = grayscale(dot_channels)
-
     by_control_rows = []
     for row in outer_rows:
         by_control_rows.append({
@@ -296,7 +257,6 @@ def main() -> None:
             "nearest_nominal_prediction_distance_px": row.get("nearest_nominal_prediction_distance_px", ""),
             "extent_design_use": "evidence_only; no automatic extent construction",
         })
-
     extent_eligible = bool(
         len(outer_classes) == 1 and
         "current_detector_supported" not in outer_classes and
@@ -313,7 +273,6 @@ def main() -> None:
     write_csv(controls_csv, by_control_rows)
     plot_extent_overlay(gray, frozen_roi, human_quad, v3_points, extent_summaries, extent_overlay)
     plot_orientation(orientation_rows, orientation_overlay)
-
     summary = {
         "audit_type": "read-only calibration design review; no extent/orientation/calibration selection",
         "purpose": "Compare frozen detector and held V2 human extent, test fixed rows>=40 coverage descriptively, and quantify orientation residual ties before any separate policy decision.",
@@ -360,8 +319,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Calibration design review complete. No extent, coverage gate, calibration, rank, orientation, target, model, or candidate policy was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

@@ -1,32 +1,24 @@
+utf-8
 #!/usr/bin/env python3
 """Collect four human-reviewed outer dot centers on the immutable DotGrid image.
-
 Click exactly four **visible outer dot centers** in this order:
 1. top-left, 2. top-right, 3. bottom-right, 4. bottom-left.
-
 The preview is downsampled only for display; click positions are converted back to
 raw camera pixels before the compact JSON is written. This selector never alters
 raw TIFFs, grid-size/coverage policy, calibration, transform rank/orientation,
 model/target data, or quality candidate reporting.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials_refined import grayscale, read_tiff
-
-
 POINT_ORDER = ["top_left_outer_dot_center", "top_right_outer_dot_center", "bottom_right_outer_dot_center", "bottom_left_outer_dot_center"]
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid TIFF; opened via tifffile.memmap(mode='r').")
@@ -34,8 +26,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-max-side", type=int, default=1000, help="Preview maximum side in display pixels; raw positions are preserved. Default: 1000.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only an existing controls JSON after review.")
     return parser.parse_args()
-
-
 def prepare_output_path(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
@@ -45,14 +35,10 @@ def prepare_output_path(path: Path, overwrite: bool) -> None:
         else:
             path.unlink()
     path.parent.mkdir(parents=True, exist_ok=True)
-
-
 def preview_stride(shape: tuple[int, int], max_side: int) -> int:
     if max_side <= 0:
         raise ValueError("--preview-max-side must be positive.")
     return max(1, int(np.ceil(max(shape) / float(max_side))))
-
-
 def collect_points(gray: np.ndarray, stride: int) -> list[tuple[float, float]]:
     display = gray[::stride, ::stride]
     figure, axis = plt.subplots(figsize=(10, 10), dpi=120)
@@ -70,8 +56,6 @@ def collect_points(gray: np.ndarray, stride: int) -> list[tuple[float, float]]:
     if len(points) != 4:
         raise RuntimeError(f"Expected exactly four control points, received {len(points)}. No JSON was written.")
     return [(float(x), float(y)) for x, y in points]
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
@@ -116,8 +100,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     print("Visible DotGrid extent controls recorded. No raw TIFF/CSV, calibration, coverage gate, model, target, checkpoint, decoder, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

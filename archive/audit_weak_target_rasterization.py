@@ -1,3 +1,4 @@
+utf-8
 #!/usr/bin/env python3
 """Rasterization audit: sparse continuous XCT response + support mask, not defect labels."""
 from __future__ import annotations
@@ -6,7 +7,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np,yaml
 from audit_machine_camera_calibration import build_candidates,project
-
 def main():
  p=argparse.ArgumentParser();p.add_argument('--calibration-config',required=True,type=Path);p.add_argument('--registered-root',required=True,type=Path);p.add_argument('--output-dir',required=True,type=Path);p.add_argument('--layer-z',type=int,default=125);p.add_argument('--resolution',nargs=2,type=int,default=[256,256]);p.add_argument('--sigmas',nargs='+',type=float,default=[1,2,3,4]);p.add_argument('--overwrite',action='store_true');a=p.parse_args();out=a.output_dir.resolve()
  if out.exists():

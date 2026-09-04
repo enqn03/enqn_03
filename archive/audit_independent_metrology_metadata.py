@@ -1,16 +1,14 @@
+utf-8
 #!/usr/bin/env python3
 """Audit existing independent layer-camera metrology metadata without refitting calibration.
-
 This read-only pre-audit inspects the NIST-provided dot-grid, checkerboard, and
 secondary-camera laser-origin TIFF artifacts. It reports TIFF schema, robust
 intensity/edge structure, and a *candidate* red-laser centroid where RGB data
 permit. It does not fit or replace a homography, select rank 1/2, modify
 calibration_v1.yaml, train a model, or create a target/label.
-
 Only small CSV/JSON metrics and one deterministic QC contact sheet are written.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -19,21 +17,16 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
-
 ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("dot_grid", "dot_grid", "layer-camera dot-grid geometry"),
     ("secondary_laser_origin", "secondary_camera", "secondary-camera machine-origin laser reference"),
     ("checkerboard", "checkerboard", "layer-camera checkerboard geometry"),
 )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid_2000x2000 TIFF.")
@@ -43,16 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-display-pixels", type=int, default=1000, help="Maximum side length of QC contact-sheet images.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace an existing audit output directory only after review.")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def robust_normalize(image: np.ndarray) -> tuple[np.ndarray, dict[str, float | None]]:
     values = np.asarray(image, dtype=np.float32)
     finite = values[np.isfinite(values)]
@@ -63,16 +52,12 @@ def robust_normalize(image: np.ndarray) -> tuple[np.ndarray, dict[str, float | N
         raise ValueError(f"Invalid robust range p01={p01}, p99={p99}.")
     normalized = np.clip((values - p01) / (p99 - p01), 0.0, 1.0)
     return normalized, {"p01": p01, "p50": p50, "p99": p99}
-
-
 def downsample(image: np.ndarray, max_display_pixels: int) -> tuple[np.ndarray, int]:
     if max_display_pixels < 128:
         raise ValueError("--max-display-pixels must be at least 128.")
     height, width = image.shape[-2:]
     stride = max(1, int(math.ceil(max(height, width) / max_display_pixels)))
     return image[..., ::stride, ::stride], stride
-
-
 def to_channels_yx(data: np.ndarray, axes: str) -> tuple[np.ndarray, str]:
     """Select non-spatial singleton/page dimensions and return C,Y,X float-compatible array."""
     axes = str(axes)
@@ -101,16 +86,12 @@ def to_channels_yx(data: np.ndarray, axes: str) -> tuple[np.ndarray, str]:
     if selected.ndim != 3:
         raise ValueError(f"Expected CYX-equivalent image after selection, got {selected.shape} from axes {axes!r}.")
     return np.transpose(selected, (channel_axis, y_axis, x_axis)), "multi_channel"
-
-
 def gray_from_channels(channels: np.ndarray) -> np.ndarray:
     if channels.shape[0] == 1:
         return channels[0]
     if channels.shape[0] >= 3:
         return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
     return channels.mean(axis=0)
-
-
 def image_structure_metrics(gray: np.ndarray, robust: dict[str, float | None]) -> dict[str, float | int | None]:
     normalized, _ = robust_normalize(gray)
     gy, gx = np.gradient(normalized)
@@ -132,8 +113,6 @@ def image_structure_metrics(gray: np.ndarray, robust: dict[str, float | None]) -
         "edge_profile_x_cv": coefficient_of_variation(profile_x),
         "edge_profile_y_cv": coefficient_of_variation(profile_y),
     }
-
-
 def red_laser_candidate(channels: np.ndarray) -> dict[str, Any]:
     if channels.shape[0] < 3:
         return {
@@ -196,8 +175,6 @@ def red_laser_candidate(channels: np.ndarray) -> dict[str, Any]:
         "weighted_spread_px": float(math.sqrt(max(variance, 0.0))),
         "top_to_all_positive_red_weight_fraction": None if total_positive <= 0.0 else float(total_weight / total_positive),
     }
-
-
 def inspect_tiff(name: str, path: Path, role: str, max_display_pixels: int) -> tuple[dict[str, Any], np.ndarray, np.ndarray | None, dict[str, Any] | None]:
     if not path.is_file():
         raise FileNotFoundError(f"Required metadata artifact not found: {path}")
@@ -251,8 +228,6 @@ def inspect_tiff(name: str, path: Path, role: str, max_display_pixels: int) -> t
     if laser is not None:
         record["laser_origin_candidate"] = laser
     return record, display_gray, display_rgb, laser
-
-
 def plot_qc(items: list[tuple[dict[str, Any], np.ndarray, np.ndarray | None, dict[str, Any] | None]], output_path: Path) -> None:
     figure, axes = plt.subplots(2, 2, figsize=(14, 12), dpi=150, constrained_layout=True)
     panels = list(axes.ravel())
@@ -276,8 +251,6 @@ def plot_qc(items: list[tuple[dict[str, Any], np.ndarray, np.ndarray | None, dic
     panels[3].text(0.5, 0.25, "Laser marker = red-dominance candidate only;\nvisual/metrology confirmation is required.", ha="center", va="center", fontsize=10)
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     for required_path in (args.dot_grid, args.secondary_camera, args.checkerboard):
@@ -336,8 +309,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Independent metrology metadata pre-audit complete. No raw TIFF/CSV, calibration config, target, model, checkpoint, or dense output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

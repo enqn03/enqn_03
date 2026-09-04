@@ -1,22 +1,19 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only spatial diagnostic for a trained A-only AMMT checkpoint.
-
 This script loads an existing checkpoint and selected causal samples, then
 prints compact JSON statistics for prediction spatial variation, XCT-supported
 target variation, and their supported-pixel correlation. It performs no
 training and writes no checkpoint, dense heatmap, crop, target, or result file.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
-
 import torch
 from torch import Tensor
-
 from ammt_weak_target_dataset import AMMTWeakTargetDataset
 from train_a_only_baseline import (
     AOnlyCausalCandidateNet,
@@ -25,8 +22,6 @@ from train_a_only_baseline import (
     load_yaml,
     local_maximum_candidates,
 )
-
-
 def tensor_stats(values: Tensor) -> dict[str, float] | None:
     if values.numel() == 0:
         return None
@@ -38,8 +33,6 @@ def tensor_stats(values: Tensor) -> dict[str, float] | None:
         "std_population": float(values.std(unbiased=False).item()),
         "spatial_range": float((values.max() - values.min()).item()),
     }
-
-
 def pearson_correlation(x: Tensor, y: Tensor) -> float | None:
     if x.numel() < 2 or y.numel() < 2:
         return None
@@ -51,8 +44,6 @@ def pearson_correlation(x: Tensor, y: Tensor) -> float | None:
     if float(denominator.item()) == 0.0:
         return None
     return float((torch.dot(x_centered, y_centered) / denominator).item())
-
-
 def make_dataset(args: argparse.Namespace) -> AMMTWeakTargetDataset:
     return AMMTWeakTargetDataset(
         stage="A",
@@ -64,8 +55,6 @@ def make_dataset(args: argparse.Namespace) -> AMMTWeakTargetDataset:
         calibration_config=args.calibration_config,
         weak_target_config=args.weak_target_config,
     )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -80,8 +69,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--indices", nargs="+", type=int, required=True)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     config = load_yaml(args.config)
@@ -93,7 +80,6 @@ def main() -> None:
         raise ValueError("Diagnostic requires the six-channel A-only baseline config.")
     if not args.checkpoint.is_file():
         raise FileNotFoundError(f"Missing checkpoint: {args.checkpoint}")
-
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalCandidateNet(
         input_channels=int(data_config["input_channels"]),
@@ -107,7 +93,6 @@ def main() -> None:
     dataset = make_dataset(args)
     plateau_atol = float(evaluation_config["spatial_plateau_range_atol"])
     geometry_gate = build_provisional_part_geometry_gate(evaluation_config, args.calibration_config)
-
     summaries: list[dict[str, Any]] = []
     previous_prediction: Tensor | None = None
     with torch.no_grad():
@@ -167,7 +152,6 @@ def main() -> None:
                 }
             )
             previous_prediction = prediction_4d.clone()
-
     print(
         json.dumps(
             {
@@ -190,8 +174,6 @@ def main() -> None:
         )
     )
     print("Spatial diagnostic complete. No raw file, dense heatmap, checkpoint, or output file was written.")
-
-
 if __name__ == "__main__":
     try:
         main()

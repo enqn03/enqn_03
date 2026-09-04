@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Compare machine-part and machine-axis hypotheses from screen-corner controls.
-
 Input JSON contains only visible screen TL/TR/BR/BL corners for four parts.
 This tool evaluates 24 assignments of screen parts to part01..04 and eight
 cyclic/mirrored mappings of screen corners to machine rectangle corners. It
@@ -9,34 +9,26 @@ the top candidates, and requires visual overlay review before any weak target
 projection is permitted.
 """
 from __future__ import annotations
-
 import argparse, csv, itertools, json, math, shutil, sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
 RECT = {"part01": (-6., 3., 11., 16.), "part02": (-2., 7., 2., 7.), "part03": (2., 11., -7., -2.), "part04": (6., 15., -16., -11.)}
 PARTS = tuple(RECT)
 COLORS = {"part01":"tab:blue","part02":"tab:orange","part03":"tab:green","part04":"tab:red"}
-
-
 def cli() -> argparse.Namespace:
     p=argparse.ArgumentParser(description="Rank machine XY→raw camera hypotheses from screen controls")
     p.add_argument("--control-points",required=True,type=Path); p.add_argument("--output-dir",required=True,type=Path)
     p.add_argument("--top-k",type=int,default=4); p.add_argument("--overwrite",action="store_true")
     return p.parse_args()
-
-
 def hom(p:np.ndarray)->np.ndarray: return np.c_[p,np.ones(len(p))]
 def norm(p:np.ndarray)->tuple[np.ndarray,np.ndarray]:
     c=p.mean(0); d=np.sqrt(((p-c)**2).sum(1)).mean()
     if d<=0: raise ValueError("Degenerate controls")
     s=math.sqrt(2)/d; T=np.array([[s,0,-s*c[0]],[0,s,-s*c[1]],[0,0,1.]])
     return (T@hom(p).T).T[:,:2],T
-
 def Hfit(src:np.ndarray,dst:np.ndarray)->np.ndarray:
     a,Ts=norm(src); b,Td=norm(dst); A=[]
     for (x,y),(u,v) in zip(a,b,strict=True): A.extend([[-x,-y,-1,0,0,0,u*x,u*y,u],[0,0,0,-x,-y,-1,v*x,v*y,v]])
@@ -59,7 +51,6 @@ def orientations()->list[tuple[str,tuple[int,...]]]:
     rev=(0,3,2,1)
     for r in range(4): out.append((f"mirror_rotate_{r*90}",rev[r:]+rev[:r]))
     return out
-
 def read_frame(ref:dict[str,Any])->np.ndarray:
     path=Path(ref["tiff_path"]); axes=str(ref["axes"]); data=tifffile.memmap(path,series=0,mode="r")
     ix=[]
@@ -70,11 +61,9 @@ def read_frame(ref:dict[str,Any])->np.ndarray:
         elif a in "YX": ix.append(slice(None))
         else: raise ValueError(f"Unsupported axis {a}")
     return np.asarray(data[tuple(ix)])
-
 def candidate(src:np.ndarray,dst:np.ndarray,assignment:tuple[str,...],name:str,order:tuple[int,...])->dict[str,Any]:
     H=Hfit(src,dst); fit=np.linalg.norm(project(H,src)-dst,axis=1); lv=loo(src,dst)
     return {"assignment":assignment,"orientation":name,"corner_index_order":order,"H":H,"fit":fit,"loo":lv,"fit_rmse":float(np.sqrt(np.mean(fit**2))),"loo_rmse":float(np.sqrt(np.mean(lv**2))),"score":float(np.sqrt(np.mean(lv**2)))}
-
 def build_candidates(points:list[dict[str,Any]])->list[dict[str,Any]]:
     screen_parts=[]; grouped={}
     for p in points: grouped.setdefault(p["screen_part"],[]).append(p)
@@ -89,7 +78,6 @@ def build_candidates(points:list[dict[str,Any]])->list[dict[str,Any]]:
             src=np.vstack([corners(part)[list(order)] for part in assignment])
             result.append(candidate(src,dst,assignment,oname,order))
     return sorted(result,key=lambda c:c["score"])
-
 def qc(path:Path,frame:np.ndarray,ref:dict[str,Any],cands:list[dict[str,Any]],points:list[dict[str,Any]])->None:
     k=min(4,len(cands)); fig,axs=plt.subplots(2,2,figsize=(16,14),constrained_layout=True); lo,hi=np.percentile(frame,ref.get("display_percentiles",[1,99.5]))
     dst=np.asarray([[float(p["raw_camera_x_px"]),float(p["raw_camera_y_px"])] for p in points],float)
@@ -101,7 +89,6 @@ def qc(path:Path,frame:np.ndarray,ref:dict[str,Any],cands:list[dict[str,Any]],po
         ax.set_title(f"rank {rank}: LOO RMSE={c['loo_rmse']:.2f}px\n{c['orientation']} | {list(c['assignment'])}"); ax.set_xlabel("raw x"); ax.set_ylabel("raw y")
     fig.suptitle("Top provisional machine-part / orientation hypotheses — visual review required",fontsize=15,fontweight="bold")
     fig.savefig(path,dpi=180,bbox_inches="tight"); plt.close(fig)
-
 def main()->None:
     a=cli(); cp=a.control_points.resolve(); out=a.output_dir.resolve()
     if out.exists():
@@ -123,7 +110,6 @@ def main()->None:
     print(f"- hypotheses ranked: {len(cands)}")
     print(f"- best residual-only candidate: LOO RMSE={best['loo_rmse']:.3f}px, {best['orientation']}, {list(best['assignment'])}")
     print(f"- output directory: {out}")
-
 if __name__=="__main__":
     try: main()
     except Exception as e: print(f"ERROR: {e}",file=sys.stderr);raise

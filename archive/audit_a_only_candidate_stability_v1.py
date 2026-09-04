@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only causal-history contribution audit for a saved A-only checkpoint.
-
 For selected held-out A-stage endpoints, this audit compares the normal causal
 K=4 history with endpoint-repeated and one-prior-frame-replaced counterfactual
 histories. It assesses map and raw-camera candidate stability only; it neither
 trains nor modifies a checkpoint, target, calibration, or decoder policy.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -16,13 +15,11 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 from torch import Tensor
-
 from ammt_causal_dataset import AMMTCausalStageDataset
 from train_a_only_baseline import (
     AOnlyCausalCandidateNet,
@@ -30,13 +27,9 @@ from train_a_only_baseline import (
     local_maximum_candidates,
     load_yaml,
 )
-
-
 MAP_CHANGE_MAE_MIN = 1.0e-4
 RAW_COORDINATE_STABILITY_MAX_MODEL_PIXEL = 1.0
 MAX_SELECTED_ENDPOINTS = 3
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -49,20 +42,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path) -> None:
     if path.exists():
         raise FileExistsError(f"Output directory already exists: {path}. Review it and choose a new --output-dir; this audit never overwrites it.")
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"Cannot write an empty CSV: {path}")
@@ -70,8 +57,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def map_pearson(left: Tensor, right: Tensor) -> float | None:
     x = left.detach().float().flatten().cpu()
     y = right.detach().float().flatten().cpu()
@@ -83,8 +68,6 @@ def map_pearson(left: Tensor, right: Tensor) -> float | None:
     if float(denominator.item()) <= 0.0:
         return None
     return float(torch.dot(x_centered, y_centered).item() / denominator.item())
-
-
 def counterfactual_histories(history: Tensor) -> list[tuple[str, Tensor]]:
     if tuple(history.shape[:2]) != (1, history.shape[1]):
         raise ValueError(f"Expected history [1,K,C,H,W], got {tuple(history.shape)}")
@@ -99,8 +82,6 @@ def counterfactual_histories(history: Tensor) -> list[tuple[str, Tensor]]:
         variant[:, time_index] = endpoint[:, 0]
         variants.append((f"prior_t{time_index}_replaced_with_endpoint", variant))
     return variants
-
-
 def decoded_prediction(
     prediction: Tensor,
     sample: dict[str, Any],
@@ -122,23 +103,15 @@ def decoded_prediction(
     )
     candidates = result.pop("candidates")
     return result, candidates
-
-
 def top_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None if not candidates else candidates[0]
-
-
 def raw_displacement(reference: dict[str, Any] | None, candidate: dict[str, Any] | None) -> float | None:
     if reference is None or candidate is None:
         return None
     return float(math.hypot(float(reference["x_pixel"]) - float(candidate["x_pixel"]), float(reference["y_pixel"]) - float(candidate["y_pixel"])))
-
-
 def model_pixel_raw_scale(sample: dict[str, Any]) -> float:
     metadata = sample["metadata"]
     return max(float(metadata["raw_pixels_per_output_pixel_x"]), float(metadata["raw_pixels_per_output_pixel_y"]))
-
-
 def compact_decoder_fields(status: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
     first = top_candidate(candidates)
     return {
@@ -151,8 +124,6 @@ def compact_decoder_fields(status: dict[str, Any], candidates: list[dict[str, An
         "top_candidate_y_pixel": None if first is None else float(first["y_pixel"]),
         "top_candidate_score": None if first is None else float(first["score"]),
     }
-
-
 def plot_endpoint_qc(
     maps: list[tuple[str, Tensor]],
     endpoint_layer: int,
@@ -176,8 +147,6 @@ def plot_endpoint_qc(
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if len(args.indices) < 1 or len(args.indices) > MAX_SELECTED_ENDPOINTS:
@@ -190,7 +159,6 @@ def main() -> None:
         if not path.is_file():
             raise FileNotFoundError(f"Required {label} not found: {path}")
     prepare_output_directory(args.output_dir)
-
     config = load_yaml(args.config)
     data_config = config["data"]
     model_config = config["model"]
@@ -200,7 +168,6 @@ def main() -> None:
         raise ValueError("Audit requires the six-channel A-only config.")
     if bool(evaluation_config.get("provisional_part_geometry_gate", {}).get("enabled", False)):
         raise ValueError("Use the non-geometry C32 residual config: this raw-camera audit must not decode through provisional geometry.")
-
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalCandidateNet(
         input_channels=int(data_config["input_channels"]),
@@ -219,7 +186,6 @@ def main() -> None:
         split=args.split,
         resize_hw=tuple(int(value) for value in data_config["model_resolution"]),
     )
-
     variant_rows: list[dict[str, Any]] = []
     endpoint_summaries: list[dict[str, Any]] = []
     qc_paths: list[str] = []
@@ -293,7 +259,6 @@ def main() -> None:
             qc_path = args.output_dir / f"candidate_stability_endpoint_z{int(sample['endpoint_layer_z']):03d}.png"
             plot_endpoint_qc(predictions, int(sample["endpoint_layer_z"]), qc_path)
             qc_paths.append(str(qc_path))
-
     history_support_count = sum(bool(row["history_contribution_supported_by_map_change"]) for row in endpoint_summaries)
     coordinate_stability_count = sum(bool(row["all_counterfactual_top_coordinates_stable_within_one_model_pixel"]) for row in endpoint_summaries)
     summary_path = args.output_dir / "a_only_candidate_stability_summary.json"
@@ -339,8 +304,6 @@ def main() -> None:
     write_json(summary_path, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("A-only candidate stability audit complete. No raw data, target/support, checkpoint, config, calibration, model, or candidate policy was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

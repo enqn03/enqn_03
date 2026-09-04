@@ -1,16 +1,14 @@
+utf-8
 #!/usr/bin/env python3
 """Audit compact A-only candidate coordinates against the provisional calibration.
-
 The script reads only the compact candidate JSON, model configuration,
 normalization ROI, calibration configuration, and control-point JSON. It checks
 coordinate-domain consistency and round-trip arithmetic; it does not read TIFF
 or XCT CSV data, create targets/heatmaps, run inference, or modify a model.
-
 A successful round trip proves only internal consistency under the provisional
 transform. It is not independent metrology calibration or defect confirmation.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -20,34 +18,24 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
-
 import numpy as np
 import yaml
-
 from audit_machine_camera_calibration import PARTS, RECT, build_candidates, project
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle)
     if not isinstance(loaded, dict):
         raise ValueError(f"Expected mapping in YAML file: {path}")
     return loaded
-
-
 def load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         loaded = json.load(handle)
     if not isinstance(loaded, dict):
         raise ValueError(f"Expected JSON object: {path}")
     return loaded
-
-
 def resolve_from_working_directory(path_value: str) -> Path:
     path = Path(path_value)
     return path if path.is_absolute() else Path.cwd() / path
-
-
 def inverse_project(h_inverse: np.ndarray, raw_unoffset_xy: np.ndarray) -> tuple[np.ndarray | None, float]:
     homogeneous = h_inverse @ np.array([raw_unoffset_xy[0], raw_unoffset_xy[1], 1.0], dtype=np.float64)
     denominator = float(homogeneous[2])
@@ -57,8 +45,6 @@ def inverse_project(h_inverse: np.ndarray, raw_unoffset_xy: np.ndarray) -> tuple
     if not np.isfinite(machine_xy).all():
         return None, denominator
     return machine_xy, denominator
-
-
 def containing_part(machine_xy: np.ndarray, atol: float = 1.0e-9) -> str | None:
     x_value, y_value = float(machine_xy[0]), float(machine_xy[1])
     for part in PARTS:
@@ -66,8 +52,6 @@ def containing_part(machine_xy: np.ndarray, atol: float = 1.0e-9) -> str | None:
         if x_min - atol <= x_value <= x_max + atol and y_min - atol <= y_value <= y_max + atol:
             return str(part)
     return None
-
-
 def percentile_summary(values: list[float]) -> dict[str, float | int | None]:
     finite_values = [float(value) for value in values if math.isfinite(float(value))]
     if not finite_values:
@@ -81,8 +65,6 @@ def percentile_summary(values: list[float]) -> dict[str, float | int | None]:
         "p95": float(np.percentile(array, 95)),
         "max": float(np.max(array)),
     }
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-json", required=True, type=Path)
@@ -95,16 +77,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--minimum-model-edge-margin-px", type=float, default=3.0)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def main() -> None:
     args = parse_args()
     if min(args.roundtrip_atol_raw_px, args.roundtrip_atol_model_px, args.minimum_model_edge_margin_px) < 0.0:
@@ -112,7 +90,6 @@ def main() -> None:
     for required in (args.candidate_json, args.model_config, args.normalization_config, args.calibration_config):
         if not required.is_file():
             raise FileNotFoundError(f"Missing input: {required}")
-
     candidates_payload = load_json(args.candidate_json)
     model_config = load_yaml(args.model_config)
     normalization_config = load_yaml(args.normalization_config)
@@ -127,7 +104,6 @@ def main() -> None:
         raise ValueError("Coordinate audit currently requires A-stage compact candidates.")
     if str(candidates_payload.get("response_direction")) != "unresolved":
         raise ValueError("Expected unresolved response direction contract in candidate JSON.")
-
     data_config = model_config["data"]
     model_resolution = tuple(int(value) for value in data_config["model_resolution"])
     if len(model_resolution) != 2 or min(model_resolution) < 1:
@@ -142,7 +118,6 @@ def main() -> None:
         raise ValueError("Invalid raw camera dimensions in calibration config.")
     x_scale = (x1 - x0) / model_width
     y_scale = (y1 - y0) / model_height
-
     control_path = resolve_from_working_directory(str(calibration_config["control_points"]["path"]))
     control_payload = load_json(control_path)
     control_points = control_payload.get("control_points")
@@ -155,13 +130,11 @@ def main() -> None:
     homography = np.asarray(calibration_candidates[rank - 1]["H"], dtype=np.float64)
     homography_inverse = np.linalg.inv(homography)
     offset_x, offset_y = (float(value) for value in calibration_config["local_photometric_refinement"]["raw_pixel_global_offset_xy"])
-
     rows: list[dict[str, Any]] = []
     raw_roundtrip_errors: list[float] = []
     model_roundtrip_errors: list[float] = []
     within_endpoint_keys: list[tuple[int, int, int]] = []
     across_layer_keys: list[tuple[int, int]] = []
-
     for candidate in candidates:
         required_fields = ("rank", "x_pixel", "y_pixel", "x_model_pixel", "y_model_pixel", "layer_z", "score", "sample_id", "stage")
         missing = [field for field in required_fields if field not in candidate]
@@ -169,7 +142,6 @@ def main() -> None:
             raise ValueError(f"Candidate missing fields {missing}: {candidate}")
         if candidate["stage"] != "A":
             raise ValueError(f"Candidate stage must be A, got {candidate['stage']!r}")
-
         x_model = int(candidate["x_model_pixel"])
         y_model = int(candidate["y_model_pixel"])
         layer_z = int(candidate["layer_z"])
@@ -182,7 +154,6 @@ def main() -> None:
         x_model_roundtrip = (raw_x - x0) / x_scale - 0.5
         y_model_roundtrip = (raw_y - y0) / y_scale - 0.5
         model_roundtrip_error = float(math.hypot(x_model_roundtrip - x_model, y_model_roundtrip - y_model))
-
         grid_in_bounds = 0 <= x_model < model_width and 0 <= y_model < model_height
         raw_in_roi = x0 <= raw_x < x1 and y0 <= raw_y < y1
         raw_in_sensor_fov = 0.0 <= raw_x < raw_width and 0.0 <= raw_y < raw_height
@@ -191,7 +162,6 @@ def main() -> None:
         raw_finite = math.isfinite(raw_x) and math.isfinite(raw_y)
         edge_margin = float(min(x_model, model_width - 1 - x_model, y_model, model_height - 1 - y_model))
         edge_safe = edge_margin >= float(args.minimum_model_edge_margin_px)
-
         machine_xy: np.ndarray | None = None
         inverse_denominator: float | None = None
         reprojection_error = math.inf
@@ -210,7 +180,6 @@ def main() -> None:
                 reprojected_raw_y = float(reprojected[1])
                 reprojection_error = float(math.hypot(reprojected_raw_x - raw_x, reprojected_raw_y - raw_y))
                 part_name = containing_part(machine_xy)
-
         raw_roundtrip_errors.append(reprojection_error)
         model_roundtrip_errors.append(model_roundtrip_error)
         within_endpoint_keys.append((layer_z, x_model, y_model))
@@ -249,14 +218,12 @@ def main() -> None:
                 "score_semantics": str(candidate.get("score_semantics", "")),
             }
         )
-
     within_endpoint_duplicates = {key: count for key, count in Counter(within_endpoint_keys).items() if count > 1}
     repeated_model_cells_across_layers = {key: count for key, count in Counter(across_layer_keys).items() if count > 1}
     raw_error_summary = percentile_summary(raw_roundtrip_errors)
     model_error_summary = percentile_summary(model_roundtrip_errors)
     raw_mapping_error_summary = percentile_summary([float(row["raw_center_mapping_error_px"]) for row in rows])
     edge_margin_summary = percentile_summary([float(row["model_edge_margin_px"]) for row in rows])
-
     checks = {
         "all_scores_finite": all(bool(row["score_finite"]) for row in rows),
         "all_scores_in_unit_interval": all(bool(row["score_in_unit_interval"]) for row in rows),
@@ -286,7 +253,6 @@ def main() -> None:
     coordinate_consistency_pass = all(bool(checks[name]) for name in arithmetic_checks)
     operational_geometry_pass = coordinate_consistency_pass and bool(checks["all_machine_coordinates_inside_known_part_rectangles"])
     edge_safety_pass = bool(checks["all_candidates_meet_minimum_model_edge_margin"])
-
     prepare_output_directory(args.output_dir, args.overwrite)
     candidate_csv = args.output_dir / "candidate_coordinate_audit.csv"
     duplicate_csv = args.output_dir / "repeated_model_cells_across_layers.csv"
@@ -301,7 +267,6 @@ def main() -> None:
         writer.writeheader()
         for (x_model, y_model), count in sorted(repeated_model_cells_across_layers.items(), key=lambda item: (-item[1], item[0])):
             writer.writerow({"x_model_pixel": x_model, "y_model_pixel": y_model, "repeat_count_across_layers": count})
-
     part_counts = Counter(str(row["containing_machine_part"]) if row["containing_machine_part"] is not None else "outside_known_part_rectangles" for row in rows)
     summary = {
         "audit_type": "calibration-aware compact A-only candidate coordinate audit; not metrology calibration or defect labeling",
@@ -369,8 +334,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Candidate coordinate audit complete. No raw TIFF/XCT CSV, target, model, checkpoint, or dense heatmap was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

@@ -1,23 +1,19 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only audit of registered XCT sparse weak-target support for AMMT X4.
-
 The 2025 NIST registered X4 data contains one headerless 40-column CSV per
 part and manufacturing layer. Each row is a sparse XYPT/melt-pool measurement
 location, not a dense layer-camera pixel. Columns 38–40 carry original,
 3x3x3-filtered and 5x5x5-filtered XCT voxel values.
-
 This audit answers the questions that must be settled before generating any
 camera heatmap target:
-
 1. Are all part/layer CSV files present and structurally valid?
 2. Where is sparse machine-coordinate supervision supported?
 3. Which layers have finite XCT values, including the train-only history?
 4. What are the train-only distributions of the three XCT voxel responses?
-
 It does NOT create a camera-space heatmap, a binary defect label, or a model
 training tensor. Locations not represented by registered CSV rows remain
 unknown rather than negative supervision.
-
 Example
 -------
 cd ~/ammt_project
@@ -25,13 +21,10 @@ cd ~/ammt_project
   --registered-root raw_original/registered_xct \
   --manifest manifests/causal_sequence_manifest.csv \
   --output-dir processed/xct_target_audit
-
 Raw registered CSVs are opened only for reading. Outputs are small summary
 artifacts under processed/ and can be regenerated.
 """
-
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -42,10 +35,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
-
 import matplotlib.pyplot as plt
 import numpy as np
-
 EXPECTED_COLUMN_COUNT = 40
 COLUMN_PART_NUMBER = 1
 COLUMN_BUILD_TIME_US = 2
@@ -56,13 +47,11 @@ COLUMN_REAL_Y_MM = 8
 COLUMN_XCT_ORIGINAL = 38
 COLUMN_XCT_3X3X3 = 39
 COLUMN_XCT_5X5X5 = 40
-
 TARGET_COLUMNS = {
     "xct_original": COLUMN_XCT_ORIGINAL,
     "xct_3x3x3": COLUMN_XCT_3X3X3,
     "xct_5x5x5": COLUMN_XCT_5X5X5,
 }
-
 COLUMN_DICTIONARY = {
     "part_number": COLUMN_PART_NUMBER,
     "build_time_us": COLUMN_BUILD_TIME_US,
@@ -72,8 +61,6 @@ COLUMN_DICTIONARY = {
     "real_y_mm": COLUMN_REAL_Y_MM,
     **TARGET_COLUMNS,
 }
-
-
 @dataclass
 class LayerInventory:
     part: str
@@ -95,8 +82,6 @@ class LayerInventory:
     xct_5x5x5_mean: float | None
     xct_5x5x5_min: float | None
     xct_5x5x5_max: float | None
-
-
 @dataclass
 class DistributionSummary:
     scope: str
@@ -113,8 +98,6 @@ class DistributionSummary:
     std: float | None
     minimum: float | None
     maximum: float | None
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Audit registered XCT sparse-target support without modifying source CSV files"
@@ -136,8 +119,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--overwrite", action="store_true", help="Replace an existing output directory")
     return parser.parse_args()
-
-
 def parse_finite_float(value: str) -> float | None:
     """Convert numeric CSV text to finite float; NaN/empty/nonfinite becomes None."""
     try:
@@ -145,20 +126,14 @@ def parse_finite_float(value: str) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
-
-
 def nan_or_float(value: float | None) -> float | None:
     return None if value is None or not math.isfinite(value) else float(value)
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Use --overwrite only after review.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def read_train_history_layers(manifest_path: Path) -> tuple[list[int], int]:
     """Return the unique train-only causal history layers and train-row count."""
     if not manifest_path.is_file():
@@ -182,8 +157,6 @@ def read_train_history_layers(manifest_path: Path) -> tuple[list[int], int]:
     if not history_layers:
         raise ValueError("Manifest contains no train history layers")
     return sorted(history_layers), train_rows
-
-
 def find_part_directories(registered_root: Path) -> list[Path]:
     if not registered_root.is_dir():
         raise FileNotFoundError(f"Missing registered XCT root: {registered_root}")
@@ -191,20 +164,14 @@ def find_part_directories(registered_root: Path) -> list[Path]:
     if not parts:
         raise ValueError(f"No partNN directories found under: {registered_root}")
     return parts
-
-
 def layer_number_from_path(path: Path) -> int:
     matched = re.fullmatch(r"L(\d{4})\.csv", path.name)
     if matched is None:
         raise ValueError(f"Expected LNNNN.csv filename, got {path.name}")
     return int(matched.group(1))
-
-
 def read_csv_rows(path: Path) -> Iterator[list[str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         yield from csv.reader(handle)
-
-
 def _quantiles(values: Sequence[float]) -> dict[str, float | None]:
     if not values:
         return {name: None for name in ("p01", "p05", "p50", "p95", "p99", "mean", "std", "minimum", "maximum")}
@@ -220,8 +187,6 @@ def _quantiles(values: Sequence[float]) -> dict[str, float | None]:
         "minimum": float(data.min()),
         "maximum": float(data.max()),
     }
-
-
 def audit_layer_csv(
     part: str,
     layer_z: int,
@@ -240,7 +205,6 @@ def audit_layer_csv(
     finite_counts: dict[str, int] = {name: 0 for name in TARGET_COLUMNS}
     xct5_values: list[float] = []
     qc_rows: list[tuple[float, float, float]] = []
-
     for row in read_csv_rows(csv_path):
         total_rows += 1
         if len(row) != EXPECTED_COLUMN_COUNT:
@@ -253,7 +217,6 @@ def audit_layer_csv(
             xs.append(x)
         if y is not None:
             ys.append(y)
-
         finite_current: dict[str, float | None] = {}
         for name, column_index in TARGET_COLUMNS.items():
             value = parse_finite_float(row[column_index - 1])
@@ -266,11 +229,9 @@ def audit_layer_csv(
             xct5_values.append(float(finite_current["xct_5x5x5"]))
             if collect_qc_points and x is not None and y is not None:
                 qc_rows.append((x, y, float(finite_current["xct_5x5x5"])))
-
     if collect_qc_points and len(qc_rows) > max_qc_points:
         indices = np.linspace(0, len(qc_rows) - 1, num=max_qc_points, dtype=np.int64)
         qc_rows = [qc_rows[index] for index in indices]
-
     denominator = schema_rows if schema_rows else 1
     xct5_summary = _quantiles(xct5_values)
     inventory = LayerInventory(
@@ -296,8 +257,6 @@ def audit_layer_csv(
     )
     qc_array = np.asarray(qc_rows, dtype=np.float32) if qc_rows else np.empty((0, 3), dtype=np.float32)
     return inventory, target_values, qc_array
-
-
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     if not rows:
         raise ValueError(f"No rows available for CSV output: {path.name}")
@@ -305,8 +264,6 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def build_distribution_rows(train_values_by_part: dict[str, dict[str, list[float]]]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     all_values: dict[str, list[float]] = {name: [] for name in TARGET_COLUMNS}
@@ -341,8 +298,6 @@ def build_distribution_rows(train_values_by_part: dict[str, dict[str, list[float
             )
         )
     return rows
-
-
 def make_qc_figure(
     output_path: Path,
     inventories: list[LayerInventory],
@@ -353,8 +308,6 @@ def make_qc_figure(
     """Render support coverage and response distributions; no heatmap is implied."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11), constrained_layout=True)
     part_names = sorted(qc_points_by_part)
-
-    # 1. Sparse support in machine coordinates for one requested manufacturing layer.
     spatial_axis = axes[0, 0]
     scatter_handle = None
     for part in part_names:
@@ -373,8 +326,6 @@ def make_qc_figure(
         fig.colorbar(scatter_handle, ax=spatial_axis, label="XCT voxel value")
     else:
         spatial_axis.text(0.5, 0.5, "No finite XCT 5x5x5 values at requested QC layer", ha="center", va="center")
-
-    # 2. Finite XCT support over manufacturing layers.
     coverage_axis = axes[0, 1]
     for part in sorted({item.part for item in inventories}):
         subset = [item for item in inventories if item.part == part]
@@ -389,8 +340,6 @@ def make_qc_figure(
     coverage_axis.set_ylabel("Finite-row fraction")
     coverage_axis.set_ylim(-0.02, 1.02)
     coverage_axis.legend(loc="best", title="Part")
-
-    # 3. Train-only target response distributions.
     histogram_axis = axes[1, 0]
     all_values: dict[str, list[float]] = {name: [] for name in TARGET_COLUMNS}
     for values_by_target in train_values_by_part.values():
@@ -403,8 +352,6 @@ def make_qc_figure(
     histogram_axis.set_xlabel("XCT voxel value")
     histogram_axis.set_ylabel("Density")
     histogram_axis.legend(loc="best")
-
-    # 4. Layerwise sparse sample count, a measure of support density rather than label density.
     count_axis = axes[1, 1]
     for part in sorted({item.part for item in inventories}):
         subset = [item for item in inventories if item.part == part]
@@ -418,7 +365,6 @@ def make_qc_figure(
     count_axis.set_xlabel("Layer z")
     count_axis.set_ylabel("Finite XCT 5x5x5 rows")
     count_axis.legend(loc="best", title="Part")
-
     fig.suptitle(
         "Registered XCT sparse-target audit: machine-coordinate support, not a camera-pixel heatmap",
         fontsize=14,
@@ -426,15 +372,12 @@ def make_qc_figure(
     )
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
-
-
 def main() -> None:
     args = parse_args()
     if args.qc_layer < 1:
         raise ValueError("--qc-layer must be >= 1")
     if args.max_qc_points_per_part < 1:
         raise ValueError("--max-qc-points-per-part must be >= 1")
-
     registered_root = args.registered_root.resolve()
     manifest_path = args.manifest.resolve()
     output_dir = args.output_dir.resolve()
@@ -442,12 +385,10 @@ def main() -> None:
     train_layer_set = set(train_layers)
     part_directories = find_part_directories(registered_root)
     prepare_output_directory(output_dir, overwrite=args.overwrite)
-
     inventories: list[LayerInventory] = []
     train_values_by_part: dict[str, dict[str, list[float]]] = {}
     qc_points_by_part: dict[str, np.ndarray] = {}
     missing_expected_train_files: list[str] = []
-
     for part_dir in part_directories:
         part = part_dir.name
         csv_paths = sorted(part_dir.glob("L*.csv"), key=layer_number_from_path)
@@ -457,7 +398,6 @@ def main() -> None:
         for z in train_layers:
             if z not in found_layers:
                 missing_expected_train_files.append(str(part_dir / f"L{z:04d}.csv"))
-
         train_values_by_part[part] = {name: [] for name in TARGET_COLUMNS}
         qc_points_by_part[part] = np.empty((0, 3), dtype=np.float32)
         for csv_path in csv_paths:
@@ -476,7 +416,6 @@ def main() -> None:
                     train_values_by_part[part][target_name].extend(target_values)
             if layer_z == args.qc_layer:
                 qc_points_by_part[part] = qc_points
-
     inventory_rows = [asdict(item) for item in inventories]
     distribution_rows = build_distribution_rows(train_values_by_part)
     write_csv(output_dir / "xct_target_inventory.csv", inventory_rows)
@@ -488,7 +427,6 @@ def main() -> None:
         qc_points_by_part=qc_points_by_part,
         qc_layer=args.qc_layer,
     )
-
     all_train_counts = {
         target_name: int(sum(len(values_by_target[target_name]) for values_by_target in train_values_by_part.values()))
         for target_name in TARGET_COLUMNS
@@ -544,14 +482,11 @@ def main() -> None:
     with (output_dir / "xct_target_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
-
     print("Registered XCT sparse-target audit completed. No raw CSV, TIFF, camera heatmap or label file was modified/created.")
     print(f"- audited part/layer CSV files: {all_layer_count}")
     print(f"- train history layers used for distribution statistics: {len(train_layers)} ({train_layers[0]}..{train_layers[-1]})")
     print(f"- train finite target counts: {all_train_counts}")
     print(f"- output directory: {output_dir}")
-
-
 if __name__ == "__main__":
     try:
         main()

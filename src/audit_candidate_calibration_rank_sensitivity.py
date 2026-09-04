@@ -1,16 +1,14 @@
+utf-8
 #!/usr/bin/env python3
 """Compare compact candidate coordinates under rank-1 and rank-2 calibration transforms.
-
 The script performs a read-only sensitivity analysis on already emitted,
 geometry-filtered compact candidates. It recomputes existing calibration ranks
 from the existing 16 control points, but never fits new controls, changes the
 calibration config, reruns model inference, or reads TIFF/XCT data.
-
 A rank comparison quantifies coordinate sensitivity. It neither chooses a new
 calibration rank nor validates absolute metrology accuracy or physical defects.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -20,34 +18,24 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
-
 import numpy as np
 import yaml
-
 from audit_machine_camera_calibration import PARTS, RECT, build_candidates, project
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = yaml.safe_load(handle)
     if not isinstance(value, dict):
         raise ValueError(f"Expected YAML mapping: {path}")
     return value
-
-
 def load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle)
     if not isinstance(value, dict):
         raise ValueError(f"Expected JSON object: {path}")
     return value
-
-
 def resolve_from_working_directory(value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else Path.cwd() / path
-
-
 def inverse_machine_xy(inverse_homography: np.ndarray, raw_x: float, raw_y: float, offset_x: float, offset_y: float) -> tuple[np.ndarray | None, float]:
     homogeneous = inverse_homography @ np.array([raw_x - offset_x, raw_y - offset_y, 1.0], dtype=np.float64)
     denominator = float(homogeneous[2])
@@ -57,8 +45,6 @@ def inverse_machine_xy(inverse_homography: np.ndarray, raw_x: float, raw_y: floa
     if not np.isfinite(machine_xy).all():
         return None, denominator
     return machine_xy, denominator
-
-
 def containing_part(machine_xy: np.ndarray | None, tolerance: float = 1.0e-9) -> str | None:
     if machine_xy is None:
         return None
@@ -68,8 +54,6 @@ def containing_part(machine_xy: np.ndarray | None, tolerance: float = 1.0e-9) ->
         if x_min - tolerance <= x_value <= x_max + tolerance and y_min - tolerance <= y_value <= y_max + tolerance:
             return str(part)
     return None
-
-
 def numeric_summary(values: list[float]) -> dict[str, float | int | None]:
     finite_values = [float(value) for value in values if math.isfinite(float(value))]
     if not finite_values:
@@ -83,8 +67,6 @@ def numeric_summary(values: list[float]) -> dict[str, float | int | None]:
         "p95": float(np.percentile(array, 95)),
         "max": float(np.max(array)),
     }
-
-
 def candidate_rank_metadata(rank: int, item: dict[str, Any]) -> dict[str, Any]:
     return {
         "rank": rank,
@@ -94,8 +76,6 @@ def candidate_rank_metadata(rank: int, item: dict[str, Any]) -> dict[str, Any]:
         "screen_A_to_D_machine_parts": list(item["assignment"]),
         "corner_index_order": list(item["corner_index_order"]),
     }
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-json", required=True, type=Path)
@@ -104,16 +84,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def main() -> None:
     args = parse_args()
     alternative_rank, selected_rank = (int(value) for value in args.compare_ranks)
@@ -121,7 +97,6 @@ def main() -> None:
         raise ValueError("--compare-ranks requires two distinct positive ranks.")
     if not args.candidate_json.is_file() or not args.calibration_config.is_file():
         raise FileNotFoundError("Candidate JSON and calibration config must both exist.")
-
     candidate_payload = load_json(args.candidate_json)
     candidates = candidate_payload.get("candidates")
     if not isinstance(candidates, list) or not candidates:
@@ -133,7 +108,6 @@ def main() -> None:
     gate_metadata = candidate_payload.get("provisional_part_geometry_gate", {})
     if not isinstance(gate_metadata, dict) or not bool(gate_metadata.get("enabled", False)):
         raise ValueError("This sensitivity audit requires candidates emitted by the enabled provisional part geometry gate.")
-
     calibration_config = load_yaml(args.calibration_config)
     configured_rank = int(calibration_config["geometry_candidate"]["rank"])
     if selected_rank != configured_rank:
@@ -153,7 +127,6 @@ def main() -> None:
     selected_inverse = np.linalg.inv(selected_homography)
     alternative_inverse = np.linalg.inv(alternative_homography)
     offset_x, offset_y = (float(value) for value in calibration_config["local_photometric_refinement"]["raw_pixel_global_offset_xy"])
-
     rows: list[dict[str, Any]] = []
     shift_distances: list[float] = []
     agreement_count = 0
@@ -161,7 +134,6 @@ def main() -> None:
     alternative_inside_count = 0
     both_inside_count = 0
     endpoint_counts: dict[int, dict[str, int]] = defaultdict(lambda: {"candidate_count": 0, "selected_inside": 0, "alternative_inside": 0, "both_inside": 0, "same_part": 0})
-
     for candidate in candidates:
         fields = ("sample_id", "layer_z", "rank", "score", "x_model_pixel", "y_model_pixel", "x_pixel", "y_pixel")
         missing = [name for name in fields if name not in candidate]
@@ -182,7 +154,6 @@ def main() -> None:
             shift = float(np.linalg.norm(selected_machine - alternative_machine))
         else:
             shift = math.inf
-
         layer_z = int(candidate["layer_z"])
         endpoint = endpoint_counts[layer_z]
         endpoint["candidate_count"] += 1
@@ -218,7 +189,6 @@ def main() -> None:
                 "machine_coordinate_shift_rank_alternative_to_selected": shift,
             }
         )
-
     endpoint_rows: list[dict[str, Any]] = []
     for layer_z, count in sorted(endpoint_counts.items()):
         candidate_count = count["candidate_count"]
@@ -233,7 +203,6 @@ def main() -> None:
                 "same_part_fraction": count["same_part"] / candidate_count,
             }
         )
-
     selected_part_counts = Counter(str(row[f"rank_{selected_rank}_containing_part"]) if row[f"rank_{selected_rank}_containing_part"] is not None else "outside_known_part_rectangles" for row in rows)
     alternative_part_counts = Counter(str(row[f"rank_{alternative_rank}_containing_part"]) if row[f"rank_{alternative_rank}_containing_part"] is not None else "outside_known_part_rectangles" for row in rows)
     candidate_count = len(rows)
@@ -250,7 +219,6 @@ def main() -> None:
         writer = csv.DictWriter(handle, fieldnames=list(endpoint_rows[0].keys()))
         writer.writeheader()
         writer.writerows(endpoint_rows)
-
     summary = {
         "audit_type": "read-only compact candidate calibration-rank sensitivity; not calibration selection, metrology validation, or defect labeling",
         "candidate_json": str(args.candidate_json),
@@ -302,8 +270,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Calibration-rank sensitivity audit complete. No raw TIFF/XCT CSV, target, model, checkpoint, calibration config, or dense heatmap was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

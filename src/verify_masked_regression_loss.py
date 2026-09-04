@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only runtime checks for AMMT support-masked continuous regression loss.
-
 This script does not train a model, write a checkpoint, or create a dense target.
 It loads two existing AMMTWeakTargetDataset samples and verifies that:
 1. an early endpoint without XCT support has exactly zero target loss/gradient;
@@ -8,25 +8,18 @@ It loads two existing AMMTWeakTargetDataset samples and verifies that:
 3. a supported endpoint has a positive loss and nonzero supported gradients.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
-
 import torch
 import yaml
-
 from ammt_masked_regression_loss import SupportMaskedSmoothL1Loss
 from ammt_weak_target_dataset import AMMTWeakTargetDataset
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         return yaml.safe_load(file)
-
-
 def make_dataset(args: argparse.Namespace) -> AMMTWeakTargetDataset:
     return AMMTWeakTargetDataset(
         stage=args.stage,
@@ -38,15 +31,11 @@ def make_dataset(args: argparse.Namespace) -> AMMTWeakTargetDataset:
         calibration_config=args.calibration_config,
         weak_target_config=args.weak_target_config,
     )
-
-
 def gradient_abs_sums(prediction: torch.Tensor, support: torch.Tensor) -> tuple[float, float]:
     gradient = prediction.grad.detach().abs()
     supported = float(gradient[support.bool()].sum().item())
     unsupported = float(gradient[~support.bool()].sum().item())
     return supported, unsupported
-
-
 def zero_support_check(loss_fn: SupportMaskedSmoothL1Loss, sample: dict[str, Any]) -> dict[str, Any]:
     target = sample["weak_response"].unsqueeze(0)
     support = sample["weak_support_mask"].unsqueeze(0)
@@ -54,7 +43,6 @@ def zero_support_check(loss_fn: SupportMaskedSmoothL1Loss, sample: dict[str, Any
     result = loss_fn(prediction, target, support)
     result.loss.backward()
     supported_grad, unsupported_grad = gradient_abs_sums(prediction, support)
-
     passed = (
         not bool(sample["weak_target_available"])
         and result.supervised_pixel_count == 0
@@ -71,22 +59,17 @@ def zero_support_check(loss_fn: SupportMaskedSmoothL1Loss, sample: dict[str, Any
         "unsupported_gradient_abs_sum": unsupported_grad,
         "pass": passed,
     }
-
-
 def supported_target_check(loss_fn: SupportMaskedSmoothL1Loss, sample: dict[str, Any]) -> dict[str, Any]:
     target = sample["weak_response"].unsqueeze(0)
     support = sample["weak_support_mask"].unsqueeze(0)
-
     prediction = torch.zeros_like(target, requires_grad=True)
     baseline = loss_fn(prediction, target, support)
     baseline.loss.backward()
     supported_grad, unsupported_grad = gradient_abs_sums(prediction, support)
-
     altered_prediction = torch.zeros_like(target)
     altered_prediction[~support.bool()] = 1000.0
     altered = loss_fn(altered_prediction, target, support)
     loss_difference = float(torch.abs(baseline.loss.detach() - altered.loss.detach()).item())
-
     passed = (
         bool(sample["weak_target_available"])
         and baseline.supervised_pixel_count > 0
@@ -106,8 +89,6 @@ def supported_target_check(loss_fn: SupportMaskedSmoothL1Loss, sample: dict[str,
         "unsupported_gradient_abs_sum": unsupported_grad,
         "pass": passed,
     }
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", required=True, choices=["A", "B"])
@@ -122,8 +103,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--unavailable-index", type=int, default=0)
     parser.add_argument("--available-index", type=int, default=124)
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     config = load_yaml(Path(args.loss_config))
@@ -132,12 +111,10 @@ def main() -> None:
         raise ValueError("loss config objective.name must be support_masked_smooth_l1.")
     loss_fn = SupportMaskedSmoothL1Loss(beta=float(objective["beta"]))
     dataset = make_dataset(args)
-
     unavailable_sample = dataset[args.unavailable_index]
     available_sample = dataset[args.available_index]
     unavailable = zero_support_check(loss_fn, unavailable_sample)
     available = supported_target_check(loss_fn, available_sample)
-
     summary = {
         "audit_type": "support-masked continuous regression loss runtime check; not model training",
         "stage": args.stage,
@@ -150,8 +127,6 @@ def main() -> None:
     }
     print(json.dumps(summary, indent=2))
     print("Masked regression loss verification complete. No raw file, dense target, checkpoint, or output file was written.")
-
-
 if __name__ == "__main__":
     try:
         main()

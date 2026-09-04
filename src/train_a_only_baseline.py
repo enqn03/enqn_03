@@ -1,22 +1,19 @@
+utf-8
 #!/usr/bin/env python3
 """Train and evaluate the first causal A-only AMMT quality-candidate baseline.
-
 The script consumes only AfterSpreading (A-stage) histories shaped
 [B, K=4, C=6, H=256, W=256]. It predicts a sigmoid-scaled continuous map and
 uses SupportMaskedSmoothL1Loss only where the on-the-fly XCT support mask is 1.
-
 Important semantics
 -------------------
 The prediction is an ``XCT-derived quality candidate`` response. It is NOT a
 binary defect map, anomaly probability, defect class, or automatic pass/fail
 decision while the high/low XCT response direction remains unresolved.
-
 The script never modifies raw TIFF or registered XCT CSV files. A real training
 run writes only the requested output directory under outputs/. No dense target
 heatmaps are stored; coordinate candidates are compact JSON records.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -26,7 +23,6 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterator
-
 import numpy as np
 import torch
 from torch import Tensor, nn
@@ -34,12 +30,9 @@ from torch.nn import functional as F
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 import yaml
-
 from ammt_masked_regression_loss import SupportMaskedSmoothL1Loss
 from ammt_weak_target_dataset import AMMTWeakTargetDataset
 from audit_machine_camera_calibration import PARTS, RECT, build_candidates
-
-
 @dataclass
 class EpochMetrics:
     split: str
@@ -49,11 +42,8 @@ class EpochMetrics:
     supported_sample_count: int
     total_sample_count: int
     optimizer_steps: int
-
-
 class ConvNormAct(nn.Module):
     """Small convolutional building block suitable for the first baseline."""
-
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1) -> None:
         super().__init__()
         groups = min(8, out_channels)
@@ -64,19 +54,14 @@ class ConvNormAct(nn.Module):
             nn.GroupNorm(groups, out_channels),
             nn.SiLU(inplace=True),
         )
-
     def forward(self, x: Tensor) -> Tensor:
         return self.layers(x)
-
-
 class AOnlyCausalCandidateNet(nn.Module):
     """Causal 6-channel baseline with temporal Conv3D aggregation.
-
     Input shape is [B, K, C=6, H, W]. The K axis is processed causally by a
     3D convolution whose time padding is only on the past side. The final map
     is a sigmoid-scaled [B,1,H,W] continuous response prediction.
     """
-
     def __init__(
         self,
         input_channels: int = 6,
@@ -88,7 +73,6 @@ class AOnlyCausalCandidateNet(nn.Module):
         if temporal_kernel_size < 1 or temporal_kernel_size % 2 == 0:
             raise ValueError("temporal_kernel_size must be a positive odd integer.")
         self.temporal_kernel_size = temporal_kernel_size
-        # Default False preserves the architecture and state-dict contract of C8/E24/C32.
         self.use_endpoint_feature_residual = bool(use_endpoint_feature_residual)
         self.frame_encoder = nn.Sequential(
             ConvNormAct(input_channels, base_channels),
@@ -107,34 +91,27 @@ class AOnlyCausalCandidateNet(nn.Module):
             ConvNormAct(base_channels, base_channels),
             nn.Conv2d(base_channels, 1, kernel_size=1),
         )
-
     def forward(self, history: Tensor) -> Tensor:
         if history.ndim != 5:
             raise ValueError(f"history must be [B,K,C,H,W], got {tuple(history.shape)}")
         batch, steps, channels, height, width = history.shape
         if channels != 6:
             raise ValueError(f"A-only baseline expects six channels, got {channels}.")
-
         encoded_history = self.frame_encoder(history.reshape(batch * steps, channels, height, width))
         encoded_history = encoded_history.reshape(batch, steps, encoded_history.shape[1], height, width)
         encoded_endpoint = encoded_history[:, -1]
         encoded_for_temporal = encoded_history.permute(0, 2, 1, 3, 4)
-        # F.pad order for 5D tensors: W-left/right, H-left/right, T-left/right.
         padded_history = F.pad(encoded_for_temporal, (0, 0, 0, 0, self.temporal_kernel_size - 1, 0))
         temporal_update = F.silu(self.temporal_norm(self.temporal(padded_history)))[:, :, -1]
         temporal_final = encoded_endpoint + temporal_update if self.use_endpoint_feature_residual else temporal_update
         logits = self.decoder(temporal_final)
         return torch.sigmoid(logits)
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     if not isinstance(config, dict):
         raise ValueError(f"YAML config must be a mapping: {path}")
     return config
-
-
 def choose_device(requested: str) -> torch.device:
     if requested != "auto":
         device = torch.device(requested)
@@ -148,16 +125,12 @@ def choose_device(requested: str) -> torch.device:
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
-
-
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-
 def make_dataset(args: argparse.Namespace, split: str) -> AMMTWeakTargetDataset:
     return AMMTWeakTargetDataset(
         stage="A",
@@ -169,8 +142,6 @@ def make_dataset(args: argparse.Namespace, split: str) -> AMMTWeakTargetDataset:
         calibration_config=args.calibration_config,
         weak_target_config=args.weak_target_config,
     )
-
-
 def make_loader(dataset: AMMTWeakTargetDataset, batch_size: int, shuffle: bool, num_workers: int, pin_memory: bool) -> DataLoader:
     return DataLoader(
         dataset,
@@ -180,22 +151,16 @@ def make_loader(dataset: AMMTWeakTargetDataset, batch_size: int, shuffle: bool, 
         pin_memory=pin_memory,
         persistent_workers=num_workers > 0,
     )
-
-
 def limited_batches(loader: DataLoader, max_batches: int | None) -> Iterator[dict[str, Any]]:
     for batch_index, batch in enumerate(loader):
         if max_batches is not None and batch_index >= max_batches:
             break
         yield batch
-
-
 def batch_to_device(batch: dict[str, Any], device: torch.device) -> tuple[Tensor, Tensor, Tensor]:
     history = batch["model_input_history"].to(device=device, dtype=torch.float32, non_blocking=True)
     target = batch["weak_response"].to(device=device, dtype=torch.float32, non_blocking=True)
     support = batch["weak_support_mask"].to(device=device, dtype=torch.float32, non_blocking=True)
     return history, target, support
-
-
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -214,7 +179,6 @@ def run_epoch(
     supported_samples = 0
     total_samples = 0
     optimizer_steps = 0
-
     context = torch.enable_grad() if training else torch.no_grad()
     with context:
         for batch in limited_batches(loader, max_batches):
@@ -224,10 +188,8 @@ def run_epoch(
             result = loss_fn(prediction, target, support)
             supported_pixels += result.supervised_pixel_count
             supported_samples += result.supervised_sample_count
-
             if result.supervised_pixel_count > 0:
                 weighted_loss_sum += float(result.loss.detach().item()) * result.supervised_pixel_count
-
             if training and result.supervised_pixel_count > 0:
                 optimizer.zero_grad(set_to_none=True)
                 result.loss.backward()
@@ -235,7 +197,6 @@ def run_epoch(
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=gradient_clip_norm)
                 optimizer.step()
                 optimizer_steps += 1
-
     mean_loss = None if supported_pixels == 0 else weighted_loss_sum / supported_pixels
     return EpochMetrics(
         split=split,
@@ -246,8 +207,6 @@ def run_epoch(
         total_sample_count=total_samples,
         optimizer_steps=optimizer_steps,
     )
-
-
 def raw_coordinate_from_model_index(x_model: int, y_model: int, metadata: dict[str, Any]) -> tuple[float, float]:
     roi = metadata["working_roi_raw_camera_pixels"]
     x_scale = float(metadata["raw_pixels_per_output_pixel_x"])
@@ -255,18 +214,14 @@ def raw_coordinate_from_model_index(x_model: int, y_model: int, metadata: dict[s
     x_raw = float(roi["x0"]) + (float(x_model) + 0.5) * x_scale
     y_raw = float(roi["y0"]) + (float(y_model) + 0.5) * y_scale
     return x_raw, y_raw
-
-
 @dataclass(frozen=True)
 class ProvisionalPartGeometryGate:
     """Optional candidate-only geometry filter; it never changes score-map inference."""
-
     inverse_homography: np.ndarray
     raw_offset_xy: tuple[float, float]
     calibration_status: str
     geometry_rank: int
     orientation: str
-
     def containing_part(self, raw_x: float, raw_y: float) -> str | None:
         offset_x, offset_y = self.raw_offset_xy
         homogeneous = self.inverse_homography @ np.array([raw_x - offset_x, raw_y - offset_y, 1.0], dtype=np.float64)
@@ -283,7 +238,6 @@ class ProvisionalPartGeometryGate:
             if x_min - tolerance <= x_value <= x_max + tolerance and y_min - tolerance <= y_value <= y_max + tolerance:
                 return str(part)
         return None
-
     def metadata(self) -> dict[str, Any]:
         return {
             "enabled": True,
@@ -295,8 +249,6 @@ class ProvisionalPartGeometryGate:
             "policy": "Filter local maxima to configured known part rectangles; withhold if no in-geometry maximum remains.",
             "limit": "This uses provisional calibration only and does not confirm physical defect location or calibration accuracy.",
         }
-
-
 def build_provisional_part_geometry_gate(evaluation_config: dict[str, Any], calibration_config_path: Path) -> ProvisionalPartGeometryGate | None:
     """Return None by default so historical decoder behavior remains unchanged."""
     gate_config = evaluation_config.get("provisional_part_geometry_gate", {})
@@ -330,8 +282,6 @@ def build_provisional_part_geometry_gate(evaluation_config: dict[str, Any], cali
         geometry_rank=rank,
         orientation=str(calibration_config["geometry_candidate"]["orientation"]),
     )
-
-
 def local_maximum_candidates(
     prediction: Tensor,
     sample: dict[str, Any],
@@ -354,7 +304,6 @@ def local_maximum_candidates(
         raise ValueError("All decoder tolerances must be non-negative.")
     if not 0.0 <= top_score_tie_fraction_max <= 1.0:
         raise ValueError("top_score_tie_fraction_max must be in [0, 1].")
-
     candidate_map = prediction[0, 0]
     prediction_min = float(candidate_map.min().item())
     prediction_max = float(candidate_map.max().item())
@@ -418,7 +367,6 @@ def local_maximum_candidates(
             }
         )
         return status
-
     pooled = F.max_pool2d(candidate_map[None, None], kernel_size=kernel_size, stride=1, padding=kernel_size // 2)[0, 0]
     maxima = candidate_map == pooled
     finite_maxima = maxima & torch.isfinite(candidate_map)
@@ -482,8 +430,6 @@ def local_maximum_candidates(
         candidates.append(candidate_record)
     status.update({"candidate_status": "emitted", "reason": None, "candidate_count": len(candidates), "candidates": candidates})
     return status
-
-
 def evaluate_test_candidates(
     model: nn.Module,
     dataset: AMMTWeakTargetDataset,
@@ -525,22 +471,16 @@ def evaluate_test_candidates(
             endpoint_statuses.append(result)
             previous_prediction = prediction.clone()
     return candidates, endpoint_statuses
-
-
 def prepare_output_directory(path: Path) -> None:
     if path.exists():
         raise FileExistsError(
             f"Output directory already exists: {path}. Review it and choose a new --output-dir; this script never overwrites it."
         )
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
-
-
 def dry_run(model: nn.Module, dataset: AMMTWeakTargetDataset, loss_fn: SupportMaskedSmoothL1Loss, device: torch.device, sample_index: int) -> None:
     if not 0 <= sample_index < len(dataset):
         raise IndexError(f"--dry-run-index must be 0..{len(dataset) - 1}")
@@ -572,8 +512,6 @@ def dry_run(model: nn.Module, dataset: AMMTWeakTargetDataset, loss_fn: SupportMa
         )
     )
     print("A-only baseline dry run complete. No training, checkpoint, dense heatmap, or output file was written.")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -593,8 +531,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dry-run-index", type=int, default=124)
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     config = load_yaml(args.config)
@@ -610,12 +546,10 @@ def main() -> None:
         raise ValueError("A-only baseline requires six input channels: 3 intensity + 3 validity masks.")
     if model_config["output_activation"] != "sigmoid":
         raise ValueError("This baseline requires sigmoid output for the [0,1] continuous response contract.")
-
     loss_config = load_yaml(args.loss_config)
     objective = loss_config["objective"]
     if objective["name"] != "support_masked_smooth_l1":
         raise ValueError("loss config objective.name must be support_masked_smooth_l1.")
-
     set_seed(int(training_config["seed"]))
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalCandidateNet(
@@ -625,12 +559,10 @@ def main() -> None:
         use_endpoint_feature_residual=bool(model_config.get("use_endpoint_feature_residual", False)),
     ).to(device)
     loss_fn = SupportMaskedSmoothL1Loss(beta=float(objective["beta"]))
-
     train_dataset = make_dataset(args, split="train")
     if args.dry_run:
         dry_run(model, train_dataset, loss_fn, device=device, sample_index=args.dry_run_index)
         return
-
     output_dir = args.output_dir or Path(storage_config["output_directory"])
     prepare_output_directory(output_dir)
     batch_size = int(data_config["batch_size"])
@@ -641,7 +573,6 @@ def main() -> None:
     validation_loader = make_loader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     test_dataset = make_dataset(args, split="test")
     test_loader = make_loader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
-
     optimizer = AdamW(
         model.parameters(),
         lr=float(optimizer_config["learning_rate"]),
@@ -654,7 +585,6 @@ def main() -> None:
     best_validation_loss = math.inf
     best_epoch: int | None = None
     checkpoint_path = output_dir / str(storage_config["checkpoint_name"])
-
     for epoch in range(1, epochs + 1):
         train_metrics = run_epoch(
             model, train_loader, loss_fn, device, epoch, "train", optimizer,
@@ -667,7 +597,6 @@ def main() -> None:
         )
         history.extend([asdict(train_metrics), asdict(validation_metrics)])
         print(json.dumps({"train": asdict(train_metrics), "validation": asdict(validation_metrics)}, ensure_ascii=False))
-
         if validation_metrics.mean_loss is not None and validation_metrics.mean_loss < best_validation_loss:
             best_validation_loss = validation_metrics.mean_loss
             best_epoch = epoch
@@ -681,7 +610,6 @@ def main() -> None:
                 },
                 checkpoint_path,
             )
-
     if best_epoch is None:
         raise RuntimeError("No validation sparse support was found; no checkpoint was saved.")
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -709,7 +637,6 @@ def main() -> None:
     for status in candidate_endpoint_statuses:
         name = str(status["candidate_status"])
         candidate_status_counts[name] = candidate_status_counts.get(name, 0) + 1
-
     write_json(
         output_dir / str(storage_config["history_name"]),
         {
@@ -767,8 +694,6 @@ def main() -> None:
         )
     )
     print("A-only baseline complete. Raw files were read-only; dense heatmaps were not persisted.")
-
-
 if __name__ == "__main__":
     try:
         main()

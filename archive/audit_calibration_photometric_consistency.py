@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Tie-break mirror-equivalent calibration candidates with registered LWI features.
-
 For selected build layers, this audit projects sparse registered XY points to raw
 A/B camera pixels under candidate homographies. It compares raw valid pixel
 intensities with registered layerwise-image (LWI) values using Pearson and
@@ -9,25 +9,18 @@ across stage/LED/filter combinations. This is a calibration consistency audit,
 not a defect-label or heatmap generator.
 """
 from __future__ import annotations
-
 import argparse, csv, json, shutil, sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
 from audit_machine_camera_calibration import build_candidates, project
-
-# 1-based registered CSV columns from NIST AMS 100-69 schema.
 FEATURES = []
 for stage, first_col in (("A", 20), ("B", 29)):
     for led in (1, 2, 3):
         for filt, offset in (("original", 0), ("mean3", 1), ("mean5", 2)):
             FEATURES.append((stage, led, filt, first_col + (led - 1) * 3 + offset))
-
-
 def cli() -> argparse.Namespace:
     p=argparse.ArgumentParser(description="Photometric tie-break for top machine-camera calibration candidates")
     p.add_argument("--control-points",required=True,type=Path)
@@ -39,8 +32,6 @@ def cli() -> argparse.Namespace:
     p.add_argument("--layers",nargs="+",type=int,default=[25,50,75,100,125,150])
     p.add_argument("--overwrite",action="store_true")
     return p.parse_args()
-
-
 def frame_info(path:Path)->tuple[str,tuple[int,...]]:
     with tifffile.TiffFile(path) as tif: return str(tif.series[0].axes),tuple(int(x) for x in tif.series[0].shape)
 def raw_frame(path:Path,axes:str,z:int,led:int)->np.ndarray:
@@ -68,7 +59,6 @@ def sample(frame:np.ndarray,xy:np.ndarray)->tuple[np.ndarray,np.ndarray]:
     x=np.rint(xy[:,0]).astype(int); y=np.rint(xy[:,1]).astype(int); h,w=frame.shape
     inside=(x>=0)&(x<w)&(y>=0)&(y<h); values=np.full(len(x),np.nan); values[inside]=frame[y[inside],x[inside]]
     return values,inside
-
 def main()->None:
     a=cli(); cp=a.control_points.resolve(); root=a.registered_root.resolve(); out=a.output_dir.resolve()
     if out.exists():

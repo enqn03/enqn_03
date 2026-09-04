@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Audit DotGrid coverage evidence without changing a calibration or gate.
-
 This script reads (1) the immutable layer-camera DotGrid TIFF using the existing
 read-only memmap helper and (2) the compact feature CSV emitted by the completed
 method-#2 V3 correspondence audit. It re-fits an *image-lattice-only* mapping in
 memory solely to locate the nominal 50x50 image-lattice cells. It measures which
 cells are assigned, predicted inside the camera sensor, and close to a fresh
 ROI-restricted dot detector candidate.
-
 The audit does not alter the nominal 50x50 assumption, the fixed 40-row/column
 coverage gate, V3 correspondence, calibration_v1.yaml, transform rank,
 orientation, machine origin, raw input, target, model, checkpoint, decoder, or
@@ -15,7 +14,6 @@ camera-primary candidate reporting. Its outcome is evidence for a later human
 review of coverage definitions only.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -24,12 +22,10 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-
 from audit_independent_metrology_fiducials_refined import (
     density_roi,
     dot_grid_candidates,
@@ -43,13 +39,10 @@ from audit_independent_method2_calibration_candidate import (
     nearest_camera_dot_pitch_px,
     project,
 )
-
 SENSOR_MIN_PX = 0.0
 NOMINAL_GRID_SIZE = GRID_SIZE
 V3_ASSIGNMENT_MAX_PITCH = 0.45
 PROFILE_SUPPORT_MIN_CELLS = 1
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dot-grid", required=True, type=Path, help="Immutable DotGrid TIFF; opened read-only via tifffile.memmap mode='r'.")
@@ -57,16 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path, help="New ignored directory for compact CSV/JSON and at most two QC overlays.")
     parser.add_argument("--overwrite", action="store_true", help="Deliberately replace only the requested output directory after review.")
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path, overwrite: bool) -> None:
     if path.exists():
         if not overwrite:
             raise FileExistsError(f"Output directory already exists: {path}. Review it or use --overwrite deliberately.")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=False)
-
-
 def load_v3_features(path: Path) -> list[dict[str, Any]]:
     required = {
         "source_candidate_index",
@@ -104,14 +93,10 @@ def load_v3_features(path: Path) -> list[dict[str, Any]]:
     if len(keys) != len(rows):
         raise ValueError("V3 feature CSV contains duplicate image-lattice cells; coverage cannot be interpreted deterministically.")
     return rows
-
-
 def arrays_from_rows(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
     source = np.asarray([[float(row["col"]), float(row["row"])] for row in rows], dtype=np.float64)
     raw = np.asarray([[float(row["raw_x_px"]), float(row["raw_y_px"])] for row in rows], dtype=np.float64)
     return source, raw
-
-
 def fit_image_lattice_only(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     source, raw = arrays_from_rows(rows)
     h_matrix, inliers, residual, _ = inlier_fit(source, raw)
@@ -119,8 +104,6 @@ def fit_image_lattice_only(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.n
     if pitch is None or not math.isfinite(pitch) or pitch <= 0.0:
         raise RuntimeError("Could not estimate positive camera-dot pitch from V3 inliers.")
     return h_matrix, inliers, residual, float(pitch)
-
-
 def sensor_membership(predicted: np.ndarray, height: int, width: int) -> np.ndarray:
     return (
         (predicted[:, 0] >= SENSOR_MIN_PX)
@@ -128,21 +111,16 @@ def sensor_membership(predicted: np.ndarray, height: int, width: int) -> np.ndar
         & (predicted[:, 1] >= SENSOR_MIN_PX)
         & (predicted[:, 1] <= float(height - 1))
     )
-
-
 def nearest_detector_distances(predicted: np.ndarray, detector_points: np.ndarray) -> np.ndarray:
     if len(detector_points) == 0:
         raise RuntimeError("No fresh DotGrid detector candidates are available for coverage definition.")
     distances: list[np.ndarray] = []
-    # Fixed 256-cell chunks avoid persisting or allocating a dense 2500x1616 tensor.
     for start in range(0, len(predicted), 256):
         chunk = predicted[start:start + 256]
         delta = chunk[:, None, :] - detector_points[None, :, :]
         squared = np.einsum("ijk,ijk->ij", delta, delta, optimize=True)
         distances.append(np.sqrt(np.min(squared, axis=1)))
     return np.concatenate(distances, axis=0)
-
-
 def local_darkness(gray: np.ndarray, predicted: np.ndarray, radius: int = 3) -> np.ndarray:
     values: list[float] = []
     height, width = gray.shape
@@ -157,8 +135,6 @@ def local_darkness(gray: np.ndarray, predicted: np.ndarray, radius: int = 3) -> 
             patch = np.asarray(gray[y0:y1, x0:x1], dtype=np.float64)
             values.append(float(1.0 - np.mean(patch) / 255.0))
     return np.asarray(values, dtype=np.float64)
-
-
 def contiguous_runs(indices: list[int]) -> list[dict[str, int]]:
     if not indices:
         return []
@@ -173,8 +149,6 @@ def contiguous_runs(indices: list[int]) -> list[dict[str, int]]:
         start = previous = value
     runs.append({"start_index": start, "end_index": previous, "length": previous - start + 1})
     return runs
-
-
 def profile_rows(feature_rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     other = "row" if key == "col" else "col"
     result: list[dict[str, Any]] = []
@@ -194,8 +168,6 @@ def profile_rows(feature_rows: list[dict[str, Any]], key: str) -> list[dict[str,
             "runs_json": json.dumps(runs, separators=(",", ":")),
         })
     return result
-
-
 def classify_coverage_evidence(cell_rows: list[dict[str, Any]]) -> dict[str, Any]:
     missing = [row for row in cell_rows if not bool(row["assigned_in_v3"])]
     if not missing:
@@ -222,8 +194,6 @@ def classify_coverage_evidence(cell_rows: list[dict[str, Any]]) -> dict[str, Any
         "missing_inside_sensor_without_fresh_detector_candidate_within_bound": len(not_nearby),
         "important_limit": "This classifies image-space coverage evidence only. It neither changes 50x50/40-row assumptions nor chooses a transform, rank, orientation, machine origin, or physical part location.",
     }
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"No rows available for compact CSV: {path.name}")
@@ -232,8 +202,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
-
-
 def plot_nominal_coverage(gray: np.ndarray, feature_rows: list[dict[str, Any]], cell_rows: list[dict[str, Any]], output_path: Path) -> None:
     stride = max(1, int(math.ceil(max(gray.shape) / 1000)))
     figure, axis = plt.subplots(figsize=(9, 9), dpi=160)
@@ -257,8 +225,6 @@ def plot_nominal_coverage(gray: np.ndarray, feature_rows: list[dict[str, Any]], 
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def plot_profiles(row_profile: list[dict[str, Any]], col_profile: list[dict[str, Any]], output_path: Path) -> None:
     rows = np.arange(NOMINAL_GRID_SIZE)
     row_counts = np.asarray([int(row["assigned_cell_count"]) for row in row_profile], dtype=np.int64)
@@ -276,8 +242,6 @@ def plot_profiles(row_profile: list[dict[str, Any]], col_profile: list[dict[str,
     figure.tight_layout()
     figure.savefig(output_path, dpi=160)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not args.dot_grid.is_file():
@@ -285,7 +249,6 @@ def main() -> None:
     if not args.v3_features.is_file():
         raise FileNotFoundError(f"Required completed V3 feature CSV not found: {args.v3_features}")
     prepare_output_directory(args.output_dir, args.overwrite)
-
     feature_rows = load_v3_features(args.v3_features)
     h_matrix, inliers, residual, pitch = fit_image_lattice_only(feature_rows)
     channels, metadata = read_tiff(args.dot_grid)
@@ -294,7 +257,6 @@ def main() -> None:
     roi, roi_metrics = density_roi(coarse_points, gray.shape)
     fresh_points, _, fresh_detector_metrics = refined_feature_candidates(gray, roi, "dot")
     fresh_points = np.asarray(fresh_points, dtype=np.float64)
-
     cells = np.asarray([[float(col), float(row)] for row in range(NOMINAL_GRID_SIZE) for col in range(NOMINAL_GRID_SIZE)], dtype=np.float64)
     predicted = project(h_matrix, cells)
     in_sensor = sensor_membership(predicted, gray.shape[0], gray.shape[1])
@@ -320,13 +282,11 @@ def main() -> None:
             "fresh_detector_candidate_within_v3_assignment_bound": bool(nearest_distance[flat] <= assignment_bound),
             "local_mean_darkness_0_to_1": None if not math.isfinite(float(darkness[flat])) else float(darkness[flat]),
         })
-
     row_profile = profile_rows(feature_rows, "row")
     col_profile = profile_rows(feature_rows, "col")
     visible_rows = [int(row["image_lattice_row_index_0_to_49"]) for row in row_profile if bool(row["has_any_assigned_cell"])]
     visible_cols = [int(row["image_lattice_col_index_0_to_49"]) for row in col_profile if bool(row["has_any_assigned_cell"])]
     evidence = classify_coverage_evidence(cell_rows)
-
     cells_csv = args.output_dir / "method2_v3_nominal_50x50_cell_coverage.csv"
     row_csv = args.output_dir / "method2_v3_row_coverage_profile.csv"
     col_csv = args.output_dir / "method2_v3_column_coverage_profile.csv"
@@ -338,7 +298,6 @@ def main() -> None:
     write_csv(col_csv, col_profile)
     plot_nominal_coverage(gray, feature_rows, cell_rows, coverage_overlay)
     plot_profiles(row_profile, col_profile, profile_plot)
-
     summary = {
         "audit_type": "read-only DotGrid coverage-definition audit; no grid-size/coverage-gate/config change or calibration selection",
         "purpose": "Explain the V3 39-row fixed-coverage shortfall by separating nominal cell sensor visibility, fresh dot-detector proximity, and assignment occupancy.",
@@ -399,8 +358,6 @@ def main() -> None:
         handle.write("\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("DotGrid coverage-definition audit complete. No raw TIFF/CSV, coverage gate, calibration config, model, target, checkpoint, decoder, or candidate output was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

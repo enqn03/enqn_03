@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Train a controlled A-only causal temporal-difference candidate model.
-
 This experiment preserves the C32 residual baseline's Dataset, weak target,
 loss, split, and decoder safety rules. Its only model-level change is explicit
 fusion of encoded endpoint-minus-mean-prior features, which gives all three
 preceding K=4 frames a direct causal path to the fused model representation.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import math
@@ -15,10 +14,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
-
 import torch
 from torch import Tensor, nn
-
 from ammt_masked_regression_loss import SupportMaskedSmoothL1Loss
 from train_a_only_baseline import (
     ConvNormAct,
@@ -33,17 +30,13 @@ from train_a_only_baseline import (
     set_seed,
     write_json,
 )
-
-
 class AOnlyCausalTemporalDifferenceCandidateNet(nn.Module):
     """A-only model with explicit causal endpoint-minus-prior feature fusion.
-
     The input remains [B,K=4,C=6,H,W]. Each frame is encoded independently.
     The three prior encoded frames are averaged, subtracted from endpoint
     encoding, transformed, and fused with endpoint encoding. This aggregation
     has no future-frame path and uses every preceding history position directly.
     """
-
     def __init__(self, input_channels: int = 6, base_channels: int = 32) -> None:
         super().__init__()
         if input_channels != 6:
@@ -65,7 +58,6 @@ class AOnlyCausalTemporalDifferenceCandidateNet(nn.Module):
             ConvNormAct(base_channels, base_channels),
             nn.Conv2d(base_channels, 1, kernel_size=1),
         )
-
     def forward_components(self, history: Tensor) -> dict[str, Tensor]:
         if history.ndim != 5:
             raise ValueError(f"history must be [B,K,C,H,W], got {tuple(history.shape)}")
@@ -88,12 +80,9 @@ class AOnlyCausalTemporalDifferenceCandidateNet(nn.Module):
             "encoded_difference": encoded_difference,
             "fused_feature": fused_feature,
         }
-
     def forward(self, history: Tensor) -> Tensor:
         components = self.forward_components(history)
         return torch.sigmoid(self.decoder(components["fused_feature"]))
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -113,8 +102,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dry-run-index", type=int, default=124)
     return parser.parse_args()
-
-
 def validate_config(config: dict[str, Any]) -> None:
     data = config["data"]
     model = config["model"]
@@ -131,8 +118,6 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Continuous target contract requires sigmoid output.")
     if bool(evaluation.get("provisional_part_geometry_gate", {}).get("enabled", False)):
         raise ValueError("Controlled raw-camera comparison requires provisional geometry gate disabled.")
-
-
 def make_candidate_evaluator(model: nn.Module, dataset: Any, device: torch.device, evaluation: dict[str, Any], max_samples: int | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Reuse only decoder policy, passing this new model without geometry metadata."""
     return evaluate_test_candidates(
@@ -149,8 +134,6 @@ def make_candidate_evaluator(model: nn.Module, dataset: Any, device: torch.devic
         max_samples=max_samples,
         geometry_gate=None,
     )
-
-
 def dry_run(model: nn.Module, dataset: Any, loss_fn: SupportMaskedSmoothL1Loss, device: torch.device, sample_index: int) -> None:
     if not 0 <= sample_index < len(dataset):
         raise IndexError(f"--dry-run-index must be 0..{len(dataset)-1}")
@@ -184,8 +167,6 @@ def dry_run(model: nn.Module, dataset: Any, loss_fn: SupportMaskedSmoothL1Loss, 
         )
     )
     print("Temporal-difference dry run complete. No training, checkpoint, dense heatmap, raw-file, target, or calibration mutation occurred.")
-
-
 def main() -> None:
     args = parse_args()
     config = load_yaml(args.config)
@@ -199,7 +180,6 @@ def main() -> None:
     objective = loss_config["objective"]
     if objective["name"] != "support_masked_smooth_l1":
         raise ValueError("loss config objective.name must be support_masked_smooth_l1.")
-
     set_seed(int(training_config["seed"]))
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalTemporalDifferenceCandidateNet(
@@ -211,7 +191,6 @@ def main() -> None:
     if args.dry_run:
         dry_run(model, train_dataset, loss_fn, device, args.dry_run_index)
         return
-
     output_dir = args.output_dir or Path(storage_config["output_directory"])
     prepare_output_directory(output_dir)
     batch_size = int(data_config["batch_size"])
@@ -222,7 +201,6 @@ def main() -> None:
     validation_loader = make_loader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     test_dataset = make_dataset(args, split="test")
     test_loader = make_loader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(optimizer_config["learning_rate"]), weight_decay=float(optimizer_config["weight_decay"]))
     epochs = int(args.epochs or training_config["epochs"])
     if epochs < 1:
@@ -257,7 +235,6 @@ def main() -> None:
             )
     if best_epoch is None:
         raise RuntimeError("No validation sparse support was found; no checkpoint was saved.")
-
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     test_metrics = run_epoch(model, test_loader, loss_fn, device, best_epoch, "test", None, gradient_clip_norm=0.0, max_batches=args.max_eval_batches)
@@ -266,7 +243,6 @@ def main() -> None:
     for status in endpoint_statuses:
         name = str(status["candidate_status"])
         status_counts[name] = status_counts.get(name, 0) + 1
-
     write_json(
         output_dir / str(storage_config["history_name"]),
         {
@@ -330,8 +306,6 @@ def main() -> None:
         )
     )
     print("Temporal-difference controlled experiment complete. Raw files were read-only; dense heatmaps were not persisted.")
-
-
 if __name__ == "__main__":
     try:
         main()

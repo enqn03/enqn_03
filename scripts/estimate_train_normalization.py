@@ -1,25 +1,20 @@
+utf-8
 #!/usr/bin/env python3
 """Estimate AMMT layer-camera normalization statistics from train data only.
-
 The script reads the causal manifest, collects the *unique* layer indices used
 by train histories, and samples valid pixels from a provisional working ROI.
 It computes separate robust statistics for A/B stage and LED 1/2/3.
-
 Raw TIFF files are opened only through ``tifffile.memmap(..., mode="r")`` and
 are never modified. The script does not save cropped frames, image tensors, or
 per-layer saturation masks.
-
 Saturation policy
 -----------------
 A uint16 full-scale pixel (65535 by default) is treated as invalid for
 normalization statistics. During later Dataset loading, use the same on-the-fly
 rule instead of saving masks to disk:
-
     valid_mask = raw_frame < 65535
-
 The policy is intentionally not final model configuration. Review the summary
 before creating a tracked normalization config.
-
 Example
 -------
 cd ~/ammt_project
@@ -31,9 +26,7 @@ cd ~/ammt_project
   --pixel-stride 8 \
   --output-dir processed/normalization_v1
 """
-
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -41,16 +34,12 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
-
-
 @dataclass(frozen=True)
 class StackInfo:
     """Metadata required to index an ImageJ logical hyperstack."""
-
     axes: str
     shape: tuple[int, ...]
     dtype: str
@@ -58,33 +47,24 @@ class StackInfo:
     height: int
     layers: int
     leds: int
-
-
 @dataclass(frozen=True)
 class Roi:
     """Raw camera-pixel rectangle with an exclusive x1/y1 boundary."""
-
     x0: int
     y0: int
     x1: int
     y1: int
-
     @property
     def width(self) -> int:
         return self.x1 - self.x0
-
     @property
     def height(self) -> int:
         return self.y1 - self.y0
-
     @property
     def area_pixels(self) -> int:
         return self.width * self.height
-
     def as_dict(self) -> dict[str, int]:
         return {"x0": self.x0, "y0": self.y0, "x1": self.x1, "y1": self.y1}
-
-
 def inspect_stack(path: Path) -> StackInfo:
     """Read TIFF metadata without decoding or changing pixel data."""
     with tifffile.TiffFile(path) as tif:
@@ -93,13 +73,11 @@ def inspect_stack(path: Path) -> StackInfo:
         shape = tuple(int(value) for value in series.shape)
         dtype = np.dtype(series.dtype)
         imagej = tif.imagej_metadata or {}
-
     required_axes = {"T", "Z", "Y", "X"}
     if not required_axes.issubset(set(axes)):
         raise ValueError(f"Expected TZYX-compatible stack, got axes={axes!r}")
     if dtype != np.dtype(np.uint16):
         raise ValueError(f"Expected uint16 TIFF data, got {dtype}")
-
     return StackInfo(
         axes=axes,
         shape=shape,
@@ -109,22 +87,17 @@ def inspect_stack(path: Path) -> StackInfo:
         layers=int(imagej.get("slices", 1)),
         leds=int(imagej.get("frames", 1)),
     )
-
-
 def validate_pair(a: StackInfo, b: StackInfo) -> None:
     """Ensure A/B frames have a compatible logical `(layer, LED)` mapping."""
     for field in ("axes", "shape", "dtype", "width", "height", "layers", "leds"):
         if getattr(a, field) != getattr(b, field):
             raise ValueError(f"A/B mismatch at {field}: {getattr(a, field)!r} != {getattr(b, field)!r}")
-
-
 def read_frame(data: np.memmap, info: StackInfo, z: int, led: int) -> np.ndarray:
     """Read exactly one 2D frame using 1-based manufacturing layer and LED."""
     if not 1 <= z <= info.layers:
         raise ValueError(f"z must be 1..{info.layers}, got {z}")
     if not 1 <= led <= info.leds:
         raise ValueError(f"LED must be 1..{info.leds}, got {led}")
-
     index: list[Any] = []
     for axis in info.axes:
         if axis == "T":
@@ -141,8 +114,6 @@ def read_frame(data: np.memmap, info: StackInfo, z: int, led: int) -> np.ndarray
     if frame.ndim != 2:
         raise ValueError(f"Expected 2D frame, got shape={frame.shape}")
     return frame
-
-
 def read_train_history_layers(manifest_path: Path) -> tuple[list[int], int]:
     """Extract unique train-history layers only; validation/test rows are ignored."""
     required = {"split", "history_layer_z"}
@@ -165,27 +136,20 @@ def read_train_history_layers(manifest_path: Path) -> tuple[list[int], int]:
                 layers.update(int(value) for value in history.split(";"))
             except ValueError as error:
                 raise ValueError(f"Invalid history_layer_z value: {history!r}") from error
-
     if train_rows == 0:
         raise ValueError("Manifest contains no train rows")
     if not layers:
         raise ValueError("Manifest train rows produced no history layers")
     return sorted(layers), train_rows
-
-
 def validate_roi(roi: Roi, info: StackInfo) -> None:
     if not (0 <= roi.x0 < roi.x1 <= info.width):
         raise ValueError(f"ROI x bounds must fit width={info.width}, got {roi}")
     if not (0 <= roi.y0 < roi.y1 <= info.height):
         raise ValueError(f"ROI y bounds must fit height={info.height}, got {roi}")
-
-
 def ensure_new(path: Path, overwrite: bool) -> None:
     """Prevent accidental replacement of a prior normalization audit."""
     if path.exists() and not overwrite:
         raise FileExistsError(f"Refusing to overwrite existing output: {path}. Review it or use --overwrite.")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
     ensure_new(path, overwrite)
     if not rows:
@@ -195,20 +159,14 @@ def write_csv(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def write_json(path: Path, content: dict[str, Any], overwrite: bool) -> None:
     ensure_new(path, overwrite)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(content, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
-
-
 def float_or_none(value: float) -> float | None:
     return None if not np.isfinite(value) else float(value)
-
-
 def summarize_group(
     stage: str,
     led: int,
@@ -225,13 +183,11 @@ def summarize_group(
         raise ValueError(f"No sampled pixels for {stage}, LED {led}")
     if not chunks:
         raise ValueError(f"No valid pixels for {stage}, LED {led}; all samples are full-scale")
-
     values = np.concatenate(chunks).astype(np.float32, copy=False)
     p01, p05, p50, p95, p99 = np.percentile(values, [1.0, 5.0, 50.0, 95.0, 99.0])
     denominator = float(p99 - p01)
     if denominator <= 0:
         raise ValueError(f"Non-positive p99-p01 range for {stage}, LED {led}")
-
     return {
         "stage": stage,
         "led_t": led,
@@ -261,8 +217,6 @@ def summarize_group(
         "normalization_formula_candidate": "clip((x - p01) / (p99 - p01), 0, 1)",
         "validity_mask_candidate": f"raw_pixel < {full_scale_value}",
     }
-
-
 def save_qc(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
     """Write one deterministic QC chart from calculated summary statistics."""
     ensure_new(path, overwrite)
@@ -273,7 +227,6 @@ def save_qc(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
     p99 = np.asarray([float(row["p99"]) for row in rows])
     saturation = 100.0 * np.asarray([float(row["full_scale_fraction"]) for row in rows])
     scale = float(np.iinfo(np.uint16).max)
-
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5), constrained_layout=True)
     width = 0.24
     axes[0].bar(indices - width, 100.0 * p01 / scale, width=width, label="p01", color="#5ab4ac")
@@ -284,7 +237,6 @@ def save_qc(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
     axes[0].set_xticks(indices, labels)
     axes[0].grid(axis="y", alpha=0.25)
     axes[0].legend()
-
     colors = ["#2a6fbb" if str(row["stage"]) == "A" else "#d55e00" for row in rows]
     axes[1].bar(indices, saturation, color=colors)
     axes[1].set_title("Train-only sampled full-scale saturation")
@@ -300,12 +252,9 @@ def save_qc(path: Path, rows: list[dict[str, Any]], overwrite: bool) -> None:
         va="top",
         fontsize=9,
     )
-
     fig.suptitle("AMMT normalization screening — train history layers only", fontsize=14, fontweight="bold")
     fig.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(fig)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Estimate train-only A/B LED normalization statistics")
     parser.add_argument("--tiff-a", required=True, type=Path, help="AfterSpreading A TIFF")
@@ -317,15 +266,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true", help="Allow replacing existing output after review")
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     if args.pixel_stride < 1:
         raise ValueError("--pixel-stride must be at least 1")
     if not 0 <= args.full_scale_value <= np.iinfo(np.uint16).max:
         raise ValueError("--full-scale-value must be within uint16 range")
-
     path_a = args.tiff_a.resolve()
     path_b = args.tiff_b.resolve()
     manifest_path = args.manifest.resolve()
@@ -334,29 +280,24 @@ def main() -> None:
         raise FileNotFoundError(f"Missing TIFF input. A={path_a}, B={path_b}")
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Missing manifest: {manifest_path}")
-
     info_a = inspect_stack(path_a)
     info_b = inspect_stack(path_b)
     validate_pair(info_a, info_b)
     info = info_a
     roi = Roi(*tuple(int(value) for value in args.roi))
     validate_roi(roi, info)
-
     train_layers, train_row_count = read_train_history_layers(manifest_path)
     if train_layers[0] < 1 or train_layers[-1] > info.layers:
         raise ValueError(f"Train history layers {train_layers[0]}..{train_layers[-1]} exceed TIFF bounds 1..{info.layers}")
-
     summary_csv = output_dir / "train_stage_led_summary.csv"
     summary_json = output_dir / "train_stage_led_summary.json"
     qc_png = output_dir / "normalization_qc.png"
     for output in (summary_csv, summary_json, qc_png):
         ensure_new(output, args.overwrite)
-
     y_slice = slice(roi.y0, roi.y1, args.pixel_stride)
     x_slice = slice(roi.x0, roi.x1, args.pixel_stride)
     grid_height = len(range(roi.y0, roi.y1, args.pixel_stride))
     grid_width = len(range(roi.x0, roi.x1, args.pixel_stride))
-
     print("[1/3] Opening A/B TIFF through read-only memmap.")
     a_data = tifffile.memmap(path_a, series=0, mode="r")
     b_data = tifffile.memmap(path_b, series=0, mode="r")
@@ -364,13 +305,11 @@ def main() -> None:
         f"train rows={train_row_count}; unique train history layers={len(train_layers)} "
         f"({train_layers[0]}..{train_layers[-1]}); sampled grid={grid_height}x{grid_width}"
     )
-
     chunks: dict[tuple[str, int], list[np.ndarray]] = {
         (stage, led): [] for stage in ("A", "B") for led in range(1, info.leds + 1)
     }
     sampled_counts = {(stage, led): 0 for stage in ("A", "B") for led in range(1, info.leds + 1)}
     full_scale_counts = {(stage, led): 0 for stage in ("A", "B") for led in range(1, info.leds + 1)}
-
     print("[2/3] Sampling valid train-history pixels by stage and LED. Raw TIFF files remain unchanged.")
     for layer_index, z in enumerate(train_layers, start=1):
         for led in range(1, info.leds + 1):
@@ -386,7 +325,6 @@ def main() -> None:
                     chunks[(stage, led)].append(np.asarray(valid_values, dtype=np.uint16))
         if layer_index % 25 == 0 or layer_index == len(train_layers):
             print(f"  processed {layer_index}/{len(train_layers)} train-history layers")
-
     rows: list[dict[str, Any]] = []
     for stage in ("A", "B"):
         for led in range(1, info.leds + 1):
@@ -403,7 +341,6 @@ def main() -> None:
                     full_scale_value=args.full_scale_value,
                 )
             )
-
     summary: dict[str, Any] = {
         "audit_type": "train-only stage/LED normalization screening; not final model configuration",
         "raw_input_policy": "A/B TIFF opened only with tifffile.memmap(mode='r'); raw bytes are not modified.",
@@ -438,17 +375,13 @@ def main() -> None:
         },
         "stage_led_statistics": rows,
     }
-
     print("[3/3] Writing small summary outputs only; no image tensors or masks are saved.")
     write_csv(summary_csv, rows, args.overwrite)
     write_json(summary_json, summary, args.overwrite)
     save_qc(qc_png, rows, args.overwrite)
-
     print("Done. Raw TIFF files were opened read-only and were not modified.")
     for output in (summary_csv, summary_json, qc_png):
         print(f"- {output}")
-
-
 if __name__ == "__main__":
     try:
         main()

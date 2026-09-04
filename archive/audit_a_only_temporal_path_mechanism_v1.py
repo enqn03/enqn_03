@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only mechanism audit for temporal-path use in an A-only residual checkpoint.
-
 The audit quantifies Conv3D lag-wise kernel energy and compares the full residual
 prediction with endpoint-only and temporal-update-only branch inputs. It uses
 only read-only A-stage causal histories and an existing checkpoint. It neither
 trains nor reads XCT/weak targets, changes calibration, or saves dense arrays.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -15,23 +14,17 @@ import math
 import sys
 from pathlib import Path
 from typing import Any
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 from torch import Tensor
 from torch.nn import functional as F
-
 from ammt_causal_dataset import AMMTCausalStageDataset
 from train_a_only_baseline import AOnlyCausalCandidateNet, choose_device, load_yaml
-
-
 NUMERICAL_ZERO_ATOL = 1.0e-7
 MATERIAL_BRANCH_MAP_MAE_MIN = 1.0e-4
 MAX_SELECTED_ENDPOINTS = 3
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -44,20 +37,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def prepare_output_directory(path: Path) -> None:
     if path.exists():
         raise FileExistsError(f"Output directory already exists: {path}. Review it and choose a new --output-dir; this audit never overwrites it.")
     path.mkdir(parents=True, exist_ok=False)
-
-
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError(f"Cannot write empty CSV: {path}")
@@ -65,8 +52,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
 def tensor_stats(values: Tensor) -> dict[str, float]:
     tensor = values.detach().float().cpu()
     return {
@@ -76,8 +61,6 @@ def tensor_stats(values: Tensor) -> dict[str, float]:
         "mean_abs": float(tensor.abs().mean().item()),
         "max_abs": float(tensor.abs().max().item()),
     }
-
-
 def map_difference(left: Tensor, right: Tensor) -> dict[str, float]:
     difference = (left - right).detach().float().cpu()
     return {
@@ -85,8 +68,6 @@ def map_difference(left: Tensor, right: Tensor) -> dict[str, float]:
         "max_abs": float(difference.abs().max().item()),
         "l2_norm": float(torch.linalg.vector_norm(difference).item()),
     }
-
-
 def map_pearson(left: Tensor, right: Tensor) -> float | None:
     x = left.detach().float().reshape(-1).cpu()
     y = right.detach().float().reshape(-1).cpu()
@@ -96,8 +77,6 @@ def map_pearson(left: Tensor, right: Tensor) -> float | None:
     if float(denominator.item()) <= 0.0:
         return None
     return float(torch.dot(x_centered, y_centered).item() / denominator.item())
-
-
 def compute_branches(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[str, Tensor]:
     """Replicate the frozen model forward pass while retaining its two residual inputs."""
     if history.ndim != 5 or history.shape[0] != 1:
@@ -118,12 +97,8 @@ def compute_branches(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[st
         "endpoint_only_prediction": torch.sigmoid(model.decoder(encoded_endpoint)),
         "temporal_update_only_prediction": torch.sigmoid(model.decoder(temporal_update)),
     }
-
-
 def endpoint_repeated(history: Tensor) -> Tensor:
     return history[:, -1:].repeat(1, int(history.shape[1]), 1, 1, 1)
-
-
 def temporal_kernel_rows(model: AOnlyCausalCandidateNet, sequence_length: int) -> list[dict[str, Any]]:
     weight = model.temporal.weight.detach().float().cpu()
     if weight.ndim != 5:
@@ -134,7 +109,6 @@ def temporal_kernel_rows(model: AOnlyCausalCandidateNet, sequence_length: int) -
     total_energy = float(weight.square().sum().item())
     rows: list[dict[str, Any]] = []
     for time_index in range(kernel_steps):
-        # With left padding and final output selection, index kernel_steps-1 sees the endpoint.
         lag_from_endpoint = kernel_steps - 1 - time_index
         energy = float(weight[:, :, time_index, :, :].square().sum().item())
         rows.append(
@@ -150,8 +124,6 @@ def temporal_kernel_rows(model: AOnlyCausalCandidateNet, sequence_length: int) -
             }
         )
     return rows
-
-
 def plot_qc(
     branches: dict[str, Tensor],
     repeated_branches: dict[str, Tensor],
@@ -190,8 +162,6 @@ def plot_qc(
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
-
-
 def main() -> None:
     args = parse_args()
     if not 1 <= len(args.indices) <= MAX_SELECTED_ENDPOINTS:
@@ -201,7 +171,6 @@ def main() -> None:
     for path, label in ((args.config, "config"), (args.checkpoint, "checkpoint"), (args.tiff_a, "A-stage TIFF"), (args.manifest, "causal manifest"), (args.normalization_config, "normalization config")):
         if not path.is_file():
             raise FileNotFoundError(f"Required {label} not found: {path}")
-
     config = load_yaml(args.config)
     data_config = config["data"]
     model_config = config["model"]
@@ -213,7 +182,6 @@ def main() -> None:
     if int(data_config["sequence_length_k"]) < int(model_config["temporal_kernel_size"]):
         raise ValueError("Sequence length must be at least the temporal kernel size.")
     prepare_output_directory(args.output_dir)
-
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalCandidateNet(
         input_channels=int(data_config["input_channels"]),
@@ -232,7 +200,6 @@ def main() -> None:
         split=args.split,
         resize_hw=tuple(int(value) for value in data_config["model_resolution"]),
     )
-
     kernel_rows = temporal_kernel_rows(model, int(data_config["sequence_length_k"]))
     endpoint_rows: list[dict[str, Any]] = []
     qc_paths: list[str] = []
@@ -287,7 +254,6 @@ def main() -> None:
             qc_path = args.output_dir / f"temporal_path_mechanism_endpoint_z{int(sample['endpoint_layer_z']):03d}.png"
             plot_qc(branches, repeated_branches, int(sample["endpoint_layer_z"]), qc_path)
             qc_paths.append(str(qc_path))
-
     kernel_csv = args.output_dir / "a_only_temporal_path_kernel_energy.csv"
     endpoints_csv = args.output_dir / "a_only_temporal_path_mechanism_by_endpoint.csv"
     summary_json = args.output_dir / "a_only_temporal_path_mechanism_summary.json"
@@ -355,8 +321,6 @@ def main() -> None:
     write_json(summary_json, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     print("Temporal-path mechanism audit complete. No raw data, XCT/weak target, checkpoint, config, calibration, or candidate policy was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

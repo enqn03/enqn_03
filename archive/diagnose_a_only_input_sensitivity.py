@@ -1,6 +1,6 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only stagewise input-sensitivity diagnostic for an A-only checkpoint.
-
 The diagnostic measures whether selected causal A histories remain different at
 five points: model input, final-history frame encoder feature, all-history frame
 encoder feature, final causal temporal feature, decoder logit, and sigmoid score
@@ -8,21 +8,16 @@ map. It never creates weak targets, opens registered XCT CSV files, runs an
 optimizer, or writes any file.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
-
 import torch
 from torch import Tensor
 from torch.nn import functional as F
-
 from ammt_causal_dataset import AMMTCausalStageDataset
 from train_a_only_baseline import AOnlyCausalCandidateNet, choose_device, load_yaml
-
-
 def tensor_statistics(values: Tensor) -> dict[str, float]:
     """Return compact numerical statistics without storing the source tensor."""
     values_cpu = values.detach().float().cpu()
@@ -34,8 +29,6 @@ def tensor_statistics(values: Tensor) -> dict[str, float]:
         "range": float((values_cpu.max() - values_cpu.min()).item()),
         "l2_norm": float(torch.linalg.vector_norm(values_cpu).item()),
     }
-
-
 def pairwise_distance(left: Tensor, right: Tensor) -> dict[str, float]:
     """Summarize a pairwise stage difference without retaining image/features."""
     left_cpu = left.detach().float().cpu()
@@ -53,8 +46,6 @@ def pairwise_distance(left: Tensor, right: Tensor) -> dict[str, float]:
         "rmse": float(torch.sqrt((difference * difference).mean()).item()),
         "relative_l2": float(torch.linalg.vector_norm(difference).item() / reference_norm),
     }
-
-
 def stagewise_forward(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[str, Tensor]:
     """Reproduce the model forward path while exposing only transient features."""
     if history.ndim != 5:
@@ -62,7 +53,6 @@ def stagewise_forward(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[s
     batch, steps, channels, height, width = history.shape
     if channels != 6:
         raise ValueError(f"A-only model requires six channels, got {channels}")
-
     encoded_flat = model.frame_encoder(history.reshape(batch * steps, channels, height, width))
     encoded_history = encoded_flat.reshape(batch, steps, encoded_flat.shape[1], height, width)
     encoded_for_temporal = encoded_history.permute(0, 2, 1, 3, 4)
@@ -80,12 +70,8 @@ def stagewise_forward(model: AOnlyCausalCandidateNet, history: Tensor) -> dict[s
         "logits": logits,
         "score": score,
     }
-
-
 def distinct_for_all_pairs(pair_rows: list[dict[str, Any]], stage_name: str, atol: float) -> bool:
     return bool(pair_rows) and all(float(row["stage_distances"][stage_name]["max_abs"]) > atol for row in pair_rows)
-
-
 def derive_collapse_interpretation(pair_rows: list[dict[str, Any]], atol: float) -> dict[str, Any]:
     ordered_stages = (
         "input_history",
@@ -97,7 +83,6 @@ def derive_collapse_interpretation(pair_rows: list[dict[str, Any]], atol: float)
     )
     all_pairs_distinct = {stage: distinct_for_all_pairs(pair_rows, stage, atol) for stage in ordered_stages}
     earliest_not_distinct = next((stage for stage in ordered_stages if not all_pairs_distinct[stage]), None)
-
     if not pair_rows:
         conclusion = "need_at_least_two_indices_for_pairwise_sensitivity"
     elif not all_pairs_distinct["input_history"]:
@@ -114,7 +99,6 @@ def derive_collapse_interpretation(pair_rows: list[dict[str, Any]], atol: float)
         conclusion = "sigmoid_saturation_or_quantization_candidate; logits differ but score maps are not distinct"
     else:
         conclusion = "selected_inputs_remain_distinct_through_score; inspect magnitude and spatial diagnostics before changing training"
-
     return {
         "stage_difference_atol": atol,
         "all_selected_pairs_distinct_by_stage": all_pairs_distinct,
@@ -125,8 +109,6 @@ def derive_collapse_interpretation(pair_rows: list[dict[str, Any]], atol: float)
             "This diagnostic does not use XCT support or target values."
         ),
     }
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -139,22 +121,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage-difference-atol", type=float, default=1.0e-6)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"], default=None)
     return parser.parse_args()
-
-
 def main() -> None:
     args = parse_args()
     if args.stage_difference_atol < 0.0:
         raise ValueError("--stage-difference-atol must be non-negative.")
     if not args.checkpoint.is_file():
         raise FileNotFoundError(f"Missing checkpoint: {args.checkpoint}")
-
     config = load_yaml(args.config)
     data_config = config["data"]
     model_config = config["model"]
     training_config = config["training"]
     if data_config["stage"] != "A" or int(data_config["input_channels"]) != 6:
         raise ValueError("Diagnostic requires the six-channel A-only baseline config.")
-
     device = choose_device(args.device or str(training_config["device"]))
     model = AOnlyCausalCandidateNet(
         input_channels=int(data_config["input_channels"]),
@@ -165,7 +143,6 @@ def main() -> None:
     checkpoint = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-
     dataset = AMMTCausalStageDataset(
         stage="A",
         tiff_path=args.tiff_a,
@@ -174,7 +151,6 @@ def main() -> None:
         split=args.split,
         resize_hw=tuple(int(value) for value in data_config["model_resolution"]),
     )
-
     sample_rows: list[dict[str, Any]] = []
     features: list[dict[str, Tensor]] = []
     with torch.no_grad():
@@ -203,7 +179,6 @@ def main() -> None:
                     "forward_reconstruction_max_abs": reconstruction_error["max_abs"],
                 }
             )
-
     pair_rows: list[dict[str, Any]] = []
     pair_stage_names = (
         "input_history",
@@ -227,7 +202,6 @@ def main() -> None:
                     },
                 }
             )
-
     output = {
         "audit_type": "A-only checkpoint stagewise input-sensitivity diagnostic; read-only, no XCT target/support",
         "checkpoint": str(args.checkpoint),
@@ -248,8 +222,6 @@ def main() -> None:
     }
     print(json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False))
     print("Stagewise input-sensitivity diagnostic complete. No raw TIFF, XCT CSV, target, checkpoint, or output file was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()

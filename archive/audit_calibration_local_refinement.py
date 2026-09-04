@@ -1,3 +1,4 @@
+utf-8
 #!/usr/bin/env python3
 """Local offset refinement for the top two screen-corner calibration candidates."""
 from __future__ import annotations
@@ -7,8 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 from audit_machine_camera_calibration import build_candidates, project
-
-# mean5 LWI columns only: A LED1/2/3 then B LED1/2/3.
 FEATURES=[("A",1,22),("A",2,25),("A",3,28),("B",1,31),("B",2,34),("B",3,37)]
 def args():
  p=argparse.ArgumentParser();p.add_argument("--control-points",required=True,type=Path);p.add_argument("--registered-root",required=True,type=Path);p.add_argument("--after-tiff",required=True,type=Path);p.add_argument("--burned-tiff",required=True,type=Path);p.add_argument("--output-dir",required=True,type=Path);p.add_argument("--layers",nargs="+",type=int,default=[25,75,125,150]);p.add_argument("--max-offset",type=int,default=12);p.add_argument("--offset-step",type=int,default=2);p.add_argument("--patch-radius",type=int,default=2);p.add_argument("--max-rows",type=int,default=600);p.add_argument("--overwrite",action="store_true");return p.parse_args()

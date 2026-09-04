@@ -1,13 +1,12 @@
+utf-8
 #!/usr/bin/env python3
 """Read-only support-density audit for continuous XCT-derived weak targets.
-
 This audit reconstructs the same command-XY projection, train-p01/p99 response
 scaling, model ROI/grid mapping, Gaussian support, and weighted-average blend
 used by AMMTWeakTargetDataset. It compares only Gaussian sigma values in memory.
 It does not open TIFF files, train a model, write a dense target, or alter raw data.
 """
 from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -16,27 +15,18 @@ import sys
 from collections import deque
 from pathlib import Path
 from typing import Any
-
 import numpy as np
 import yaml
-
 from audit_machine_camera_calibration import build_candidates, project
-
 PARTS = ("part01", "part02", "part03", "part04")
 DEFAULT_LAYERS = (4, 128, 157, 161, 180, 199, 203, 227, 250)
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
-
-
 def gaussian_kernel(sigma: float) -> np.ndarray:
     radius = max(1, int(np.ceil(3.0 * sigma)))
     yy, xx = np.mgrid[-radius : radius + 1, -radius : radius + 1]
     return np.exp(-((xx * xx + yy * yy) / (2.0 * sigma * sigma))).astype(np.float64)
-
-
 def connected_component_statistics(mask: np.ndarray) -> tuple[int, int, float]:
     """Return 8-connected component count, largest size, and largest share."""
     binary = np.asarray(mask, dtype=bool)
@@ -44,7 +34,6 @@ def connected_component_statistics(mask: np.ndarray) -> tuple[int, int, float]:
     visited = np.zeros_like(binary, dtype=bool)
     component_count = 0
     largest_size = 0
-
     for start_y, start_x in np.argwhere(binary):
         y0, x0 = int(start_y), int(start_x)
         if visited[y0, x0]:
@@ -65,18 +54,13 @@ def connected_component_statistics(mask: np.ndarray) -> tuple[int, int, float]:
                         visited[ny, nx] = True
                         queue.append((ny, nx))
         largest_size = max(largest_size, size)
-
     total = int(binary.sum())
     largest_fraction = 0.0 if total == 0 else float(largest_size / total)
     return component_count, largest_size, largest_fraction
-
-
 def pearson_or_none(left: np.ndarray, right: np.ndarray) -> float | None:
     if left.size < 2 or float(left.std()) == 0.0 or float(right.std()) == 0.0:
         return None
     return float(np.corrcoef(left, right)[0, 1])
-
-
 def load_manifest_endpoint_splits(manifest_path: Path) -> dict[int, str]:
     split_by_layer: dict[int, str] = {}
     with manifest_path.open("r", encoding="utf-8", newline="") as handle:
@@ -87,8 +71,6 @@ def load_manifest_endpoint_splits(manifest_path: Path) -> dict[int, str]:
                 raise ValueError(f"Endpoint layer {endpoint} appears in multiple splits.")
             split_by_layer[endpoint] = split
     return split_by_layer
-
-
 def collect_projected_points(
     *,
     layer_z: int,
@@ -109,7 +91,6 @@ def collect_projected_points(
     dx, dy = offset_xy
     points: list[tuple[int, int, float]] = []
     finite_count = 0
-
     for part in PARTS:
         csv_path = registered_root / part / f"L{layer_z:04d}.csv"
         if not csv_path.is_file():
@@ -130,8 +111,6 @@ def collect_projected_points(
             if 0 <= ix < model_width and 0 <= iy < model_height:
                 points.append((ix, iy, float(value)))
     return points, finite_count
-
-
 def rasterize(
     *,
     points: list[tuple[int, int, float]],
@@ -143,7 +122,6 @@ def rasterize(
     weight = np.zeros((height, width), dtype=np.float64)
     kernel = gaussian_kernel(sigma)
     radius = kernel.shape[0] // 2
-
     for ix, iy, value in points:
         y0, y1 = max(0, iy - radius), min(height, iy + radius + 1)
         x0, x1 = max(0, ix - radius), min(width, ix + radius + 1)
@@ -151,13 +129,10 @@ def rasterize(
         patch = kernel[ky0 : ky0 + (y1 - y0), kx0 : kx0 + (x1 - x0)]
         numerator[y0:y1, x0:x1] += patch * value
         weight[y0:y1, x0:x1] += patch
-
     support = weight > 0.0
     response = np.zeros((height, width), dtype=np.float64)
     response[support] = numerator[support] / weight[support]
     return response, support
-
-
 def base_metrics(
     *,
     layer_z: int,
@@ -189,20 +164,14 @@ def base_metrics(
         "largest_support_component_pixel_count": largest_component_pixels,
         "largest_support_component_fraction": largest_component_fraction,
     }
-
-
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     fields = list(rows[0].keys()) if rows else ["layer_z"]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
-
-
 def median_or_none(values: list[float]) -> float | None:
     return None if not values else float(np.median(np.asarray(values, dtype=np.float64)))
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compare Gaussian sigma=2/3 weak-target support density without model training."
@@ -217,7 +186,6 @@ def main() -> None:
     parser.add_argument("--sigmas", nargs=2, type=float, default=[2.0, 3.0])
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-
     sigma_base, sigma_candidate = (float(args.sigmas[0]), float(args.sigmas[1]))
     if not (sigma_base > 0.0 and sigma_candidate > 0.0 and sigma_candidate > sigma_base):
         raise ValueError("--sigmas must be two positive increasing values, for example: 2 3.")
@@ -226,13 +194,11 @@ def main() -> None:
         if not args.overwrite:
             raise FileExistsError(f"Output directory already exists: {output_dir}. Review it or use --overwrite deliberately.")
         shutil.rmtree(output_dir)
-
     endpoint_splits = load_manifest_endpoint_splits(args.manifest)
     requested_layers = [int(layer) for layer in args.layers]
     unexpected = [layer for layer in requested_layers if layer not in endpoint_splits]
     if unexpected:
         raise ValueError(f"Requested layers are not manifest endpoints: {unexpected}")
-
     normalization = load_yaml(args.normalization_config)
     weak = load_yaml(args.weak_target_config)
     calibration = load_yaml(args.calibration_config)
@@ -244,7 +210,6 @@ def main() -> None:
     response_p01, response_p99 = float(scaling["train_p01"]), float(scaling["train_p99"])
     if response_p99 <= response_p01:
         raise ValueError("weak target train_p99 must be greater than train_p01.")
-
     controls_path = Path(calibration["control_points"]["path"])
     if not controls_path.is_absolute():
         controls_path = Path.cwd() / controls_path
@@ -252,7 +217,6 @@ def main() -> None:
     candidate_rank = int(calibration["geometry_candidate"]["rank"]) - 1
     homography = build_candidates(controls)[candidate_rank]["H"]
     offset_xy = tuple(float(value) for value in calibration["local_photometric_refinement"]["raw_pixel_global_offset_xy"])
-
     per_sigma_rows: list[dict[str, Any]] = []
     comparison_rows: list[dict[str, Any]] = []
     comparable_layers: list[dict[str, Any]] = []
@@ -295,7 +259,6 @@ def main() -> None:
             support=support_candidate,
         )
         per_sigma_rows.extend((metrics_base, metrics_candidate))
-
         base_support_count = int(support_base.sum())
         candidate_support_count = int(support_candidate.sum())
         common_support = support_base & support_candidate
@@ -341,13 +304,11 @@ def main() -> None:
         comparison_rows.append(comparison)
         if base_support_count > 0:
             comparable_layers.append(comparison)
-
     support_gains = [float(row["support_gain_fraction"]) for row in comparable_layers if row["support_gain_fraction"] is not None]
     retained = [float(row["base_support_retained_in_candidate_fraction"]) for row in comparable_layers]
     response_maes = [float(row["common_support_response_mae"]) for row in comparable_layers if row["common_support_response_mae"] is not None]
     component_ratios = [float(row["component_count_candidate_to_base_ratio"]) for row in comparable_layers if row["component_count_candidate_to_base_ratio"] is not None]
     largest_component_growth = [float(row["largest_component_fraction_growth_ratio"]) for row in comparable_layers if row["largest_component_fraction_growth_ratio"] is not None]
-
     gates = {
         "minimum_median_support_gain_fraction": 0.25,
         "minimum_base_support_retained_fraction": 1.0,
@@ -374,7 +335,6 @@ def main() -> None:
         and observed["median_largest_component_fraction_growth_ratio"] is not None
         and observed["median_largest_component_fraction_growth_ratio"] <= gates["maximum_median_largest_component_fraction_growth_ratio"]
     )
-
     summary = {
         "audit_type": "read-only weak-target Gaussian support-density comparison; not training or defect labeling",
         "baseline_sigma_model_px": sigma_base,
@@ -406,7 +366,6 @@ def main() -> None:
             "model localization quality, or deployment readiness."
         ),
     }
-
     output_dir.mkdir(parents=True)
     write_csv(output_dir / "per_layer_sigma_metrics.csv", per_sigma_rows)
     write_csv(output_dir / "sigma_comparison_by_layer.csv", comparison_rows)
@@ -415,8 +374,6 @@ def main() -> None:
     )
     print(json.dumps(summary, indent=2, allow_nan=False))
     print("Weak-target support-density audit complete. No TIFF, raw CSV, dense target, checkpoint, or model was modified.")
-
-
 if __name__ == "__main__":
     try:
         main()
