@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Build a causal AMMT layer-sequence manifest without reading any TIFF pixels.
 The manifest defines which manufacturing-layer indices can be used as model

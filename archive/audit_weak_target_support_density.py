@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only support-density audit for continuous XCT-derived weak targets.
 This audit reconstructs the same command-XY projection, train-p01/p99 response

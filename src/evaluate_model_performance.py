@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """
 Quantitative Model Performance Validation Script

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Train and evaluate the first causal A-only AMMT quality-candidate baseline.
 The script consumes only AfterSpreading (A-stage) histories shaped

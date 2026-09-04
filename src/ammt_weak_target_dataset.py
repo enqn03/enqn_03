@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """On-the-fly sparse XCT weak target wrapper for AMMTCausalStageDataset.
 The response is continuous XCT-derived supervision, not a defect label. Pixels

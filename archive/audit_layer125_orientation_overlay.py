@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Create deterministic layer-125 orientation QC overlays for existing calibration ranks.
 This read-only audit overlays layer-125 laser-on XYPT command paths on one

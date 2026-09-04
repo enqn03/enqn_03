@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only counterfactual stability audit for a temporal-difference checkpoint.
 This script evaluates a saved temporal-difference model at selected endpoints,

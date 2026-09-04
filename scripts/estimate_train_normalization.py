@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Estimate AMMT layer-camera normalization statistics from train data only.
 The script reads the causal manifest, collects the *unique* layer indices used

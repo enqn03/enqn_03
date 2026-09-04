@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Validate four human-reviewed visible DotGrid outer controls without calibrating.
 Inputs are the immutable DotGrid TIFF, a compact four-point control JSON from

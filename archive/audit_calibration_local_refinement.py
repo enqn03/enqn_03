@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Local offset refinement for the top two screen-corner calibration candidates."""
 from __future__ import annotations

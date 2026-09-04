@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Simulate a real-time live inference stream using the v4 16-channel fusion model."""
 from __future__ import annotations

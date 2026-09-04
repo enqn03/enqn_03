@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only mechanism audit for temporal-path use in an A-only residual checkpoint.
 The audit quantifies Conv3D lag-wise kernel energy and compares the full residual

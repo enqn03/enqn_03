@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Train an independent B-only causal temporal-difference candidate model.
 This experiment uses the established temporal-difference architecture but

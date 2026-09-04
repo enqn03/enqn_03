@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit camera-space support of provisional sparse XCT weak targets."""
 from __future__ import annotations

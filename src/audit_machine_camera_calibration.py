@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Compare machine-part and machine-axis hypotheses from screen-corner controls.
 Input JSON contains only visible screen TL/TR/BR/BL corners for four parts.

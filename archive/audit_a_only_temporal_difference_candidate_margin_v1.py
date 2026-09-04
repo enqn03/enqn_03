@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit rank/margin mechanisms behind temporal-difference candidate switches.
 For selected held-out endpoints, compare normal causal K=4 history against the

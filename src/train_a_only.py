@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Train a controlled A-only causal temporal-difference candidate model.
 This experiment preserves the C32 residual baseline's Dataset, weak target,

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Evaluate an existing A-only AMMT checkpoint without training or overwriting it.
 The script reads a previously saved checkpoint and evaluates the held-out causal

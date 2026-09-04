@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only causal-history contribution audit for a saved A-only checkpoint.
 For selected held-out A-stage endpoints, this audit compares the normal causal

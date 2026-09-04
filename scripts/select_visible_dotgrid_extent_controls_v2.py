@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Collect four human-reviewed outer DotGrid dot centres using a macOS GUI backend.
 This V2 selector is intentionally independent of batch-QC modules that configure

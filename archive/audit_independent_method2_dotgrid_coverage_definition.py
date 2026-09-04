@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit DotGrid coverage evidence without changing a calibration or gate.
 This script reads (1) the immutable layer-camera DotGrid TIFF using the existing

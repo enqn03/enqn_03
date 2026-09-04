@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Refine DotGrid 2D lattice correspondence before any calibration selection.
 This V3 audit reads one immutable layer-camera DotGrid TIFF via the existing

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Compare several AMMT layer-camera ROI candidates without modifying raw data.
 The script opens the A (AfterSpreading) and B (Burned) ImageJ hyperstacks via

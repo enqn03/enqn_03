@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit compact A-only candidate coordinates against the provisional calibration.
 The script reads only the compact candidate JSON, model configuration,

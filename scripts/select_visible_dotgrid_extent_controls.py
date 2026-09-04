@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Collect four human-reviewed outer dot centers on the immutable DotGrid image.
 Click exactly four **visible outer dot centers** in this order:

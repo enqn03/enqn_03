@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only AMMT A/B pair audit.
 Purpose

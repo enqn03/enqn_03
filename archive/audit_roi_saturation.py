@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only ROI and saturation audit for AMMT A/B layer-camera TIFF data.
 Purpose

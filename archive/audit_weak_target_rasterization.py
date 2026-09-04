@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Rasterization audit: sparse continuous XCT response + support mask, not defect labels."""
 from __future__ import annotations

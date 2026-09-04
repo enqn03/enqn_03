@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit the Top1-Top2 score margin and peak distance distribution for candidate predictions.
 This script parses the test coordinate candidates from the A-only Temporal Difference model,

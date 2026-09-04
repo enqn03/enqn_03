@@ -1,4 +1,3 @@
-utf-8
 """
 Evaluate single modality (A-only or B-only) model performance.
 """

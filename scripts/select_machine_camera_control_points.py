@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Select screen-corner control points without assuming machine-axis orientation.
 The user only identifies the four visible parts by screen order (top to bottom)

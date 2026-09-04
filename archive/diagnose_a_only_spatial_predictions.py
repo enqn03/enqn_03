@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only spatial diagnostic for a trained A-only AMMT checkpoint.
 This script loads an existing checkpoint and selected causal samples, then

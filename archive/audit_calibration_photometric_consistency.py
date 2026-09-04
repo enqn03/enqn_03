@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Tie-break mirror-equivalent calibration candidates with registered LWI features.
 For selected build layers, this audit projects sparse registered XY points to raw

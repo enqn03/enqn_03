@@ -1,4 +1,3 @@
-utf-8
 import json
 import matplotlib.pyplot as plt
 import os

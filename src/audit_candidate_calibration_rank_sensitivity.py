@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Compare compact candidate coordinates under rank-1 and rank-2 calibration transforms.
 The script performs a read-only sensitivity analysis on already emitted,

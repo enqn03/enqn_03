@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only calibration design review for extent, coverage, and orientation.
 This audit compares frozen detector ROI and existing V2 human extent evidence,

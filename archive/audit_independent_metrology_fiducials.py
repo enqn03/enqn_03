@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Measure independent metrology fiducial detectability without calibration fitting.
 The audit reads NIST dot-grid, checkerboard, and secondary-camera TIFF metadata

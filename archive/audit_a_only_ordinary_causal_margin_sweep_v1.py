@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only top1-top2 margin sensitivity sweep for ordinary causal held-out test maps.
 This script evaluates all 48 endpoints in the test split using the temporal-difference 

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Run a multi-seed matched comparison of the temporal-difference model vs residual baseline.
 This script trains both architectures across a list of random seeds, strictly

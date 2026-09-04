@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Diagnose V2 visible-DotGrid outer-control snap failures in image space only.
 This read-only follow-up compares each existing human click with four independent

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only audit of registered XCT sparse weak-target support for AMMT X4.
 The 2025 NIST registered X4 data contains one headerless 40-column CSV per

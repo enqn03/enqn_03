@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit existing independent layer-camera metrology metadata without refitting calibration.
 This read-only pre-audit inspects the NIST-provided dot-grid, checkerboard, and

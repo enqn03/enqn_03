@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only runtime checks for AMMT support-masked continuous regression loss.
 This script does not train a model, write a checkpoint, or create a dense target.

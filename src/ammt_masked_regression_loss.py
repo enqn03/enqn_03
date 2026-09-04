@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Support-mask weighted continuous regression loss for AMMT weak targets.
 The target is a direction-unresolved, XCT-derived continuous quality response.

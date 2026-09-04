@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Read-only stagewise input-sensitivity diagnostic for an A-only checkpoint.
 The diagnostic measures whether selected causal A histories remain different at

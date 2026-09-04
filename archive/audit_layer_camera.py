@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """AMMT LayerCamera TIFF: read-only memmap audit.
 This script is intentionally conservative:

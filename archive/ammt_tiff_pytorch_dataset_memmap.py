@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """NIST AMMT LayerCamera ImageJ TIFF hyperstack -> PyTorch Dataset.
 This version is designed for the AMMT TIFF implementation in which tifffile

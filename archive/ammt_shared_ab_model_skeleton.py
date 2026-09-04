@@ -1,4 +1,3 @@
-utf-8
 """Shared backbone + A/B heads skeleton for AMMT LayerCamera streams.
 This is an architecture skeleton, not a finished training script.
 Input convention

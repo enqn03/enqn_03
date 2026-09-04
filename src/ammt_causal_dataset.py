@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Causal AMMT layer-camera PyTorch Dataset with saturation validity masks.
 The Dataset consumes a stage-specific TIFF (A or B), the causal manifest, and

@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 import pandas as pd
 import matplotlib.pyplot as plt

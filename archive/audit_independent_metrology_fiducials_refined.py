@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Refine independent fiducial candidates in image pixels without calibration fitting.
 This read-only follow-up uses the same NIST metadata TIFFs as the V1 detector.

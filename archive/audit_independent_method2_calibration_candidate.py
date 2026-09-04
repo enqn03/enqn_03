@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit NIST method-#2 D-to-C calibration candidates without changing deployment calibration.
 This script uses only the layer-camera DotGrid TIFF, the existing provisional

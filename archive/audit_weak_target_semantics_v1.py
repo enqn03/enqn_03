@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Audit the physical semantics of the continuous XCT response.
 This script extracts small visual patches from A-stage and B-stage images

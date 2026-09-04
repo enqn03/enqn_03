@@ -1,4 +1,3 @@
-utf-8
 #!/usr/bin/env python3
 """Train an A+B Fusion causal temporal-difference candidate model.
 This experiment uses paired encoders to process A (AfterSpreading) and B (Burned)
