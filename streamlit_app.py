@@ -8,7 +8,7 @@ from scipy.ndimage import gaussian_filter
 st.set_page_config(page_title="AMMT Defect Detection Dashboard", layout="wide")
 st.title("AMMT 실시간 이상 후보 위치 탐지")
 st.markdown("### LPBF 공정 중 Layer-Camera 기반 결함 조기 탐지 AI 시스템")
-st.markdown("[5조] TEAM 3Do | 김상민, 김태학, 이주현, 정미연")
+st.markdown("[5조] TEAM 3DO | 김상민, 김태학, 이주현, 정미연")
 st.divider()
 tab1, tab_process, tab_arch, tab_analysis, tab4, tab_conclusion = st.tabs([
     "프로젝트 소개", 
@@ -19,7 +19,7 @@ tab1, tab_process, tab_arch, tab_analysis, tab4, tab_conclusion = st.tabs([
     "결과 및 향후 발전 방향"
 ])
 with tab1:
-    st.header("1. 최종 모델(A+B Fusion) 성능 지표 요약")
+    st.header("최종 모델(A+B Fusion) 성능 지표 요약")
     col1, col2, col3 = st.columns(3)
     col1.metric("정밀도 (Precision)", "17.92%", "Blob-level 기준")
     col2.metric("재현율 (Recall)", "43.48%", "Blob-level 기준")
@@ -96,23 +96,7 @@ with tab_process:
     - **가우시안 릴렉세이션 (Gaussian Relaxation):** 확보된 1500x1500의 ROI 이미지를 연산 효율을 위해 256x256으로 리사이징합니다. 이때 정답지인 XCT 결함 좌표 픽셀에 단순히 1을 찍는 것이 아니라, 3D XCT와 2D 카메라 간의 투영 오차를 보정하기 위해 **가우시안 필터($\sigma=2$)를 씌워 부드러운 확률 분포로 릴렉세이션(Relaxation)** 처리를 해줍니다. 이는 모델이 픽셀 단위의 적중 강박에서 벗어나 주변 맥락(Context) 패턴을 유연하게 학습하도록 돕는 핵심 장치입니다.
     """)
     st.divider()
-    st.subheader("3. Gated CBAM Fusion 아키텍처 흐름도")
-    st.markdown("파우더 도포 이미지(A)와 레이저 조사 이미지(B)를 각각의 Encoder로 특징 추출한 뒤, CBAM 어텐션 밸브를 통해 스패터 노이즈를 필터링하여 결함 시그널만 선별적으로 융합합니다.")
-    st.markdown('''
-    ```mermaid
-    graph LR
-        A[A Modality<br>쇳가루 도포 직후] -->|CNN Encoder| E1(A Features)
-        B[B Modality<br>레이저 조사 직후] -->|CNN Encoder| E2(B Features)
-        
-        E1 --> G{Gated CBAM<br>어텐션 밸브}
-        E2 --> G
-        
-        G -->|스패터 노이즈 차단<br>결함 시그널 융합| D[CNN Decoder Block]
-        D -->|Spatial Dropout 30%| O[최종 결함 확률 분포]
-    ```
-    ''')
-    st.divider()
-    st.subheader("4. 카메라 캘리브레이션 및 광도/방향성 정밀 검증")
+    st.subheader("3. 카메라 캘리브레이션 및 광도/방향성 정밀 검증")
     st.markdown("""
     단순한 2D 픽셀 단위 분석을 넘어, 최종적으로 카메라 상의 픽셀 좌표를 장비의 실제 **3D 물리 좌표(Machine X, Y mm)로** 맵핑하고, 사후 XCT 스캔 3D 데이터(정답지)와 정밀하게 대조하기 위해 다각적인 캘리브레이션 및 검증 과정을 거쳤습니다.
     """)
@@ -487,7 +471,7 @@ with tab_conclusion:
     """)
 
     st.divider()
-    st.header("3. 사용 기술 스택 (Tech Stack) 및 팀원 역할 (R&R)")
+    st.header("사용 기술 스택 (Tech Stack) 및 팀원 역할 (R&R)")
     st.markdown("본 프로젝트 파이프라인 및 대시보드 구축에 활용된 기술 스택과 팀원들의 구체적인 역할입니다.")
     
     col_ts, col_tm = st.columns([1, 2])
@@ -501,12 +485,12 @@ with tab_conclusion:
         - **Architecture:** `CBAM (Attention)`, `Gated CNN`
         ''')
     with col_tm:
-        st.subheader("TEAM 3Do 담당 역할 분담")
+        st.subheader("TEAM 3DO 담당 역할 분담")
         st.markdown('''
-        | 성명 | 담당 역할 (R&R) |
-        |---|---|
-        | **김상민** | **PM 및 퓨전 아키텍처 설계:** Gated CBAM 융합 모델 구축, 손실 함수 최적화, 통합 대시보드 기획 |
-        | **김태학** | **데이터 엔지니어링:** ROI 정량 분석, 카메라-머신 간 XCT 캘리브레이션 및 기하학적 정렬 검증 |
-        | **이주현** | **MLOps 및 데이터 시각화:** 실시간 라이브 추론 스트림 파이프라인 구축, 3D Plotly 시뮬레이터 개발 |
-        | **정미연** | **모델 성능 검증 (Audit):** A/B 단일 모델 베이스라인 테스트, 다중 시드(Multi-seed) 실험 및 정량 지표 분석 |
+        | 훈련생 | 역할 | 담당 업무 |
+        |---|---|---|
+        | **김상민** | 팀장 | 전체 코드 구현 및 데이터 분석 |
+        | **김태학** | 팀원 | PPT 제작, 프로젝트 질의응답 및 발표 준비 지원 |
+        | **이주현** | 팀원 | PPT 제작 및 자료 정리 |
+        | **정미연** | 팀원 | PPT 제작, 발표 및 발표 자료 정리 |
         ''')
