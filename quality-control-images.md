@@ -87,3 +87,22 @@ Gated CBAM Fusion 모델이 데이터를 어떻게 이해하고 학습하는지�
 * **`outputs/a_only_temporal_path_mechanism_v1/...` 시리즈**
 * **`outputs/a_only_temporal_difference_stability_v1/...` 시리즈**
   * **의미:** 시계열 기반 A-only 예측 시 과거 프레임을 변경(Replacement)하거나 동일하게 반복(Endpoint-repeat)했을 때, 모델이 계산하는 최상위 의심 픽셀(Top-1 Candidate)의 점수 차이(Margin)와 좌표 랭킹(Rank)이 튀지 않고 안정적으로 유지되는지 평가하는 디버깅/내부 검증용 이미지들입니다.
+
+---
+
+## 📌 [참고] Streamlit 대시보드에 포함되지 않은 이미지 목록
+
+위 전체 아카이브 목록 중에서, 현재 사용자용 인터랙티브 웹 대시보드(`streamlit_app.py`)에는 전시되지 않고 **기록용/내부 디버깅용으로만 남겨둔 이미지들**은 다음과 같습니다.
+
+1. **`processed/audit_after_spreading/qc_contact_sheet.png`**
+   * (초기 쇳가루 A 모달리티 센서 포화 점검용)
+2. **`processed/roi_audit/roi_candidate_qc.png`**
+   * (후보군 선별 과정은 앱에 있으나, 최종 확정된 Working ROI 내 상세 포화 검증 과정은 생략됨)
+3. **`processed/normalization_v1/normalization_qc.png`**
+   * (정규화 계수 도출을 위한 내부 데이터 분포 확인용이므로 생략됨)
+4. **`processed/calibration/...` 내부의 자잘한 세부 기하 오버레이 파일들**
+   * (앱에는 캘리브레이션을 증명할 핵심적인 5개 내외의 이미지만 추려서 전시됨)
+5. **`outputs/live_inference_results_v7_demo_3d.png` 등 3D 결과 정적 이미지 파일들**
+   * (앱의 라이브 시뮬레이터 탭에서는 정적 PNG를 띄우지 않고, CSV 데이터를 읽어와 Plotly 라이브러리로 **직접 동적 3D 렌더링**을 수행하기 때문)
+6. **제 6장에 나열된 `a_only_temporal...` 계열 내부 로직 Audit 이미지 전체**
+   * (과거 프레임 교체 시 마진(Margin)과 랭크(Rank) 안정성을 점검하는 딥러닝 디버깅용 자료이므로, 비전문가용 웹 대시보드 전시 목적에서 제외됨)
