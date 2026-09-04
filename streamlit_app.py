@@ -470,7 +470,10 @@ with tab4:
                         yaxis=dict(range=[-20, 20]),
                         zaxis=dict(range=[150, 300]),
                         aspectmode='manual',
-                        aspectratio=dict(x=1, y=1, z=10)
+                        aspectratio=dict(x=1, y=1, z=10),
+                        camera=dict(
+                            eye=dict(x=3.0, y=3.0, z=3.0)
+                        )
                     ),
                     uirevision='constant' # 사용자가 마우스로 조작한 카메라 시점(회전, 줌)을 업데이트 후에도 유지
                 )
