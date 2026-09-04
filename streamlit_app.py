@@ -94,7 +94,16 @@ with tab_process:
             st.image(Image.open(roi_img_path), caption="ROI 설정 및 후보 영역 QC 검증 시각화", use_container_width=True)
     st.markdown("""
     - **입력 채널 확장 (3채널 → 6채널):** ROI 확정 후에도 남아있는 LED의 극심한 빛 번짐(Saturation)을 모델이 의미 있는 신호로 오해하지 않도록, 유효하지 않은 픽셀(빛 번짐)은 `0`, 유효한 픽셀은 `1`로 마스킹 처리하는 'Validity 3채널'을 생성했습니다. 이를 원본 밝기 정보(Intensity 3채널)와 결합해 **총 6채널 텐서**를 모델 입력으로 구성했습니다.
-    - **가우시안 릴렉세이션 (Gaussian Relaxation):** 확보된 1500x1500의 ROI 이미지를 연산 효율을 위해 256x256으로 리사이징합니다. 이때 정답지인 XCT 결함 좌표 픽셀에 단순히 1을 찍는 것이 아니라, 3D XCT와 2D 카메라 간의 투영 오차를 보정하기 위해 가우시안** 필터($\sigma=2$)를 씌워 부드러운 확률 분포로 릴렉세이션(Relaxation)** 처리를 해줍니다. 이는 모델이 픽셀 단위의 적중 강박에서 벗어나 주변 맥락(Context) 패턴을 유연하게 학습하도록 돕는 핵심 장치입니다.
+    """)
+    
+    sat_img_path = "processed/audit_after_spreading/qc_contact_sheet.png"
+    if os.path.exists(sat_img_path):
+        c1, c2, c3 = st.columns([1, 4, 1])
+        with c2:
+            st.image(Image.open(sat_img_path), caption="센서 한계치(65535) 도달에 의한 빛 번짐(Saturation) 시각적 확인 - 6채널 입력의 당위성", use_container_width=True)
+            
+    st.markdown("""
+    - **가우시안 릴렉세이션 (Gaussian Relaxation):** 확보된 1500x1500의 ROI 이미지를 연산 효율을 위해 256x256으로 리사이징합니다. 이때 정답지인 XCT 결함 좌표 픽셀에 단순히 1을 찍는 것이 아니라, 3D XCT와 2D 카메라 간의 투영 오차를 보정하기 위해 **가우시안 필터($\sigma=2$)를 씌워 부드러운 확률 분포로 릴렉세이션(Relaxation)** 처리를 해줍니다. 이는 모델이 픽셀 단위의 적중 강박에서 벗어나 주변 맥락(Context) 패턴을 유연하게 학습하도록 돕는 핵심 장치입니다.
     """)
     
     st.divider()
